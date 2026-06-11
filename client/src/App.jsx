@@ -1,21 +1,15 @@
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { Toaster } from './components/ui/toast';
 import MainLayout from './layouts/MainLayout';
-
-function HomePlaceholder() {
-  return (
-    <div className="text-center">
-      <h1 className="text-3xl font-bold text-brand">PBMS</h1>
-      <p className="mt-2 text-slate-500">Hệ thống quản lý bãi đỗ xe — client đang được dựng.</p>
-    </div>
-  );
-}
+import HomePage from './pages/HomePage';
 
 export default function App() {
   return (
     <BrowserRouter>
+      <Toaster position="top-right" richColors closeButton />
       <Routes>
         <Route element={<MainLayout />}>
-          <Route index element={<HomePlaceholder />} />
+          <Route index element={<HomePage />} />
         </Route>
       </Routes>
     </BrowserRouter>
