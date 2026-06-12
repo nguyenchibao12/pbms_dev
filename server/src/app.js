@@ -1,6 +1,8 @@
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
+import swaggerUi from 'swagger-ui-express';
+import { openapiSpec } from './config/swagger.js';
 import healthRoutes from './routes/health.routes.js';
 import authRoutes from './routes/auth.routes.js';
 import vehicleTypeRoutes from './routes/vehicleType.routes.js';
@@ -29,6 +31,18 @@ app.get('/', (_req, res) => {
 app.use('/api/health', healthRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/vehicle-types', vehicleTypeRoutes);
+
+// Swagger UI — tài liệu + test API trực tiếp tại /api/docs (spec JSON: /api/docs.json)
+app.get('/api/docs.json', (_req, res) => res.json(openapiSpec));
+app.use(
+  '/api/docs',
+  (_req, res, next) => {
+    res.removeHeader('Content-Security-Policy'); // cho Swagger UI nạp asset
+    next();
+  },
+  swaggerUi.serve,
+  swaggerUi.setup(openapiSpec, { customSiteTitle: 'PBMS API Docs' }),
+);
 
 app.use(notFoundHandler);
 app.use(errorHandler);
