@@ -1,8 +1,31 @@
 import Role from './role.model.js';
 import UserAccount from './userAccount.model.js';
 import VehicleType from './vehicleType.model.js';
+import Floor from './floor.model.js';
+import Zone from './zone.model.js';
+import ParkingSlot from './parkingSlot.model.js';
+import Gate from './gate.model.js';
+import PricingRule from './pricingRule.model.js';
 
 Role.hasMany(UserAccount, { foreignKey: 'role_id', as: 'users' });
 UserAccount.belongsTo(Role, { foreignKey: 'role_id', as: 'role' });
 
-export { Role, UserAccount, VehicleType };
+Floor.hasMany(Zone, { foreignKey: 'floor_id', as: 'zones' });
+Zone.belongsTo(Floor, { foreignKey: 'floor_id', as: 'floor' });
+
+Floor.hasMany(Gate, { foreignKey: 'floor_id', as: 'gates' });
+Gate.belongsTo(Floor, { foreignKey: 'floor_id', as: 'floor' });
+
+VehicleType.hasMany(Gate, { foreignKey: 'vehicle_type_id', as: 'gates' });
+Gate.belongsTo(VehicleType, { foreignKey: 'vehicle_type_id', as: 'vehicleType' });
+
+VehicleType.hasMany(Zone, { foreignKey: 'vehicle_type_id', as: 'zones' });
+Zone.belongsTo(VehicleType, { foreignKey: 'vehicle_type_id', as: 'vehicleType' });
+
+Zone.hasMany(ParkingSlot, { foreignKey: 'zone_id', as: 'parkingSlots' });
+ParkingSlot.belongsTo(Zone, { foreignKey: 'zone_id', as: 'zone' });
+
+VehicleType.hasMany(PricingRule, { foreignKey: 'vehicle_type_id', as: 'pricingRules' });
+PricingRule.belongsTo(VehicleType, { foreignKey: 'vehicle_type_id', as: 'vehicleType' });
+
+export { Role, UserAccount, VehicleType, Floor, Zone, ParkingSlot, Gate, PricingRule };

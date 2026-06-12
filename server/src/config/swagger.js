@@ -9,6 +9,9 @@ const jsonBody = (example) => ({
 });
 const ok = { description: 'Thành công — { success, data }' };
 const idPath = { name: 'id', in: 'path', required: true, schema: { type: 'integer' } };
+const q = (name, desc, required = false, schema = { type: 'string' }) => ({
+  name, in: 'query', required, description: desc, schema,
+});
 
 export const openapiSpec = {
   openapi: '3.0.3',
@@ -31,7 +34,7 @@ export const openapiSpec = {
   security: bearer, // mặc định cần JWT; endpoint public override bằng security: []
   tags: [
     { name: 'Auth', description: 'Đăng ký / đăng nhập / quên mật khẩu / Google' },
-    { name: 'MasterData', description: 'Loại xe (Manager) — sẽ mở rộng: tầng/khu/chỗ/cổng/bảng giá' },
+    { name: 'MasterData', description: 'Tầng/Khu/Chỗ/Cổng/Loại xe/Bảng giá (Manager)' },
     { name: 'System', description: 'Health check' },
   ],
   paths: {
@@ -87,6 +90,73 @@ export const openapiSpec = {
       get: { tags: ['MasterData'], summary: 'Chi tiết loại xe', security: bearer, parameters: [idPath], responses: { 200: ok } },
       put: { tags: ['MasterData'], summary: 'Sửa loại xe (Manager)', security: bearer, parameters: [idPath], requestBody: jsonBody({ typeName: 'Xe máy' }), responses: { 200: ok } },
       delete: { tags: ['MasterData'], summary: 'Xóa loại xe (Manager)', security: bearer, parameters: [idPath], responses: { 200: ok } },
+    },
+
+    // ===== FLOORS (MasterData) =====
+    '/floors': {
+      get: { tags: ['MasterData'], summary: 'Danh sách tầng', security: bearer, responses: { 200: ok } },
+      post: { tags: ['MasterData'], summary: 'Thêm tầng (Manager)', security: bearer, requestBody: jsonBody({ floorCode: 'B3', floorLevel: -3, label: 'Hầm B3' }), responses: { 201: ok } },
+    },
+    '/floors/setup': {
+      post: {
+        tags: ['MasterData'], summary: 'Thiết lập nhanh tầng (Manager) — floor+zone+slot+cổng', security: bearer,
+        requestBody: jsonBody({
+          floor: { floorCode: 'B3', floorLevel: -3, label: 'Hầm B3' },
+          zones: [{ vehicleTypeId: 1, zoneCode: 'B3-A', label: 'Khu A ô tô', slotCount: 40, codePrefix: 'A-', monthlyPassCapacity: 10, distanceStart: 10, distanceStep: 5 }],
+          gates: { auto: true },
+        }),
+        responses: { 200: ok },
+      },
+    },
+    '/floors/{id}': {
+      get: { tags: ['MasterData'], summary: 'Chi tiết tầng', security: bearer, parameters: [idPath], responses: { 200: ok } },
+      put: { tags: ['MasterData'], summary: 'Sửa tầng (Manager)', security: bearer, parameters: [idPath], requestBody: jsonBody({ label: 'Hầm B3 mới' }), responses: { 200: ok } },
+      delete: { tags: ['MasterData'], summary: 'Xóa tầng (Manager)', security: bearer, parameters: [idPath], responses: { 200: ok } },
+    },
+    '/floors/{id}/clone': { post: { tags: ['MasterData'], summary: 'Nhân bản tầng (Manager)', security: bearer, parameters: [idPath], requestBody: jsonBody({ floorCode: 'B4', floorLevel: -4, label: 'Hầm B4' }), responses: { 200: ok } } },
+
+    // ===== ZONES (MasterData) =====
+    '/zones': {
+      get: { tags: ['MasterData'], summary: 'Danh sách khu', security: bearer, parameters: [q('floorId', 'Lọc theo tầng', false, { type: 'integer' })], responses: { 200: ok } },
+      post: { tags: ['MasterData'], summary: 'Thêm khu (Manager)', security: bearer, requestBody: jsonBody({ floorId: 1, vehicleTypeId: 1, zoneCode: 'B1-A', label: 'Khu A', totalSlots: 0, monthlyPassCapacity: 5 }), responses: { 201: ok } },
+    },
+    '/zones/{id}': {
+      get: { tags: ['MasterData'], summary: 'Chi tiết khu', security: bearer, parameters: [idPath], responses: { 200: ok } },
+      put: { tags: ['MasterData'], summary: 'Sửa khu (Manager)', security: bearer, parameters: [idPath], requestBody: jsonBody({ label: 'Khu A mới', monthlyPassCapacity: 8 }), responses: { 200: ok } },
+      delete: { tags: ['MasterData'], summary: 'Xóa khu (Manager)', security: bearer, parameters: [idPath], responses: { 200: ok } },
+    },
+
+    // ===== PARKING SLOTS (MasterData) =====
+    '/parking-slots': {
+      get: { tags: ['MasterData'], summary: 'Danh sách chỗ', security: bearer, parameters: [q('zoneId', 'Lọc theo khu', false, { type: 'integer' })], responses: { 200: ok } },
+      post: { tags: ['MasterData'], summary: 'Thêm chỗ (Manager)', security: bearer, requestBody: jsonBody({ zoneId: 1, slotCode: 'A-01', distanceToGate: 10 }), responses: { 201: ok } },
+    },
+    '/parking-slots/{id}': {
+      get: { tags: ['MasterData'], summary: 'Chi tiết chỗ', security: bearer, parameters: [idPath], responses: { 200: ok } },
+      put: { tags: ['MasterData'], summary: 'Sửa chỗ — gồm đổi status (Manager)', security: bearer, parameters: [idPath], requestBody: jsonBody({ status: 'maintenance', distanceToGate: 12 }), responses: { 200: ok } },
+      delete: { tags: ['MasterData'], summary: 'Xóa chỗ (Manager)', security: bearer, parameters: [idPath], responses: { 200: ok } },
+    },
+
+    // ===== GATES (MasterData) =====
+    '/gates': {
+      get: { tags: ['MasterData'], summary: 'Danh sách cổng', security: bearer, parameters: [q('floorId', 'Lọc theo tầng', false, { type: 'integer' })], responses: { 200: ok } },
+      post: { tags: ['MasterData'], summary: 'Thêm cổng (Manager)', security: bearer, requestBody: jsonBody({ floorId: 1, gateCode: 'B1-IN-CAR', direction: 'in', vehicleTypeId: 1, label: 'Cổng vào ô tô' }), responses: { 201: ok } },
+    },
+    '/gates/{id}': {
+      get: { tags: ['MasterData'], summary: 'Chi tiết cổng', security: bearer, parameters: [idPath], responses: { 200: ok } },
+      put: { tags: ['MasterData'], summary: 'Sửa cổng (Manager)', security: bearer, parameters: [idPath], requestBody: jsonBody({ isActive: true }), responses: { 200: ok } },
+      delete: { tags: ['MasterData'], summary: 'Xóa cổng (Manager)', security: bearer, parameters: [idPath], responses: { 200: ok } },
+    },
+
+    // ===== PRICING RULES (MasterData) =====
+    '/pricing-rules': {
+      get: { tags: ['MasterData'], summary: 'Danh sách bảng giá', security: bearer, parameters: [q('vehicleTypeId', 'Lọc theo loại xe', false, { type: 'integer' })], responses: { 200: ok } },
+      post: { tags: ['MasterData'], summary: 'Thêm bảng giá (Manager)', security: bearer, requestBody: jsonBody({ vehicleTypeId: 1, unit: 60, baseRate: 10000, effectiveFrom: '2026-01-01T00:00:00Z' }), responses: { 201: ok } },
+    },
+    '/pricing-rules/{id}': {
+      get: { tags: ['MasterData'], summary: 'Chi tiết bảng giá', security: bearer, parameters: [idPath], responses: { 200: ok } },
+      put: { tags: ['MasterData'], summary: 'Sửa bảng giá (Manager)', security: bearer, parameters: [idPath], requestBody: jsonBody({ baseRate: 12000 }), responses: { 200: ok } },
+      delete: { tags: ['MasterData'], summary: 'Xóa bảng giá (Manager)', security: bearer, parameters: [idPath], responses: { 200: ok } },
     },
   },
 };

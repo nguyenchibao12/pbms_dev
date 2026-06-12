@@ -1,0 +1,216 @@
+import sequelize from '../config/db.js';
+import ParkingSlot, { SLOT_STATUSES } from '../models/parkingSlot.model.js';
+import { Zone } from '../models/index.js';
+import { AppError } from '../utils/helpers.js';
+import { assertSlotTransition } from '../utils/stateGuards.js';
+
+const syncZoneTotalSlots = async (zoneId, transaction) => {
+  const count = await ParkingSlot.count({ where: { zone_id: zoneId }, transaction });
+  await Zone.update({ total_slots: count }, { where: { zone_id: zoneId }, transaction });
+  return count;
+};
+
+const slotIncludes = [
+  {
+    association: 'zone',
+    attributes: ['zone_id', 'zone_code', 'label', 'floor_id'],
+    include: [{ association: 'floor', attributes: ['floor_id', 'floor_code', 'label'] }],
+  },
+];
+
+const validateStatusChange = (currentStatus, newStatus) => {
+  if (currentStatus === newStatus) return;
+
+  const systemManaged = ['reserved', 'occupied'];
+  if (systemManaged.includes(currentStatus)) {
+    throw new AppError(
+      `Cannot manually change slot status from "${currentStatus}"`,
+      409,
+      'CONFLICT'
+    );
+  }
+
+  const allowedManual = ['available', 'maintenance', 'locked'];
+  if (!allowedManual.includes(newStatus)) {
+    throw new AppError(
+      `Manual status update only allowed to: ${allowedManual.join(', ')}`,
+      400,
+      'VALIDATION_ERROR'
+    );
+  }
+};
+
+export const listParkingSlots = async (zoneId) => {
+  const where = zoneId ? { zone_id: zoneId } : {};
+  return ParkingSlot.findAll({ where, include: slotIncludes, order: [['slot_code', 'ASC']] });
+};
+
+export const getParkingSlot = async (id) => {
+  const slot = await ParkingSlot.findByPk(id, { include: slotIncludes });
+  if (!slot) throw new AppError('Parking slot not found', 404, 'NOT_FOUND');
+  return slot;
+};
+
+export const createParkingSlot = async (data) => {
+  const zone = await Zone.findByPk(data.zoneId);
+  if (!zone) throw new AppError('Zone not found', 404, 'NOT_FOUND');
+
+  const existing = await ParkingSlot.findOne({
+    where: { zone_id: data.zoneId, slot_code: data.slotCode },
+  });
+  if (existing) throw new AppError('Slot code already exists in this zone', 409, 'CONFLICT');
+
+  const status = data.status || 'available';
+  if (!SLOT_STATUSES.includes(status)) {
+    throw new AppError('Invalid slot status', 400, 'VALIDATION_ERROR');
+  }
+  if (status !== 'available' && status !== 'maintenance' && status !== 'locked') {
+    throw new AppError('New slots must start as available, maintenance, or locked', 400, 'VALIDATION_ERROR');
+  }
+
+  return ParkingSlot.create({
+    zone_id: data.zoneId,
+    slot_code: data.slotCode,
+    status,
+    slot_type: data.slotType || null,
+    distance_to_gate: data.distanceToGate ?? null,
+    distance_to_elevator: data.distanceToElevator ?? null,
+  });
+};
+
+export const updateParkingSlot = async (id, data) => {
+  const slot = await ParkingSlot.findByPk(id);
+  if (!slot) throw new AppError('Parking slot not found', 404, 'NOT_FOUND');
+
+  if (data.zoneId) {
+    const zone = await Zone.findByPk(data.zoneId);
+    if (!zone) throw new AppError('Zone not found', 404, 'NOT_FOUND');
+  }
+
+  const newZoneId = data.zoneId ?? slot.zone_id;
+  const newSlotCode = data.slotCode ?? slot.slot_code;
+  if (newSlotCode !== slot.slot_code || newZoneId !== slot.zone_id) {
+    const existing = await ParkingSlot.findOne({
+      where: { zone_id: newZoneId, slot_code: newSlotCode },
+    });
+    if (existing && existing.slot_id !== slot.slot_id) {
+      throw new AppError('Slot code already exists in this zone', 409, 'CONFLICT');
+    }
+  }
+
+  if (data.status) {
+    validateStatusChange(slot.status, data.status);
+  }
+
+  await slot.update({
+    zone_id: newZoneId,
+    slot_code: newSlotCode,
+    status: data.status ?? slot.status,
+    slot_type: data.slotType !== undefined ? data.slotType : slot.slot_type,
+    distance_to_gate:
+      data.distanceToGate !== undefined ? data.distanceToGate : slot.distance_to_gate,
+    distance_to_elevator:
+      data.distanceToElevator !== undefined ? data.distanceToElevator : slot.distance_to_elevator,
+  });
+  return getParkingSlot(id);
+};
+
+/**
+ * Tạo N slot trong 1 transaction theo mẫu mã. Bỏ qua mã đã tồn tại (idempotent).
+ */
+export const bulkGenerateSlots = async (zoneId, opts, externalTransaction = null) => {
+  // Khi chạy trong transaction (vd quickSetupFloor), các read phải dùng cùng transaction
+  // để thấy zone vừa tạo (chưa commit) — nếu không sẽ "Zone not found" và rollback.
+  const readOpt = externalTransaction ? { transaction: externalTransaction } : {};
+
+  const zone = await Zone.findByPk(zoneId, readOpt);
+  if (!zone) throw new AppError('Zone not found', 404, 'NOT_FOUND');
+
+  const {
+    count,
+    codePrefix,
+    startIndex = 1,
+    padding = 2,
+    distanceStart = null,
+    distanceStep = null,
+    distanceElevatorStart = null,
+    distanceElevatorStep = null,
+    slotType = null,
+  } = opts;
+
+  const existingSlots = await ParkingSlot.findAll({
+    where: { zone_id: zoneId },
+    attributes: ['slot_code'],
+    ...readOpt,
+  });
+  const existingCodes = new Set(existingSlots.map((s) => s.slot_code));
+
+  const toCreate = [];
+  let skipped = 0;
+
+  for (let i = 0; i < count; i++) {
+    const index = startIndex + i;
+    const code = `${codePrefix}${String(index).padStart(padding, '0')}`;
+    if (existingCodes.has(code)) {
+      skipped += 1;
+      continue;
+    }
+    existingCodes.add(code);
+
+    let distance = null;
+    if (distanceStart != null) {
+      const step = distanceStep != null ? Number(distanceStep) : 0;
+      distance = Number(distanceStart) + i * step;
+    }
+
+    let elevatorDist = null;
+    if (distanceElevatorStart != null) {
+      const step = distanceElevatorStep != null ? Number(distanceElevatorStep) : 0;
+      elevatorDist = Number(distanceElevatorStart) + i * step;
+    }
+
+    toCreate.push({
+      zone_id: zoneId,
+      slot_code: code,
+      status: 'available',
+      slot_type: slotType || null,
+      distance_to_gate: distance,
+      distance_to_elevator: elevatorDist,
+    });
+  }
+
+  const run = async (transaction) => {
+    let created = 0;
+    if (toCreate.length > 0) {
+      await ParkingSlot.bulkCreate(toCreate, { transaction });
+      created = toCreate.length;
+    }
+    const totalSlots = await syncZoneTotalSlots(zoneId, transaction);
+    return { created, skipped, totalSlots };
+  };
+
+  if (externalTransaction) return run(externalTransaction);
+  return sequelize.transaction(run);
+};
+
+export const deleteParkingSlot = async (id) => {
+  const slot = await ParkingSlot.findByPk(id);
+  if (!slot) throw new AppError('Parking slot not found', 404, 'NOT_FOUND');
+
+  if (slot.status === 'occupied' || slot.status === 'reserved') {
+    throw new AppError('Cannot delete slot that is occupied or reserved', 409, 'CONFLICT');
+  }
+
+  await slot.destroy();
+};
+
+export const updateSlotStatus = async (id, newStatus) => {
+  const slot = await ParkingSlot.findByPk(id);
+  if (!slot) throw new AppError('Parking slot not found', 404, 'NOT_FOUND');
+  validateStatusChange(slot.status, newStatus);
+  assertSlotTransition(slot.status, newStatus);
+  await slot.update({ status: newStatus });
+  return getParkingSlot(id);
+};
+
+export { SLOT_STATUSES };
