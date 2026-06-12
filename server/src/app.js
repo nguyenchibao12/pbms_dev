@@ -3,6 +3,7 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import healthRoutes from './routes/health.routes.js';
 import authRoutes from './routes/auth.routes.js';
+import vehicleTypeRoutes from './routes/vehicleType.routes.js';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler.js';
 import { securityHeaders, jsonParserLimit, getCorsOrigin } from './middleware/security.js';
 
@@ -27,6 +28,7 @@ app.get('/', (_req, res) => {
 
 app.use('/api/health', healthRoutes);
 app.use('/api/auth', authRoutes);
+app.use('/api/vehicle-types', vehicleTypeRoutes);
 
 app.use(notFoundHandler);
 app.use(errorHandler);
