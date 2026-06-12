@@ -42,4 +42,20 @@ CREATE TABLE IF NOT EXISTS `user_account` (
   CONSTRAINT `fk_user_role` FOREIGN KEY (`role_id`) REFERENCES `role` (`role_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- Loại phương tiện: Ô tô / Xe máy. Master data dùng cho zone, pricing, session...
+CREATE TABLE IF NOT EXISTS `vehicle_type` (
+  `vehicle_type_id` INT NOT NULL AUTO_INCREMENT,
+  `type_name`       VARCHAR(50) NOT NULL,
+  `type_code`       VARCHAR(20) NOT NULL,
+  `created_at`      DATETIME NOT NULL,
+  `updated_at`      DATETIME NOT NULL,
+  PRIMARY KEY (`vehicle_type_id`),
+  UNIQUE KEY `uq_vehicle_type_code` (`type_code`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 SET FOREIGN_KEY_CHECKS = 1;
+
+-- Hai loại xe mặc định (tùy chọn — Manager có thể thêm/sửa qua API)
+INSERT IGNORE INTO `vehicle_type` (`type_name`, `type_code`, `created_at`, `updated_at`) VALUES
+  ('Ô tô', 'CAR', NOW(), NOW()),
+  ('Xe máy', 'MOTORBIKE', NOW(), NOW());

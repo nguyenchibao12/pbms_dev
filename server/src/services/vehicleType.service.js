@@ -1,0 +1,44 @@
+import { VehicleType } from '../models/index.js';
+import { AppError } from '../utils/helpers.js';
+
+export const listVehicleTypes = async () =>
+  VehicleType.findAll({ order: [['type_name', 'ASC']] });
+
+export const getVehicleType = async (id) => {
+  const type = await VehicleType.findByPk(id);
+  if (!type) throw new AppError('Vehicle type not found', 404, 'NOT_FOUND');
+  return type;
+};
+
+export const createVehicleType = async (data) => {
+  const existing = await VehicleType.findOne({ where: { type_code: data.typeCode } });
+  if (existing) throw new AppError('Type code already exists', 409, 'CONFLICT');
+
+  return VehicleType.create({
+    type_name: data.typeName,
+    type_code: data.typeCode,
+  });
+};
+
+export const updateVehicleType = async (id, data) => {
+  const type = await VehicleType.findByPk(id);
+  if (!type) throw new AppError('Vehicle type not found', 404, 'NOT_FOUND');
+
+  if (data.typeCode && data.typeCode !== type.type_code) {
+    const existing = await VehicleType.findOne({ where: { type_code: data.typeCode } });
+    if (existing) throw new AppError('Type code already exists', 409, 'CONFLICT');
+  }
+
+  await type.update({
+    type_name: data.typeName ?? type.type_name,
+    type_code: data.typeCode ?? type.type_code,
+  });
+  return type;
+};
+
+export const deleteVehicleType = async (id) => {
+  const type = await VehicleType.findByPk(id);
+  if (!type) throw new AppError('Vehicle type not found', 404, 'NOT_FOUND');
+
+  await type.destroy();
+};
