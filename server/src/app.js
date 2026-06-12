@@ -6,6 +6,11 @@ import { openapiSpec } from './config/swagger.js';
 import healthRoutes from './routes/health.routes.js';
 import authRoutes from './routes/auth.routes.js';
 import vehicleTypeRoutes from './routes/vehicleType.routes.js';
+import floorRoutes from './routes/floor.routes.js';
+import zoneRoutes from './routes/zone.routes.js';
+import parkingSlotRoutes from './routes/parkingSlot.routes.js';
+import gateRoutes from './routes/gate.routes.js';
+import pricingRuleRoutes from './routes/pricingRule.routes.js';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler.js';
 import { securityHeaders, jsonParserLimit, getCorsOrigin } from './middleware/security.js';
 
@@ -31,6 +36,11 @@ app.get('/', (_req, res) => {
 app.use('/api/health', healthRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/vehicle-types', vehicleTypeRoutes);
+app.use('/api/floors', floorRoutes);
+app.use('/api/zones', zoneRoutes);
+app.use('/api/parking-slots', parkingSlotRoutes);
+app.use('/api/gates', gateRoutes);
+app.use('/api/pricing-rules', pricingRuleRoutes);
 
 // Swagger UI — tài liệu + test API trực tiếp tại /api/docs (spec JSON: /api/docs.json)
 app.get('/api/docs.json', (_req, res) => res.json(openapiSpec));
