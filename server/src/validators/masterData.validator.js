@@ -5,20 +5,55 @@ export const idParam = [param('id').isInt({ min: 1 }).withMessage('Invalid id')]
 
 export const floorValidators = {
   create: [
-    body('floorCode').trim().notEmpty().withMessage('floorCode is required'),
-    body('floorLevel').isInt().withMessage('floorLevel must be an integer'),
-    body('label').trim().notEmpty().withMessage('label is required'),
+    body('floorCode')
+      .trim()
+      .notEmpty().withMessage('Mã tầng không được để trống')
+      .bail()
+      .isLength({ max: 20 }).withMessage('Mã tầng tối đa 20 ký tự'),
+    body('floorLevel')
+      .notEmpty().withMessage('Số tầng không được để trống')
+      .bail()
+      .isInt({ min: -50, max: 200 }).withMessage('Số tầng phải là số nguyên trong khoảng -50..200')
+      .toInt(),
+    body('label')
+      .trim()
+      .notEmpty().withMessage('Tên tầng không được để trống')
+      .bail()
+      .isLength({ max: 100 }).withMessage('Tên tầng tối đa 100 ký tự'),
   ],
   update: [
     ...idParam,
-    body('floorCode').optional().trim().notEmpty(),
-    body('floorLevel').optional().isInt(),
-    body('label').optional().trim().notEmpty(),
+    body('floorCode')
+      .optional()
+      .trim()
+      .notEmpty().withMessage('Mã tầng không được để trống')
+      .bail()
+      .isLength({ max: 20 }).withMessage('Mã tầng tối đa 20 ký tự'),
+    body('floorLevel')
+      .optional()
+      .isInt({ min: -50, max: 200 }).withMessage('Số tầng phải là số nguyên trong khoảng -50..200')
+      .toInt(),
+    body('label')
+      .optional()
+      .trim()
+      .notEmpty().withMessage('Tên tầng không được để trống')
+      .bail()
+      .isLength({ max: 100 }).withMessage('Tên tầng tối đa 100 ký tự'),
   ],
   quickSetup: [
-    body('floor.floorCode').trim().notEmpty().withMessage('floor.floorCode is required'),
-    body('floor.floorLevel').isInt().withMessage('floor.floorLevel must be an integer'),
-    body('floor.label').trim().notEmpty().withMessage('floor.label is required'),
+    body('floor.floorCode')
+      .trim()
+      .notEmpty().withMessage('Mã tầng không được để trống')
+      .bail()
+      .isLength({ max: 20 }).withMessage('Mã tầng tối đa 20 ký tự'),
+    body('floor.floorLevel')
+      .isInt({ min: -50, max: 200 }).withMessage('Số tầng phải là số nguyên trong khoảng -50..200')
+      .toInt(),
+    body('floor.label')
+      .trim()
+      .notEmpty().withMessage('Tên tầng không được để trống')
+      .bail()
+      .isLength({ max: 100 }).withMessage('Tên tầng tối đa 100 ký tự'),
     body('zones').isArray({ min: 1 }).withMessage('zones must be a non-empty array'),
     body('zones.*.vehicleTypeId').isInt({ min: 1 }),
     body('zones.*.zoneCode').trim().notEmpty(),
@@ -34,9 +69,19 @@ export const floorValidators = {
   ],
   clone: [
     ...idParam,
-    body('floorCode').trim().notEmpty().withMessage('floorCode is required'),
-    body('floorLevel').isInt().withMessage('floorLevel must be an integer'),
-    body('label').trim().notEmpty().withMessage('label is required'),
+    body('floorCode')
+      .trim()
+      .notEmpty().withMessage('Mã tầng không được để trống')
+      .bail()
+      .isLength({ max: 20 }).withMessage('Mã tầng tối đa 20 ký tự'),
+    body('floorLevel')
+      .isInt({ min: -50, max: 200 }).withMessage('Số tầng phải là số nguyên trong khoảng -50..200')
+      .toInt(),
+    body('label')
+      .trim()
+      .notEmpty().withMessage('Tên tầng không được để trống')
+      .bail()
+      .isLength({ max: 100 }).withMessage('Tên tầng tối đa 100 ký tự'),
   ],
 };
 
