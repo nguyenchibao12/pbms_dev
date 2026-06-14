@@ -145,23 +145,40 @@ export const zoneValidators = {
 };
 
 export const parkingSlotValidators = {
-  list: [query('zoneId').optional().isInt({ min: 1 })],
+  list: [
+    query('zoneId').optional().isInt({ min: 1 }).withMessage('zoneId phải là số nguyên dương').toInt(),
+  ],
   create: [
-    body('zoneId').isInt({ min: 1 }).withMessage('zoneId is required'),
-    body('slotCode').trim().notEmpty().withMessage('slotCode is required'),
-    body('status').optional().isIn(['available', 'maintenance', 'locked']),
-    body('slotType').optional().isString(),
-    body('distanceToGate').optional().isFloat({ min: 0 }),
-    body('distanceToElevator').optional().isFloat({ min: 0 }),
+    body('zoneId').isInt({ min: 1 }).withMessage('zoneId không hợp lệ (số nguyên dương)').toInt(),
+    body('slotCode')
+      .trim()
+      .notEmpty().withMessage('Mã chỗ không được để trống')
+      .bail()
+      .isLength({ max: 20 }).withMessage('Mã chỗ tối đa 20 ký tự'),
+    body('status')
+      .optional()
+      .isIn(['available', 'maintenance', 'locked'])
+      .withMessage('Trạng thái khi tạo chỉ nhận: available | maintenance | locked'),
+    body('slotType').optional().trim().isLength({ max: 50 }).withMessage('Loại chỗ (slotType) tối đa 50 ký tự'),
+    body('distanceToGate').optional().isFloat({ min: 0 }).withMessage('Khoảng cách tới cổng phải là số ≥ 0').toFloat(),
+    body('distanceToElevator').optional().isFloat({ min: 0 }).withMessage('Khoảng cách tới thang máy phải là số ≥ 0').toFloat(),
   ],
   update: [
     ...idParam,
-    body('zoneId').optional().isInt({ min: 1 }),
-    body('slotCode').optional().trim().notEmpty(),
-    body('status').optional().isIn(SLOT_STATUSES),
-    body('slotType').optional().isString(),
-    body('distanceToGate').optional().isFloat({ min: 0 }),
-    body('distanceToElevator').optional().isFloat({ min: 0 }),
+    body('zoneId').optional().isInt({ min: 1 }).withMessage('zoneId không hợp lệ (số nguyên dương)').toInt(),
+    body('slotCode')
+      .optional()
+      .trim()
+      .notEmpty().withMessage('Mã chỗ không được để trống')
+      .bail()
+      .isLength({ max: 20 }).withMessage('Mã chỗ tối đa 20 ký tự'),
+    body('status')
+      .optional()
+      .isIn(SLOT_STATUSES)
+      .withMessage(`Trạng thái phải là một trong: ${SLOT_STATUSES.join(', ')}`),
+    body('slotType').optional().trim().isLength({ max: 50 }).withMessage('Loại chỗ (slotType) tối đa 50 ký tự'),
+    body('distanceToGate').optional().isFloat({ min: 0 }).withMessage('Khoảng cách tới cổng phải là số ≥ 0').toFloat(),
+    body('distanceToElevator').optional().isFloat({ min: 0 }).withMessage('Khoảng cách tới thang máy phải là số ≥ 0').toFloat(),
   ],
 };
 
