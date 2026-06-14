@@ -45,14 +45,18 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-surface px-4">
+    <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-surface px-4">
+      <div className="pointer-events-none absolute inset-0 -z-10">
+        <div className="absolute -top-24 left-1/2 h-72 w-[36rem] -translate-x-1/2 rounded-full bg-brand/10 blur-3xl" />
+        <div className="absolute bottom-0 right-10 h-56 w-56 rounded-full bg-accent/10 blur-3xl" />
+      </div>
       <div className="w-full max-w-md">
         <div className="mb-6 text-center">
-          <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-brand">
-            <span className="text-xl font-bold text-white">P</span>
-          </div>
+          <Link to="/" className="brand-gradient mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-2xl text-xl font-bold text-white shadow-(--shadow-soft)">
+            P
+          </Link>
           <h1 className="text-2xl font-bold text-slate-800">Đăng nhập PBMS</h1>
-          <p className="mt-1 text-sm text-slate-500">Parking Building Management System</p>
+          <p className="mt-1 text-sm text-slate-500">Chào mừng trở lại 👋</p>
         </div>
 
         <Card>
@@ -82,7 +86,7 @@ export default function LoginPage() {
                 required
               />
             </Field>
-            <Button type="submit" className="w-full" loading={submitting}>
+            <Button type="submit" className="brand-gradient w-full border-0 shadow-(--shadow-soft)" loading={submitting}>
               Đăng nhập
             </Button>
           </form>
