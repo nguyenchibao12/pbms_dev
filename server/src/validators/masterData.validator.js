@@ -86,35 +86,61 @@ export const floorValidators = {
 };
 
 export const zoneValidators = {
-  list: [query('floorId').optional().isInt({ min: 1 })],
+  list: [
+    query('floorId').optional().isInt({ min: 1 }).withMessage('floorId phải là số nguyên dương').toInt(),
+  ],
   bulkSlots: [
     ...idParam,
-    body('count').isInt({ min: 1, max: 500 }).withMessage('count must be 1..500'),
-    body('codePrefix').trim().notEmpty().withMessage('codePrefix is required'),
-    body('startIndex').optional().isInt({ min: 1 }),
-    body('padding').optional().isInt({ min: 1, max: 4 }),
-    body('distanceStart').optional().isFloat({ min: 0 }),
-    body('distanceStep').optional().isFloat({ min: 0 }),
-    body('distanceElevatorStart').optional().isFloat({ min: 0 }),
-    body('distanceElevatorStep').optional().isFloat({ min: 0 }),
-    body('slotType').optional().isString(),
+    body('count')
+      .isInt({ min: 1, max: 500 }).withMessage('Số lượng chỗ (count) phải là số nguyên trong khoảng 1..500')
+      .toInt(),
+    body('codePrefix')
+      .trim()
+      .notEmpty().withMessage('Tiền tố mã chỗ (codePrefix) không được để trống')
+      .bail()
+      .isLength({ max: 16 }).withMessage('Tiền tố mã chỗ tối đa 16 ký tự'),
+    body('startIndex').optional().isInt({ min: 1 }).withMessage('startIndex phải là số nguyên ≥ 1').toInt(),
+    body('padding').optional().isInt({ min: 1, max: 4 }).withMessage('padding phải trong khoảng 1..4').toInt(),
+    body('distanceStart').optional().isFloat({ min: 0 }).withMessage('distanceStart phải là số ≥ 0').toFloat(),
+    body('distanceStep').optional().isFloat({ min: 0 }).withMessage('distanceStep phải là số ≥ 0').toFloat(),
+    body('distanceElevatorStart').optional().isFloat({ min: 0 }).withMessage('distanceElevatorStart phải là số ≥ 0').toFloat(),
+    body('distanceElevatorStep').optional().isFloat({ min: 0 }).withMessage('distanceElevatorStep phải là số ≥ 0').toFloat(),
+    body('slotType').optional().trim().isLength({ max: 50 }).withMessage('slotType tối đa 50 ký tự'),
   ],
   create: [
-    body('floorId').isInt({ min: 1 }).withMessage('floorId is required'),
-    body('vehicleTypeId').isInt({ min: 1 }).withMessage('vehicleTypeId is required'),
-    body('zoneCode').trim().notEmpty().withMessage('zoneCode is required'),
-    body('label').trim().notEmpty().withMessage('label is required'),
-    body('totalSlots').optional().isInt({ min: 0 }),
-    body('monthlyPassCapacity').optional().isInt({ min: 0 }).withMessage('OR-03 capacity >= 0'),
+    body('floorId').isInt({ min: 1 }).withMessage('floorId không hợp lệ (số nguyên dương)').toInt(),
+    body('vehicleTypeId').isInt({ min: 1 }).withMessage('vehicleTypeId không hợp lệ (số nguyên dương)').toInt(),
+    body('zoneCode')
+      .trim()
+      .notEmpty().withMessage('Mã khu không được để trống')
+      .bail()
+      .isLength({ max: 20 }).withMessage('Mã khu tối đa 20 ký tự'),
+    body('label')
+      .trim()
+      .notEmpty().withMessage('Tên khu không được để trống')
+      .bail()
+      .isLength({ max: 100 }).withMessage('Tên khu tối đa 100 ký tự'),
+    body('totalSlots').optional().isInt({ min: 0 }).withMessage('Tổng số chỗ phải là số nguyên ≥ 0').toInt(),
+    body('monthlyPassCapacity').optional().isInt({ min: 0 }).withMessage('Hạn mức vé tháng phải là số nguyên ≥ 0 (OR-03)').toInt(),
   ],
   update: [
     ...idParam,
-    body('floorId').optional().isInt({ min: 1 }),
-    body('vehicleTypeId').optional().isInt({ min: 1 }),
-    body('zoneCode').optional().trim().notEmpty(),
-    body('label').optional().trim().notEmpty(),
-    body('totalSlots').optional().isInt({ min: 0 }),
-    body('monthlyPassCapacity').optional().isInt({ min: 0 }),
+    body('floorId').optional().isInt({ min: 1 }).withMessage('floorId không hợp lệ (số nguyên dương)').toInt(),
+    body('vehicleTypeId').optional().isInt({ min: 1 }).withMessage('vehicleTypeId không hợp lệ (số nguyên dương)').toInt(),
+    body('zoneCode')
+      .optional()
+      .trim()
+      .notEmpty().withMessage('Mã khu không được để trống')
+      .bail()
+      .isLength({ max: 20 }).withMessage('Mã khu tối đa 20 ký tự'),
+    body('label')
+      .optional()
+      .trim()
+      .notEmpty().withMessage('Tên khu không được để trống')
+      .bail()
+      .isLength({ max: 100 }).withMessage('Tên khu tối đa 100 ký tự'),
+    body('totalSlots').optional().isInt({ min: 0 }).withMessage('Tổng số chỗ phải là số nguyên ≥ 0').toInt(),
+    body('monthlyPassCapacity').optional().isInt({ min: 0 }).withMessage('Hạn mức vé tháng phải là số nguyên ≥ 0 (OR-03)').toInt(),
   ],
 };
 
