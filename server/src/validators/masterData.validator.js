@@ -222,13 +222,31 @@ export const gateValidators = {
 
 export const vehicleTypeValidators = {
   create: [
-    body('typeName').trim().notEmpty().withMessage('typeName is required'),
-    body('typeCode').trim().notEmpty().withMessage('typeCode is required'),
+    body('typeName')
+      .trim()
+      .notEmpty().withMessage('Tên loại xe không được để trống')
+      .bail()
+      .isLength({ max: 50 }).withMessage('Tên loại xe tối đa 50 ký tự'),
+    body('typeCode')
+      .trim()
+      .notEmpty().withMessage('Mã loại xe không được để trống')
+      .bail()
+      .isLength({ max: 20 }).withMessage('Mã loại xe tối đa 20 ký tự'),
   ],
   update: [
     ...idParam,
-    body('typeName').optional().trim().notEmpty(),
-    body('typeCode').optional().trim().notEmpty(),
+    body('typeName')
+      .optional()
+      .trim()
+      .notEmpty().withMessage('Tên loại xe không được để trống')
+      .bail()
+      .isLength({ max: 50 }).withMessage('Tên loại xe tối đa 50 ký tự'),
+    body('typeCode')
+      .optional()
+      .trim()
+      .notEmpty().withMessage('Mã loại xe không được để trống')
+      .bail()
+      .isLength({ max: 20 }).withMessage('Mã loại xe tối đa 20 ký tự'),
   ],
 };
 
