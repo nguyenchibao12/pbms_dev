@@ -11,6 +11,7 @@ import zoneRoutes from './routes/zone.routes.js';
 import parkingSlotRoutes from './routes/parkingSlot.routes.js';
 import gateRoutes from './routes/gate.routes.js';
 import pricingRuleRoutes from './routes/pricingRule.routes.js';
+import publicRoutes from './routes/public.routes.js';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler.js';
 import { securityHeaders, jsonParserLimit, getCorsOrigin } from './middleware/security.js';
 
@@ -41,6 +42,7 @@ app.use('/api/zones', zoneRoutes);
 app.use('/api/parking-slots', parkingSlotRoutes);
 app.use('/api/gates', gateRoutes);
 app.use('/api/pricing-rules', pricingRuleRoutes);
+app.use('/api/public', publicRoutes);
 
 // Swagger UI — tài liệu + test API trực tiếp tại /api/docs (spec JSON: /api/docs.json)
 app.get('/api/docs.json', (_req, res) => res.json(openapiSpec));
