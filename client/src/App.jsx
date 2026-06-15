@@ -1,12 +1,14 @@
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { Toaster } from './components/ui/toast';
 import { AuthProvider } from './context/AuthContext';
 import ProtectedRoute from './components/ProtectedRoute';
 import MainLayout from './layouts/MainLayout';
+import ManagerLayout from './layouts/ManagerLayout';
 import HomePage from './pages/HomePage';
 import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
 import DashboardPage from './pages/DashboardPage';
+import VehicleTypesPage from './pages/manager/VehicleTypesPage';
 
 export default function App() {
   return (
@@ -31,8 +33,12 @@ export default function App() {
           <Route element={<ProtectedRoute allowedRoles={['Admin']} />}>
             <Route path="/admin" element={<DashboardPage />} />
           </Route>
+          {/* Khu vực Quản lý — ManagerLayout (header + tab nav) bọc các trang con */}
           <Route element={<ProtectedRoute allowedRoles={['Manager']} />}>
-            <Route path="/manager/dashboard" element={<DashboardPage />} />
+            <Route path="/manager" element={<ManagerLayout />}>
+              <Route index element={<Navigate to="vehicle-types" replace />} />
+              <Route path="vehicle-types" element={<VehicleTypesPage />} />
+            </Route>
           </Route>
           <Route element={<ProtectedRoute allowedRoles={['Staff']} />}>
             <Route path="/staff" element={<DashboardPage />} />
