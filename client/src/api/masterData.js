@@ -9,3 +9,14 @@ export const vehicleTypesApi = {
   update: (id, data) => api.put(`/vehicle-types/${id}`, data),
   remove: (id) => api.delete(`/vehicle-types/${id}`),
 };
+
+// CRUD bảng giá theo loại xe. Phí = CEIL(thời gian / đơn vị) × đơn giá.
+// Đọc cho mọi vai trò đã đăng nhập, ghi chỉ Manager.
+export const pricingRulesApi = {
+  list: (vehicleTypeId) =>
+    api.get('/pricing-rules', { params: vehicleTypeId ? { vehicleTypeId } : {} }),
+  get: (id) => api.get(`/pricing-rules/${id}`),
+  create: (data) => api.post('/pricing-rules', data),
+  update: (id, data) => api.put(`/pricing-rules/${id}`, data),
+  remove: (id) => api.delete(`/pricing-rules/${id}`),
+};

@@ -9,6 +9,7 @@ import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
 import DashboardPage from './pages/DashboardPage';
 import VehicleTypesPage from './pages/manager/VehicleTypesPage';
+import PricingRulesPage from './pages/manager/PricingRulesPage';
 
 export default function App() {
   return (
@@ -38,6 +39,7 @@ export default function App() {
             <Route path="/manager" element={<ManagerLayout />}>
               <Route index element={<Navigate to="vehicle-types" replace />} />
               <Route path="vehicle-types" element={<VehicleTypesPage />} />
+              <Route path="pricing-rules" element={<PricingRulesPage />} />
             </Route>
           </Route>
           <Route element={<ProtectedRoute allowedRoles={['Staff']} />}>
