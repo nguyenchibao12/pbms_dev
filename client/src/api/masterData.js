@@ -1,5 +1,15 @@
 import api from './axios';
 
+// CRUD tầng/tầng hầm (mã tầng, cấp, nhãn). Nền cho khu (zone) và chỗ đỗ.
+// Đọc cho mọi vai trò đã đăng nhập, ghi chỉ Manager.
+export const floorsApi = {
+  list: () => api.get('/floors'),
+  get: (id) => api.get(`/floors/${id}`),
+  create: (data) => api.post('/floors', data),
+  update: (id, data) => api.put(`/floors/${id}`, data),
+  remove: (id) => api.delete(`/floors/${id}`),
+};
+
 // CRUD loại xe (Car / Motorbike / SUV...). Đọc cho mọi vai trò đã đăng nhập,
 // ghi (create/update/remove) chỉ Manager — backend tự kiểm tra quyền.
 export const vehicleTypesApi = {

@@ -5,6 +5,7 @@ import { getRoleName, roleLabels } from '../lib/auth';
 
 // Các tab khu vực Quản lý — module sau chỉ cần thêm dòng vào đây + route trong App.jsx.
 const tabs = [
+  { to: '/manager/floors', label: 'Tầng' },
   { to: '/manager/vehicle-types', label: 'Loại xe' },
   { to: '/manager/pricing-rules', label: 'Bảng giá' },
 ];
