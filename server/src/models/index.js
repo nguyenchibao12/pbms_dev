@@ -7,6 +7,7 @@ import ParkingSlot from './parkingSlot.model.js';
 import Gate from './gate.model.js';
 import PricingRule from './pricingRule.model.js';
 import AuditLog from './auditLog.model.js';
+import Payment from './payment.model.js';
 
 Role.hasMany(UserAccount, { foreignKey: 'role_id', as: 'users' });
 UserAccount.belongsTo(Role, { foreignKey: 'role_id', as: 'role' });
@@ -32,4 +33,6 @@ PricingRule.belongsTo(VehicleType, { foreignKey: 'vehicle_type_id', as: 'vehicle
 UserAccount.hasMany(AuditLog, { foreignKey: 'actor_id', as: 'auditLogs' });
 AuditLog.belongsTo(UserAccount, { foreignKey: 'actor_id', as: 'actor' });
 
-export { Role, UserAccount, VehicleType, Floor, Zone, ParkingSlot, Gate, PricingRule, AuditLog };
+// Payment: nền tảng (model + bảng). Quan hệ tới session/reservation/monthly_pass sẽ thêm khi
+// các module đó lên — payment gắn ĐÚNG 1 trong 3 (enforce ở hook beforeValidate của model).
+export { Role, UserAccount, VehicleType, Floor, Zone, ParkingSlot, Gate, PricingRule, AuditLog, Payment };
