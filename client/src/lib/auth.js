@@ -33,7 +33,7 @@ export function getHomePathForRole(roleName) {
     case 'Admin':
       return '/admin';
     case 'Manager':
-      return '/manager/dashboard';
+      return '/manager';
     case 'Staff':
       return '/staff';
     case 'User':
