@@ -35,6 +35,7 @@ export const openapiSpec = {
   tags: [
     { name: 'Auth', description: 'Đăng ký / đăng nhập / quên mật khẩu / Google' },
     { name: 'MasterData', description: 'Tầng/Khu/Chỗ/Cổng/Loại xe/Bảng giá (Manager)' },
+    { name: 'Admin', description: 'Quản lý tài khoản người dùng (Admin)' },
     { name: 'System', description: 'Health check' },
   ],
   paths: {
@@ -146,6 +147,41 @@ export const openapiSpec = {
       get: { tags: ['MasterData'], summary: 'Chi tiết cổng', security: bearer, parameters: [idPath], responses: { 200: ok } },
       put: { tags: ['MasterData'], summary: 'Sửa cổng (Manager)', security: bearer, parameters: [idPath], requestBody: jsonBody({ isActive: true }), responses: { 200: ok } },
       delete: { tags: ['MasterData'], summary: 'Xóa cổng (Manager)', security: bearer, parameters: [idPath], responses: { 200: ok } },
+    },
+
+    // ===== ADMIN — USERS =====
+    '/admin/users': {
+      get: { tags: ['Admin'], summary: 'Danh sách tài khoản (Admin)', security: bearer, responses: { 200: ok, 403: { description: 'Không phải Admin' } } },
+      post: {
+        tags: ['Admin'], summary: 'Tạo tài khoản (Admin)', security: bearer,
+        requestBody: jsonBody({ username: 'manager01', password: 'matkhau123', fullName: 'Trần Thị B', email: 'b@gmail.com', phone: '0900000000', roleId: 2 }),
+        responses: { 201: ok, 409: { description: 'Username đã tồn tại' }, 404: { description: 'Role không tồn tại' } },
+      },
+    },
+    '/admin/users/roles': {
+      get: { tags: ['Admin'], summary: 'Danh sách role để gán (Admin)', security: bearer, responses: { 200: ok, 403: { description: 'Không phải Admin' } } },
+    },
+    '/admin/users/{id}': {
+      patch: {
+        tags: ['Admin'], summary: 'Cập nhật tài khoản — đổi role/khóa/mật khẩu (Admin)', security: bearer, parameters: [idPath],
+        requestBody: jsonBody({ fullName: 'Trần Thị B', email: 'b@gmail.com', phone: '0900000000', roleId: 3, isActive: true, password: 'matkhaumoi' }),
+        responses: { 200: ok, 404: { description: 'User không tồn tại' }, 409: { description: 'Không thể tự khóa/đổi role chính mình' } },
+      },
+    },
+
+    '/admin/audit-logs': {
+      get: {
+        tags: ['Admin'], summary: 'Nhật ký thao tác Admin — có lọc & phân trang (Admin)', security: bearer,
+        parameters: [
+          q('page', 'Trang (mặc định 1)', false, { type: 'integer' }),
+          q('limit', 'Số dòng/trang (mặc định 50, tối đa 200)', false, { type: 'integer' }),
+          q('actorId', 'Lọc theo user thực hiện', false, { type: 'integer' }),
+          q('action', "Lọc theo hành động, vd 'user.create'"),
+          q('from', 'Từ ngày (ISO, vd 2026-01-01)'),
+          q('to', 'Đến ngày (ISO, vd 2026-12-31)'),
+        ],
+        responses: { 200: ok, 403: { description: 'Không phải Admin' } },
+      },
     },
 
     // ===== PRICING RULES (MasterData) =====
