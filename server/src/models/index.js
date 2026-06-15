@@ -6,6 +6,7 @@ import Zone from './zone.model.js';
 import ParkingSlot from './parkingSlot.model.js';
 import Gate from './gate.model.js';
 import PricingRule from './pricingRule.model.js';
+import AuditLog from './auditLog.model.js';
 
 Role.hasMany(UserAccount, { foreignKey: 'role_id', as: 'users' });
 UserAccount.belongsTo(Role, { foreignKey: 'role_id', as: 'role' });
@@ -28,4 +29,7 @@ ParkingSlot.belongsTo(Zone, { foreignKey: 'zone_id', as: 'zone' });
 VehicleType.hasMany(PricingRule, { foreignKey: 'vehicle_type_id', as: 'pricingRules' });
 PricingRule.belongsTo(VehicleType, { foreignKey: 'vehicle_type_id', as: 'vehicleType' });
 
-export { Role, UserAccount, VehicleType, Floor, Zone, ParkingSlot, Gate, PricingRule };
+UserAccount.hasMany(AuditLog, { foreignKey: 'actor_id', as: 'auditLogs' });
+AuditLog.belongsTo(UserAccount, { foreignKey: 'actor_id', as: 'actor' });
+
+export { Role, UserAccount, VehicleType, Floor, Zone, ParkingSlot, Gate, PricingRule, AuditLog };
