@@ -233,20 +233,28 @@ export const vehicleTypeValidators = {
 };
 
 export const pricingRuleValidators = {
-  list: [query('vehicleTypeId').optional().isInt({ min: 1 })],
+  list: [
+    query('vehicleTypeId').optional().isInt({ min: 1 }).withMessage('vehicleTypeId phải là số nguyên dương').toInt(),
+  ],
   create: [
-    body('vehicleTypeId').isInt({ min: 1 }).withMessage('vehicleTypeId is required'),
-    body('unit').isInt({ min: 1 }).withMessage('unit (minutes) is required'),
-    body('baseRate').isFloat({ min: 0 }).withMessage('baseRate is required'),
-    body('effectiveFrom').isISO8601().withMessage('effectiveFrom is required'),
-    body('effectiveTo').optional({ values: 'null' }).isISO8601(),
+    body('vehicleTypeId').isInt({ min: 1 }).withMessage('vehicleTypeId không hợp lệ (số nguyên dương)').toInt(),
+    body('unit').isInt({ min: 1 }).withMessage('Đơn vị tính phí (phút) phải là số nguyên ≥ 1').toInt(),
+    body('baseRate').isFloat({ min: 0 }).withMessage('Đơn giá phải là số ≥ 0').toFloat(),
+    body('effectiveFrom').isISO8601().withMessage('Ngày hiệu lực (effectiveFrom) phải đúng định dạng ISO8601').toDate(),
+    body('effectiveTo')
+      .optional({ values: 'null' })
+      .isISO8601().withMessage('Ngày hết hiệu lực (effectiveTo) phải đúng định dạng ISO8601')
+      .toDate(),
   ],
   update: [
     ...idParam,
-    body('vehicleTypeId').optional().isInt({ min: 1 }),
-    body('unit').optional().isInt({ min: 1 }),
-    body('baseRate').optional().isFloat({ min: 0 }),
-    body('effectiveFrom').optional().isISO8601(),
-    body('effectiveTo').optional({ values: 'null' }).isISO8601(),
+    body('vehicleTypeId').optional().isInt({ min: 1 }).withMessage('vehicleTypeId không hợp lệ (số nguyên dương)').toInt(),
+    body('unit').optional().isInt({ min: 1 }).withMessage('Đơn vị tính phí (phút) phải là số nguyên ≥ 1').toInt(),
+    body('baseRate').optional().isFloat({ min: 0 }).withMessage('Đơn giá phải là số ≥ 0').toFloat(),
+    body('effectiveFrom').optional().isISO8601().withMessage('Ngày hiệu lực (effectiveFrom) phải đúng định dạng ISO8601').toDate(),
+    body('effectiveTo')
+      .optional({ values: 'null' })
+      .isISO8601().withMessage('Ngày hết hiệu lực (effectiveTo) phải đúng định dạng ISO8601')
+      .toDate(),
   ],
 };
