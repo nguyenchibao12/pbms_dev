@@ -29,6 +29,18 @@ export function validateNonNegativeNumber(value, field, { required = true } = {}
   return {};
 }
 
+/** Validate form tầng: bắt buộc mã tầng, tên hiển thị, cấp tầng. */
+export function validateFloorForm(form) {
+  const errors = mergeErrors(
+    validateRequiredText(form.floorCode, 'floorCode', 'mã tầng'),
+    validateRequiredText(form.label, 'label', 'tên hiển thị'),
+  );
+  if (form.floorLevel === '' || form.floorLevel == null) {
+    errors.floorLevel = 'Vui lòng nhập cấp tầng';
+  }
+  return errors;
+}
+
 /** Validate quy tắc giá: loại xe, đơn vị (phút), đơn giá, thời điểm hiệu lực. */
 export function validatePricingRuleForm(form) {
   const errors = mergeErrors(

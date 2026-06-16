@@ -8,6 +8,7 @@ import HomePage from './pages/HomePage';
 import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
 import DashboardPage from './pages/DashboardPage';
+import FloorsPage from './pages/manager/FloorsPage';
 import VehicleTypesPage from './pages/manager/VehicleTypesPage';
 import PricingRulesPage from './pages/manager/PricingRulesPage';
 import ZonesPage from './pages/manager/ZonesPage';
@@ -38,7 +39,8 @@ export default function App() {
           {/* Khu vực Quản lý — ManagerLayout (header + tab nav) bọc các trang con */}
           <Route element={<ProtectedRoute allowedRoles={['Manager']} />}>
             <Route path="/manager" element={<ManagerLayout />}>
-              <Route index element={<Navigate to="vehicle-types" replace />} />
+              <Route index element={<Navigate to="floors" replace />} />
+              <Route path="floors" element={<FloorsPage />} />
               <Route path="vehicle-types" element={<VehicleTypesPage />} />
               <Route path="pricing-rules" element={<PricingRulesPage />} />
               <Route path="zones" element={<ZonesPage />} />

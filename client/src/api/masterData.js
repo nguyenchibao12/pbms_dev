@@ -1,5 +1,7 @@
 import api from './axios';
 
+// CRUD tầng/tầng hầm (mã tầng, cấp, nhãn). Nền cho khu (zone) và chỗ đỗ.
+// Đọc cho mọi vai trò đã đăng nhập, ghi chỉ Manager.
 export const floorsApi = {
   list: () => api.get('/floors'),
   get: (id) => api.get(`/floors/${id}`),
@@ -8,6 +10,7 @@ export const floorsApi = {
   remove: (id) => api.delete(`/floors/${id}`),
 };
 
+// CRUD khu vực (zone) trong từng tầng. Đọc cho mọi vai trò đã đăng nhập, ghi chỉ Manager.
 export const zonesApi = {
   list: (floorId) => api.get('/zones', { params: floorId ? { floorId } : {} }),
   get: (id) => api.get(`/zones/${id}`),
