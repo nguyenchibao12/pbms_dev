@@ -62,3 +62,17 @@ export function validateVehicleTypeForm(form) {
     validateRequiredText(form.typeCode, 'typeCode', 'mã loại xe'),
   );
 }
+
+/** Validate form khu vực (zone): tầng, loại xe, mã khu, tên, số slot. */
+export function validateZoneForm(form) {
+  return mergeErrors(
+    validateRequired(form.floorId, 'floorId', 'tầng'),
+    validateRequired(form.vehicleTypeId, 'vehicleTypeId', 'loại xe'),
+    validateRequiredText(form.zoneCode, 'zoneCode', 'mã khu'),
+    validateRequiredText(form.label, 'label', 'tên khu'),
+    validateNonNegativeNumber(form.totalSlots, 'totalSlots'),
+    form.monthlyPassCapacity !== '' && form.monthlyPassCapacity != null
+      ? validateNonNegativeNumber(form.monthlyPassCapacity, 'monthlyPassCapacity', { required: false })
+      : {},
+  );
+}

@@ -183,53 +183,96 @@ export const parkingSlotValidators = {
 };
 
 export const gateValidators = {
-  list: [query('floorId').optional().isInt({ min: 1 })],
+  list: [
+    query('floorId').optional().isInt({ min: 1 }).withMessage('floorId phải là số nguyên dương').toInt(),
+  ],
   create: [
-    body('floorId').isInt({ min: 1 }).withMessage('floorId is required'),
-    body('gateCode').trim().notEmpty().withMessage('gateCode is required'),
-    body('direction').isIn(['in', 'out']).withMessage('direction must be in or out'),
-    body('vehicleTypeId').optional({ values: 'null' }).isInt({ min: 1 }),
-    body('label').optional().trim().isString(),
-    body('isActive').optional().isBoolean(),
+    body('floorId').isInt({ min: 1 }).withMessage('floorId không hợp lệ (số nguyên dương)').toInt(),
+    body('gateCode')
+      .trim()
+      .notEmpty().withMessage('Mã cổng không được để trống')
+      .bail()
+      .isLength({ max: 20 }).withMessage('Mã cổng tối đa 20 ký tự'),
+    body('direction').isIn(['in', 'out']).withMessage('Hướng cổng chỉ nhận: in (vào) hoặc out (ra)'),
+    body('vehicleTypeId')
+      .optional({ values: 'null' })
+      .isInt({ min: 1 }).withMessage('vehicleTypeId không hợp lệ (số nguyên dương, hoặc null = mọi loại xe)')
+      .toInt(),
+    body('label').optional().trim().isLength({ max: 80 }).withMessage('Tên cổng tối đa 80 ký tự'),
+    body('isActive').optional().isBoolean().withMessage('isActive phải là true/false').toBoolean(),
   ],
   update: [
     ...idParam,
-    body('floorId').optional().isInt({ min: 1 }),
-    body('gateCode').optional().trim().notEmpty(),
-    body('direction').optional().isIn(['in', 'out']),
-    body('vehicleTypeId').optional({ values: 'null' }).isInt({ min: 1 }),
-    body('label').optional().trim().isString(),
-    body('isActive').optional().isBoolean(),
+    body('floorId').optional().isInt({ min: 1 }).withMessage('floorId không hợp lệ (số nguyên dương)').toInt(),
+    body('gateCode')
+      .optional()
+      .trim()
+      .notEmpty().withMessage('Mã cổng không được để trống')
+      .bail()
+      .isLength({ max: 20 }).withMessage('Mã cổng tối đa 20 ký tự'),
+    body('direction').optional().isIn(['in', 'out']).withMessage('Hướng cổng chỉ nhận: in (vào) hoặc out (ra)'),
+    body('vehicleTypeId')
+      .optional({ values: 'null' })
+      .isInt({ min: 1 }).withMessage('vehicleTypeId không hợp lệ (số nguyên dương, hoặc null = mọi loại xe)')
+      .toInt(),
+    body('label').optional().trim().isLength({ max: 80 }).withMessage('Tên cổng tối đa 80 ký tự'),
+    body('isActive').optional().isBoolean().withMessage('isActive phải là true/false').toBoolean(),
   ],
 };
 
 export const vehicleTypeValidators = {
   create: [
-    body('typeName').trim().notEmpty().withMessage('typeName is required'),
-    body('typeCode').trim().notEmpty().withMessage('typeCode is required'),
+    body('typeName')
+      .trim()
+      .notEmpty().withMessage('Tên loại xe không được để trống')
+      .bail()
+      .isLength({ max: 50 }).withMessage('Tên loại xe tối đa 50 ký tự'),
+    body('typeCode')
+      .trim()
+      .notEmpty().withMessage('Mã loại xe không được để trống')
+      .bail()
+      .isLength({ max: 20 }).withMessage('Mã loại xe tối đa 20 ký tự'),
   ],
   update: [
     ...idParam,
-    body('typeName').optional().trim().notEmpty(),
-    body('typeCode').optional().trim().notEmpty(),
+    body('typeName')
+      .optional()
+      .trim()
+      .notEmpty().withMessage('Tên loại xe không được để trống')
+      .bail()
+      .isLength({ max: 50 }).withMessage('Tên loại xe tối đa 50 ký tự'),
+    body('typeCode')
+      .optional()
+      .trim()
+      .notEmpty().withMessage('Mã loại xe không được để trống')
+      .bail()
+      .isLength({ max: 20 }).withMessage('Mã loại xe tối đa 20 ký tự'),
   ],
 };
 
 export const pricingRuleValidators = {
-  list: [query('vehicleTypeId').optional().isInt({ min: 1 })],
+  list: [
+    query('vehicleTypeId').optional().isInt({ min: 1 }).withMessage('vehicleTypeId phải là số nguyên dương').toInt(),
+  ],
   create: [
-    body('vehicleTypeId').isInt({ min: 1 }).withMessage('vehicleTypeId is required'),
-    body('unit').isInt({ min: 1 }).withMessage('unit (minutes) is required'),
-    body('baseRate').isFloat({ min: 0 }).withMessage('baseRate is required'),
-    body('effectiveFrom').isISO8601().withMessage('effectiveFrom is required'),
-    body('effectiveTo').optional({ values: 'null' }).isISO8601(),
+    body('vehicleTypeId').isInt({ min: 1 }).withMessage('vehicleTypeId không hợp lệ (số nguyên dương)').toInt(),
+    body('unit').isInt({ min: 1 }).withMessage('Đơn vị tính phí (phút) phải là số nguyên ≥ 1').toInt(),
+    body('baseRate').isFloat({ min: 0 }).withMessage('Đơn giá phải là số ≥ 0').toFloat(),
+    body('effectiveFrom').isISO8601().withMessage('Ngày hiệu lực (effectiveFrom) phải đúng định dạng ISO8601').toDate(),
+    body('effectiveTo')
+      .optional({ values: 'null' })
+      .isISO8601().withMessage('Ngày hết hiệu lực (effectiveTo) phải đúng định dạng ISO8601')
+      .toDate(),
   ],
   update: [
     ...idParam,
-    body('vehicleTypeId').optional().isInt({ min: 1 }),
-    body('unit').optional().isInt({ min: 1 }),
-    body('baseRate').optional().isFloat({ min: 0 }),
-    body('effectiveFrom').optional().isISO8601(),
-    body('effectiveTo').optional({ values: 'null' }).isISO8601(),
+    body('vehicleTypeId').optional().isInt({ min: 1 }).withMessage('vehicleTypeId không hợp lệ (số nguyên dương)').toInt(),
+    body('unit').optional().isInt({ min: 1 }).withMessage('Đơn vị tính phí (phút) phải là số nguyên ≥ 1').toInt(),
+    body('baseRate').optional().isFloat({ min: 0 }).withMessage('Đơn giá phải là số ≥ 0').toFloat(),
+    body('effectiveFrom').optional().isISO8601().withMessage('Ngày hiệu lực (effectiveFrom) phải đúng định dạng ISO8601').toDate(),
+    body('effectiveTo')
+      .optional({ values: 'null' })
+      .isISO8601().withMessage('Ngày hết hiệu lực (effectiveTo) phải đúng định dạng ISO8601')
+      .toDate(),
   ],
 };

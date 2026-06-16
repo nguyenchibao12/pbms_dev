@@ -10,6 +10,15 @@ export const floorsApi = {
   remove: (id) => api.delete(`/floors/${id}`),
 };
 
+// CRUD khu vực (zone) trong từng tầng. Đọc cho mọi vai trò đã đăng nhập, ghi chỉ Manager.
+export const zonesApi = {
+  list: (floorId) => api.get('/zones', { params: floorId ? { floorId } : {} }),
+  get: (id) => api.get(`/zones/${id}`),
+  create: (data) => api.post('/zones', data),
+  update: (id, data) => api.put(`/zones/${id}`, data),
+  remove: (id) => api.delete(`/zones/${id}`),
+};
+
 // CRUD loại xe (Car / Motorbike / SUV...). Đọc cho mọi vai trò đã đăng nhập,
 // ghi (create/update/remove) chỉ Manager — backend tự kiểm tra quyền.
 export const vehicleTypesApi = {

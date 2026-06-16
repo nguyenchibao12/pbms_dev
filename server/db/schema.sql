@@ -141,6 +141,32 @@ CREATE TABLE IF NOT EXISTS `pricing_rule` (
     REFERENCES `vehicle_type` (`vehicle_type_id`) ON DELETE RESTRICT ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- Thanh toán (payment) — NỀN TẢNG. OR-11: mỗi payment gắn ĐÚNG 1 trong session/reservation/pass
+-- (ràng buộc enforce ở hook beforeValidate của model). Khóa ngoại tới parking_session /
+-- reservation / monthly_pass sẽ thêm khi các module đó được đưa lên.
+CREATE TABLE IF NOT EXISTS `payment` (
+  `payment_id`             INT           NOT NULL AUTO_INCREMENT,
+  `session_id`             INT           NULL,
+  `reservation_id`         INT           NULL,
+  `pass_id`                INT           NULL,
+  `order_code`             BIGINT        NOT NULL,
+  `gateway_transaction_id` VARCHAR(100)  NULL,
+  `gateway_response`       TEXT          NULL,
+  `amount`                 DECIMAL(12,2) NOT NULL,
+  `status`                 ENUM('pending','success','failed','refunded')
+                           NOT NULL DEFAULT 'pending',
+  `method`                 VARCHAR(30)   NOT NULL DEFAULT 'payos',
+  `paid_at`                DATETIME      NULL,
+  `created_at`             DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at`             DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`payment_id`),
+  UNIQUE KEY `uq_payment_order_code` (`order_code`),
+  KEY `idx_payment_session` (`session_id`),
+  KEY `idx_payment_reservation` (`reservation_id`),
+  KEY `idx_payment_pass` (`pass_id`),
+  KEY `idx_payment_status` (`status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 SET FOREIGN_KEY_CHECKS = 1;
 
 -- Hai loại xe mặc định (tùy chọn — Manager có thể thêm/sửa qua API)

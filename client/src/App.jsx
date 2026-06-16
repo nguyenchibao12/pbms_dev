@@ -11,6 +11,7 @@ import DashboardPage from './pages/DashboardPage';
 import FloorsPage from './pages/manager/FloorsPage';
 import VehicleTypesPage from './pages/manager/VehicleTypesPage';
 import PricingRulesPage from './pages/manager/PricingRulesPage';
+import ZonesPage from './pages/manager/ZonesPage';
 
 export default function App() {
   return (
@@ -42,6 +43,7 @@ export default function App() {
               <Route path="floors" element={<FloorsPage />} />
               <Route path="vehicle-types" element={<VehicleTypesPage />} />
               <Route path="pricing-rules" element={<PricingRulesPage />} />
+              <Route path="zones" element={<ZonesPage />} />
             </Route>
           </Route>
           <Route element={<ProtectedRoute allowedRoles={['Staff']} />}>
