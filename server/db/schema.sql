@@ -167,6 +167,37 @@ CREATE TABLE IF NOT EXISTS `payment` (
   KEY `idx_payment_status` (`status`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- Vé tháng (monthly_pass) — khách đăng ký gửi xe theo tháng cho 1 biển số, trong khung giờ
+-- cố định mỗi ngày (valid_from_time–valid_to_time) và khoảng ngày (start_date–end_date).
+-- qr_token: mã QR check-in/out. Khớp model monthlyPass.model.js.
+-- (FK pass_id ← parking_session sẽ thêm khi module session của Staff lên.)
+CREATE TABLE IF NOT EXISTS `monthly_pass` (
+  `pass_id`         INT         NOT NULL AUTO_INCREMENT,
+  `user_id`         INT         NOT NULL,
+  `vehicle_type_id` INT         NOT NULL,
+  `floor_id`        INT         NOT NULL,
+  `plate_number`    VARCHAR(20) NOT NULL,
+  `valid_from_time` TIME        NOT NULL,
+  `valid_to_time`   TIME        NOT NULL,
+  `start_date`      DATE        NOT NULL,
+  `end_date`        DATE        NOT NULL,
+  `status`          ENUM('pending','active','expired','cancelled')
+                    NOT NULL DEFAULT 'pending',
+  `qr_token`        VARCHAR(64) NULL,
+  `created_at`      DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at`      DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`pass_id`),
+  UNIQUE KEY `uq_pass_qr` (`qr_token`),
+  KEY `idx_pass_user` (`user_id`),
+  KEY `idx_pass_status` (`status`),
+  CONSTRAINT `fk_pass_user` FOREIGN KEY (`user_id`)
+    REFERENCES `user_account` (`user_id`) ON DELETE RESTRICT ON UPDATE CASCADE,
+  CONSTRAINT `fk_pass_vehicle_type` FOREIGN KEY (`vehicle_type_id`)
+    REFERENCES `vehicle_type` (`vehicle_type_id`) ON DELETE RESTRICT ON UPDATE CASCADE,
+  CONSTRAINT `fk_pass_floor` FOREIGN KEY (`floor_id`)
+    REFERENCES `floor` (`floor_id`) ON DELETE RESTRICT ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 SET FOREIGN_KEY_CHECKS = 1;
 
 -- Hai loại xe mặc định (tùy chọn — Manager có thể thêm/sửa qua API)
