@@ -89,3 +89,30 @@ export const googleValidator = [
     .isJWT()
     .withMessage('Google idToken không hợp lệ'),
 ];
+
+export const verifyEmailValidator = [
+  body('email')
+    .trim()
+    .notEmpty()
+    .withMessage('Email là bắt buộc')
+    .bail()
+    .isEmail()
+    .withMessage('Email không hợp lệ'),
+  body('token')
+    .isString()
+    .withMessage('Thiếu token')
+    .bail()
+    .isHexadecimal()
+    .isLength({ min: 64, max: 64 })
+    .withMessage('Token xác minh không hợp lệ'),
+];
+
+export const resendVerificationValidator = [
+  body('email')
+    .trim()
+    .notEmpty()
+    .withMessage('Email là bắt buộc')
+    .bail()
+    .isEmail()
+    .withMessage('Email không hợp lệ'),
+];
