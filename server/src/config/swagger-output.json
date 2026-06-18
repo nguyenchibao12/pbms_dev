@@ -1,0 +1,1535 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "PBMS API",
+    "version": "1.0.0",
+    "description": "Parking Building Management System (SU26SWP08). Spec **tự sinh từ route** bằng swagger-autogen.\n\n**Đăng nhập để test:** gọi `POST /api/auth/login`, copy `data.token`, bấm **Authorize** (ổ khóa) và dán token (không cần gõ \"Bearer\"). Các endpoint có ổ khóa sẽ tự gắn header `Authorization: Bearer <token>`.\n\nMọi response dạng `{ success, data, message? }` hoặc `{ success:false, error:{ code, message } }`."
+  },
+  "servers": [
+    {
+      "url": "/",
+      "description": "Server hiện tại"
+    }
+  ],
+  "tags": [
+    {
+      "name": "Auth",
+      "description": "Đăng ký / đăng nhập / quên mật khẩu / Google / xác minh email"
+    },
+    {
+      "name": "System",
+      "description": "Health check"
+    },
+    {
+      "name": "Public",
+      "description": "Thông tin công khai (không cần đăng nhập)"
+    },
+    {
+      "name": "MasterData",
+      "description": "Tầng / Khu / Chỗ / Cổng / Loại xe / Bảng giá (Manager)"
+    },
+    {
+      "name": "Admin",
+      "description": "Quản lý tài khoản người dùng + nhật ký (Admin)"
+    },
+    {
+      "name": "Sessions",
+      "description": "Phiên gửi xe — check-in, tra cứu QR, phí (Staff)"
+    }
+  ],
+  "paths": {
+    "/api/health/": {
+      "get": {
+        "tags": [
+          "System"
+        ],
+        "summary": "Health check",
+        "description": "",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "security": []
+      }
+    },
+    "/api/auth/register": {
+      "post": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Đăng ký (role User, email bắt buộc)",
+        "description": "",
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        },
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "example": {
+                "username": "khachhang01",
+                "password": "matkhau123",
+                "fullName": "Nguyễn Văn A",
+                "email": "a@gmail.com",
+                "phone": "0900000000"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/login": {
+      "post": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Đăng nhập (trả về token JWT)",
+        "description": "",
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        },
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "example": {
+                "username": "admin",
+                "password": "matkhau"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/google": {
+      "post": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Đăng nhập Google (ID token)",
+        "description": "",
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        },
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "example": {
+                "idToken": "<google_id_token>"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/forgot-password": {
+      "post": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Quên mật khẩu (gửi email link reset)",
+        "description": "",
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        },
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "example": {
+                "email": "a@gmail.com"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/reset-password": {
+      "post": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Đặt lại mật khẩu bằng token",
+        "description": "",
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        },
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "example": {
+                "email": "a@gmail.com",
+                "token": "<token-từ-email>",
+                "newPassword": "matkhaumoi"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/verify-email": {
+      "get": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Xác minh email qua link (GET → trang HTML)",
+        "description": "",
+        "parameters": [
+          {
+            "name": "email",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "token",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "400": {
+            "description": "Bad Request"
+          }
+        },
+        "security": []
+      },
+      "post": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Xác minh email bằng token (POST)",
+        "description": "",
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        },
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "example": {
+                "email": "a@gmail.com",
+                "token": "<token-từ-email>"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/resend-verification": {
+      "post": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Gửi lại email xác minh",
+        "description": "",
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        },
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "example": {
+                "email": "a@gmail.com"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/me": {
+      "get": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Thông tin user hiện tại",
+        "description": "",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        }
+      }
+    },
+    "/api/vehicle-types/": {
+      "get": {
+        "tags": [
+          "MasterData"
+        ],
+        "summary": "Danh sách loại xe",
+        "description": "",
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "MasterData"
+        ],
+        "summary": "Thêm loại xe (Manager)",
+        "description": "",
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "example": {
+                "typeName": "Ô tô",
+                "typeCode": "CAR"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/vehicle-types/{id}": {
+      "get": {
+        "tags": [
+          "MasterData"
+        ],
+        "summary": "Chi tiết loại xe",
+        "description": "",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "MasterData"
+        ],
+        "summary": "Sửa loại xe (Manager)",
+        "description": "",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "example": {
+                "typeName": "Xe máy"
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "MasterData"
+        ],
+        "summary": "Xóa loại xe (Manager)",
+        "description": "",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        }
+      }
+    },
+    "/api/floors/": {
+      "get": {
+        "tags": [
+          "MasterData"
+        ],
+        "summary": "Danh sách tầng",
+        "description": "",
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "MasterData"
+        ],
+        "summary": "Thêm tầng (Manager)",
+        "description": "",
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "example": {
+                "floorCode": "B3",
+                "floorLevel": -3,
+                "label": "Hầm B3"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/floors/setup": {
+      "post": {
+        "tags": [
+          "MasterData"
+        ],
+        "summary": "Thiết lập nhanh tầng (Manager) — floor + zone + slot + cổng",
+        "description": "",
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "example": {
+                "floor": {
+                  "floorCode": "B3",
+                  "floorLevel": -3,
+                  "label": "Hầm B3"
+                },
+                "zones": [
+                  {
+                    "vehicleTypeId": 1,
+                    "zoneCode": "B3-A",
+                    "label": "Khu A ô tô",
+                    "slotCount": 40,
+                    "codePrefix": "A-",
+                    "monthlyPassCapacity": 10,
+                    "distanceStart": 10,
+                    "distanceStep": 5
+                  }
+                ],
+                "gates": {
+                  "auto": true
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/floors/{id}": {
+      "get": {
+        "tags": [
+          "MasterData"
+        ],
+        "summary": "Chi tiết tầng",
+        "description": "",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "MasterData"
+        ],
+        "summary": "Sửa tầng (Manager)",
+        "description": "",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "example": {
+                "label": "Hầm B3 mới"
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "MasterData"
+        ],
+        "summary": "Xóa tầng (Manager)",
+        "description": "",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        }
+      }
+    },
+    "/api/floors/{id}/clone": {
+      "post": {
+        "tags": [
+          "MasterData"
+        ],
+        "summary": "Nhân bản tầng (Manager)",
+        "description": "",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "example": {
+                "floorCode": "B4",
+                "floorLevel": -4,
+                "label": "Hầm B4"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/zones/": {
+      "get": {
+        "tags": [
+          "MasterData"
+        ],
+        "summary": "Danh sách khu",
+        "description": "",
+        "parameters": [
+          {
+            "name": "floorId",
+            "in": "query",
+            "description": "Lọc theo tầng",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "MasterData"
+        ],
+        "summary": "Thêm khu (Manager)",
+        "description": "",
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "example": {
+                "floorId": 1,
+                "vehicleTypeId": 1,
+                "zoneCode": "B1-A",
+                "label": "Khu A",
+                "totalSlots": 0,
+                "monthlyPassCapacity": 5
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/zones/{id}": {
+      "get": {
+        "tags": [
+          "MasterData"
+        ],
+        "summary": "Chi tiết khu",
+        "description": "",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "MasterData"
+        ],
+        "summary": "Sửa khu (Manager)",
+        "description": "",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "example": {
+                "label": "Khu A mới",
+                "monthlyPassCapacity": 8
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "MasterData"
+        ],
+        "summary": "Xóa khu (Manager)",
+        "description": "",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        }
+      }
+    },
+    "/api/zones/{id}/slots/bulk": {
+      "post": {
+        "tags": [
+          "MasterData"
+        ],
+        "summary": "Sinh nhiều chỗ cho khu (Manager)",
+        "description": "",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "example": {
+                "count": 20,
+                "codePrefix": "A-",
+                "distanceStart": 10,
+                "distanceStep": 5
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/parking-slots/": {
+      "get": {
+        "tags": [
+          "MasterData"
+        ],
+        "summary": "Danh sách chỗ",
+        "description": "",
+        "parameters": [
+          {
+            "name": "zoneId",
+            "in": "query",
+            "description": "Lọc theo khu",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "MasterData"
+        ],
+        "summary": "Thêm chỗ (Manager)",
+        "description": "",
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "example": {
+                "zoneId": 1,
+                "slotCode": "A-01",
+                "distanceToGate": 10
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/parking-slots/{id}": {
+      "get": {
+        "tags": [
+          "MasterData"
+        ],
+        "summary": "Chi tiết chỗ",
+        "description": "",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "MasterData"
+        ],
+        "summary": "Sửa chỗ — gồm đổi status (Manager)",
+        "description": "",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "example": {
+                "status": "maintenance",
+                "distanceToGate": 12
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "MasterData"
+        ],
+        "summary": "Xóa chỗ (Manager)",
+        "description": "",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        }
+      }
+    },
+    "/api/gates/": {
+      "get": {
+        "tags": [
+          "MasterData"
+        ],
+        "summary": "Danh sách cổng",
+        "description": "",
+        "parameters": [
+          {
+            "name": "floorId",
+            "in": "query",
+            "description": "Lọc theo tầng",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "MasterData"
+        ],
+        "summary": "Thêm cổng (Manager)",
+        "description": "",
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "example": {
+                "floorId": 1,
+                "gateCode": "B1-IN-CAR",
+                "direction": "in",
+                "vehicleTypeId": 1,
+                "label": "Cổng vào ô tô"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/gates/{id}": {
+      "get": {
+        "tags": [
+          "MasterData"
+        ],
+        "summary": "Chi tiết cổng",
+        "description": "",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "MasterData"
+        ],
+        "summary": "Sửa cổng (Manager)",
+        "description": "",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "example": {
+                "isActive": true
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "MasterData"
+        ],
+        "summary": "Xóa cổng (Manager)",
+        "description": "",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        }
+      }
+    },
+    "/api/pricing-rules/": {
+      "get": {
+        "tags": [
+          "MasterData"
+        ],
+        "summary": "Danh sách bảng giá",
+        "description": "",
+        "parameters": [
+          {
+            "name": "vehicleTypeId",
+            "in": "query",
+            "description": "Lọc theo loại xe",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "MasterData"
+        ],
+        "summary": "Thêm bảng giá (Manager)",
+        "description": "",
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "example": {
+                "vehicleTypeId": 1,
+                "unit": 60,
+                "baseRate": 10000,
+                "effectiveFrom": "2026-01-01T00:00:00Z"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/pricing-rules/{id}": {
+      "get": {
+        "tags": [
+          "MasterData"
+        ],
+        "summary": "Chi tiết bảng giá",
+        "description": "",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "MasterData"
+        ],
+        "summary": "Sửa bảng giá (Manager)",
+        "description": "",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "example": {
+                "baseRate": 12000
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "MasterData"
+        ],
+        "summary": "Xóa bảng giá (Manager)",
+        "description": "",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        }
+      }
+    },
+    "/api/admin/users/roles": {
+      "get": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Danh sách role để gán (Admin)",
+        "description": "",
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        }
+      }
+    },
+    "/api/admin/users/": {
+      "get": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Danh sách tài khoản (Admin)",
+        "description": "",
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Tạo tài khoản (Admin)",
+        "description": "",
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "example": {
+                "username": "manager01",
+                "password": "matkhau123",
+                "fullName": "Trần Thị B",
+                "email": "b@gmail.com",
+                "phone": "0900000000",
+                "roleId": 2
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/users/{id}": {
+      "patch": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Cập nhật tài khoản — đổi role/khóa/mật khẩu (Admin)",
+        "description": "",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "example": {
+                "fullName": "Trần Thị B",
+                "email": "b@gmail.com",
+                "phone": "0900000000",
+                "roleId": 3,
+                "isActive": true,
+                "password": "matkhaumoi"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/audit-logs/": {
+      "get": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Nhật ký thao tác Admin — lọc & phân trang (Admin)",
+        "description": "",
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "description": "Trang (mặc định 1)",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Số dòng/trang (mặc định 50, tối đa 200)",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "actorId",
+            "in": "query",
+            "description": "Lọc theo user thực hiện",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "action",
+            "in": "query",
+            "description": "Lọc theo hành động, vd user.create",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "description": "Từ ngày (ISO)",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "description": "Đến ngày (ISO)",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        }
+      }
+    },
+    "/api/public/pricing": {
+      "get": {
+        "tags": [
+          "Public"
+        ],
+        "summary": "Bảng giá công khai",
+        "description": "",
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        },
+        "security": []
+      }
+    },
+    "/api/public/availability": {
+      "get": {
+        "tags": [
+          "Public"
+        ],
+        "summary": "Số chỗ trống công khai",
+        "description": "",
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        },
+        "security": []
+      }
+    },
+    "/api/public/info": {
+      "get": {
+        "tags": [
+          "Public"
+        ],
+        "summary": "Thông tin tòa nhà công khai",
+        "description": "",
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        },
+        "security": []
+      }
+    },
+    "/api/sessions/active": {
+      "get": {
+        "tags": [
+          "Sessions"
+        ],
+        "summary": "Xe đang trong bãi (Staff)",
+        "description": "",
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        }
+      }
+    },
+    "/api/sessions/mine/active": {
+      "get": {
+        "tags": [
+          "Sessions"
+        ],
+        "summary": "Phiên đang mở của tôi (User)",
+        "description": "",
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        }
+      }
+    },
+    "/api/sessions/staff/lookup": {
+      "get": {
+        "tags": [
+          "Sessions"
+        ],
+        "summary": "Tra cứu phiên bằng QR (Staff/Manager)",
+        "description": "",
+        "parameters": [
+          {
+            "name": "qrToken",
+            "in": "query",
+            "required": true,
+            "description": "Mã QR trên vé (≥16 ký tự)",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        }
+      }
+    },
+    "/api/sessions/{id}": {
+      "get": {
+        "tags": [
+          "Sessions"
+        ],
+        "summary": "Chi tiết phiên",
+        "description": "",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        }
+      }
+    },
+    "/api/sessions/checkin": {
+      "post": {
+        "tags": [
+          "Sessions"
+        ],
+        "summary": "Check-in xe vào (Staff)",
+        "description": "",
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "example": {
+                "plateNumber": "51F-12345",
+                "vehicleTypeId": 1,
+                "floorId": 1,
+                "gateId": 1,
+                "zoneId": 1
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/sessions/preview-fee": {
+      "post": {
+        "tags": [
+          "Sessions"
+        ],
+        "summary": "Xem trước phí (Staff)",
+        "description": "",
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "example": {
+                "plateNumber": "51F-12345",
+                "lostTicket": false
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/sessions/{id}/plate": {
+      "patch": {
+        "tags": [
+          "Sessions"
+        ],
+        "summary": "Sửa biển số phiên (Staff)",
+        "description": "",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "example": {
+                "plateNumber": "51F-67890"
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      }
+    }
+  },
+  "security": [
+    {
+      "bearerAuth": []
+    }
+  ]
+}

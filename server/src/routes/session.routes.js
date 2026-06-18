@@ -12,21 +12,52 @@ import {
 
 const router = Router();
 
-router.get('/active', ...staffOnly, sessionController.listActive);
-router.get('/mine/active', ...userOnly, sessionController.listMineActive);
+router.get('/active',
+  /* #swagger.tags = ['Sessions']
+     #swagger.summary = 'Xe đang trong bãi (Staff)' */
+  ...staffOnly, sessionController.listActive);
+
+router.get('/mine/active',
+  /* #swagger.tags = ['Sessions']
+     #swagger.summary = 'Phiên đang mở của tôi (User)' */
+  ...userOnly, sessionController.listMineActive);
+
 router.get(
   '/staff/lookup',
+  /* #swagger.tags = ['Sessions']
+     #swagger.summary = 'Tra cứu phiên bằng QR (Staff/Manager)'
+     #swagger.parameters['qrToken'] = { in: 'query', required: true, description: 'Mã QR trên vé (≥16 ký tự)', schema: { type: 'string' } } */
   ...staffOrManager,
   staffQrLookupValidator,
   validate,
   sessionController.staffLookupByQr,
 );
-router.get('/:id', ...authenticated, sessionIdParam, validate, sessionController.get);
-router.post('/checkin', ...staffOnly, checkinValidator, validate, sessionController.checkin);
+
+router.get('/:id',
+  /* #swagger.tags = ['Sessions']
+     #swagger.summary = 'Chi tiết phiên' */
+  ...authenticated, sessionIdParam, validate, sessionController.get);
+
+router.post('/checkin',
+  /* #swagger.tags = ['Sessions']
+     #swagger.summary = 'Check-in xe vào (Staff)'
+     #swagger.requestBody = { required: true, content: { 'application/json': { example: { plateNumber: '51F-12345', vehicleTypeId: 1, floorId: 1, gateId: 1, zoneId: 1 } } } } */
+  ...staffOnly, checkinValidator, validate, sessionController.checkin);
+
 // TODO(payment): bật lại khi services/payment.service.js (module thanh toán) được merge.
 // checkout phụ thuộc initiateSessionCheckout trong payment.service nên tạm chưa mount.
 // router.post('/checkout', ...staffOnly, checkoutValidator, validate, sessionController.checkout);
-router.post('/preview-fee', ...staffOnly, previewFeeValidator, validate, sessionController.previewFee);
-router.patch('/:id/plate', ...staffOnly, correctPlateValidator, validate, sessionController.correctPlate);
+
+router.post('/preview-fee',
+  /* #swagger.tags = ['Sessions']
+     #swagger.summary = 'Xem trước phí (Staff)'
+     #swagger.requestBody = { required: true, content: { 'application/json': { example: { plateNumber: '51F-12345', lostTicket: false } } } } */
+  ...staffOnly, previewFeeValidator, validate, sessionController.previewFee);
+
+router.patch('/:id/plate',
+  /* #swagger.tags = ['Sessions']
+     #swagger.summary = 'Sửa biển số phiên (Staff)'
+     #swagger.requestBody = { required: true, content: { 'application/json': { example: { plateNumber: '51F-67890' } } } } */
+  ...staffOnly, correctPlateValidator, validate, sessionController.correctPlate);
 
 export default router;

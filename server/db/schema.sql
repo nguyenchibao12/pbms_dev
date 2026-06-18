@@ -32,6 +32,9 @@ CREATE TABLE IF NOT EXISTS `user_account` (
   `google_id`           VARCHAR(64) NULL,
   `reset_token_hash`    VARCHAR(255) NULL COMMENT 'SHA-256 của token reset mật khẩu',
   `reset_token_expires` DATETIME NULL,
+  `email_verified`             TINYINT(1)   NOT NULL DEFAULT 0 COMMENT 'Đã xác minh email chưa',
+  `verification_token_hash`    VARCHAR(255) NULL COMMENT 'SHA-256 của token xác minh email',
+  `verification_token_expires` DATETIME     NULL,
   `created_at`          DATETIME NOT NULL,
   `updated_at`          DATETIME NOT NULL,
   PRIMARY KEY (`user_id`),
@@ -139,6 +142,63 @@ CREATE TABLE IF NOT EXISTS `pricing_rule` (
   KEY `idx_pricing_vehicle_type` (`vehicle_type_id`),
   CONSTRAINT `fk_pricing_vehicle_type` FOREIGN KEY (`vehicle_type_id`)
     REFERENCES `vehicle_type` (`vehicle_type_id`) ON DELETE RESTRICT ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Thanh toán (payment) — NỀN TẢNG. OR-11: mỗi payment gắn ĐÚNG 1 trong session/reservation/pass
+-- (ràng buộc enforce ở hook beforeValidate của model). Khóa ngoại tới parking_session /
+-- reservation / monthly_pass sẽ thêm khi các module đó được đưa lên.
+CREATE TABLE IF NOT EXISTS `payment` (
+  `payment_id`             INT           NOT NULL AUTO_INCREMENT,
+  `session_id`             INT           NULL,
+  `reservation_id`         INT           NULL,
+  `pass_id`                INT           NULL,
+  `order_code`             BIGINT        NOT NULL,
+  `gateway_transaction_id` VARCHAR(100)  NULL,
+  `gateway_response`       TEXT          NULL,
+  `amount`                 DECIMAL(12,2) NOT NULL,
+  `status`                 ENUM('pending','success','failed','refunded')
+                           NOT NULL DEFAULT 'pending',
+  `method`                 VARCHAR(30)   NOT NULL DEFAULT 'payos',
+  `paid_at`                DATETIME      NULL,
+  `created_at`             DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at`             DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`payment_id`),
+  UNIQUE KEY `uq_payment_order_code` (`order_code`),
+  KEY `idx_payment_session` (`session_id`),
+  KEY `idx_payment_reservation` (`reservation_id`),
+  KEY `idx_payment_pass` (`pass_id`),
+  KEY `idx_payment_status` (`status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Vé tháng (monthly_pass) — khách đăng ký gửi xe theo tháng cho 1 biển số, trong khung giờ
+-- cố định mỗi ngày (valid_from_time–valid_to_time) và khoảng ngày (start_date–end_date).
+-- qr_token: mã QR check-in/out. Khớp model monthlyPass.model.js.
+-- (FK pass_id ← parking_session sẽ thêm khi module session của Staff lên.)
+CREATE TABLE IF NOT EXISTS `monthly_pass` (
+  `pass_id`         INT         NOT NULL AUTO_INCREMENT,
+  `user_id`         INT         NOT NULL,
+  `vehicle_type_id` INT         NOT NULL,
+  `floor_id`        INT         NOT NULL,
+  `plate_number`    VARCHAR(20) NOT NULL,
+  `valid_from_time` TIME        NOT NULL,
+  `valid_to_time`   TIME        NOT NULL,
+  `start_date`      DATE        NOT NULL,
+  `end_date`        DATE        NOT NULL,
+  `status`          ENUM('pending','active','expired','cancelled')
+                    NOT NULL DEFAULT 'pending',
+  `qr_token`        VARCHAR(64) NULL,
+  `created_at`      DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at`      DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`pass_id`),
+  UNIQUE KEY `uq_pass_qr` (`qr_token`),
+  KEY `idx_pass_user` (`user_id`),
+  KEY `idx_pass_status` (`status`),
+  CONSTRAINT `fk_pass_user` FOREIGN KEY (`user_id`)
+    REFERENCES `user_account` (`user_id`) ON DELETE RESTRICT ON UPDATE CASCADE,
+  CONSTRAINT `fk_pass_vehicle_type` FOREIGN KEY (`vehicle_type_id`)
+    REFERENCES `vehicle_type` (`vehicle_type_id`) ON DELETE RESTRICT ON UPDATE CASCADE,
+  CONSTRAINT `fk_pass_floor` FOREIGN KEY (`floor_id`)
+    REFERENCES `floor` (`floor_id`) ON DELETE RESTRICT ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 SET FOREIGN_KEY_CHECKS = 1;

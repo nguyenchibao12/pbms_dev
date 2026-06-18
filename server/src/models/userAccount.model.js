@@ -60,12 +60,26 @@ const UserAccount = sequelize.define(
       type: DataTypes.DATE,
       allowNull: true,
     },
+    email_verified: {
+      type: DataTypes.BOOLEAN,
+      allowNull: false,
+      defaultValue: false,
+    },
+    verification_token_hash: {
+      type: DataTypes.STRING(255),
+      allowNull: true,
+      comment: 'SHA-256 của token xác minh email',
+    },
+    verification_token_expires: {
+      type: DataTypes.DATE,
+      allowNull: true,
+    },
   },
   {
     tableName: 'user_account',
     timestamps: true,
     defaultScope: {
-      attributes: { exclude: ['password_hash', 'reset_token_hash'] },
+      attributes: { exclude: ['password_hash', 'reset_token_hash', 'verification_token_hash'] },
     },
     scopes: {
       withPassword: {

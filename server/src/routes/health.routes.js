@@ -2,8 +2,12 @@ import { Router } from 'express';
 
 const router = Router();
 
-router.get('/', (_req, res) => {
-  res.json({ success: true, data: { status: 'ok', time: new Date().toISOString() } });
-});
+router.get('/',
+  /* #swagger.tags = ['System']
+     #swagger.summary = 'Health check'
+     #swagger.security = [] */
+  (_req, res) => {
+    res.json({ success: true, data: { status: 'ok', time: new Date().toISOString() } });
+  });
 
 export default router;

@@ -6,12 +6,43 @@ import { floorValidators, idParam } from '../validators/masterData.validator.js'
 
 const router = Router();
 
-router.get('/', ...authenticated, floorController.list);
-router.post('/setup', ...managerWrite, floorValidators.quickSetup, validate, floorController.quickSetup);
-router.get('/:id', ...authenticated, idParam, validate, floorController.get);
-router.post('/:id/clone', ...managerWrite, floorValidators.clone, validate, floorController.clone);
-router.post('/', ...managerWrite, floorValidators.create, validate, floorController.create);
-router.put('/:id', ...managerWrite, floorValidators.update, validate, floorController.update);
-router.delete('/:id', ...managerWrite, idParam, validate, floorController.remove);
+router.get('/',
+  /* #swagger.tags = ['MasterData']
+     #swagger.summary = 'Danh sách tầng' */
+  ...authenticated, floorController.list);
+
+router.post('/setup',
+  /* #swagger.tags = ['MasterData']
+     #swagger.summary = 'Thiết lập nhanh tầng (Manager) — floor + zone + slot + cổng'
+     #swagger.requestBody = { required: true, content: { 'application/json': { example: { floor: { floorCode: 'B3', floorLevel: -3, label: 'Hầm B3' }, zones: [{ vehicleTypeId: 1, zoneCode: 'B3-A', label: 'Khu A ô tô', slotCount: 40, codePrefix: 'A-', monthlyPassCapacity: 10, distanceStart: 10, distanceStep: 5 }], gates: { auto: true } } } } } */
+  ...managerWrite, floorValidators.quickSetup, validate, floorController.quickSetup);
+
+router.get('/:id',
+  /* #swagger.tags = ['MasterData']
+     #swagger.summary = 'Chi tiết tầng' */
+  ...authenticated, idParam, validate, floorController.get);
+
+router.post('/:id/clone',
+  /* #swagger.tags = ['MasterData']
+     #swagger.summary = 'Nhân bản tầng (Manager)'
+     #swagger.requestBody = { required: true, content: { 'application/json': { example: { floorCode: 'B4', floorLevel: -4, label: 'Hầm B4' } } } } */
+  ...managerWrite, floorValidators.clone, validate, floorController.clone);
+
+router.post('/',
+  /* #swagger.tags = ['MasterData']
+     #swagger.summary = 'Thêm tầng (Manager)'
+     #swagger.requestBody = { required: true, content: { 'application/json': { example: { floorCode: 'B3', floorLevel: -3, label: 'Hầm B3' } } } } */
+  ...managerWrite, floorValidators.create, validate, floorController.create);
+
+router.put('/:id',
+  /* #swagger.tags = ['MasterData']
+     #swagger.summary = 'Sửa tầng (Manager)'
+     #swagger.requestBody = { required: true, content: { 'application/json': { example: { label: 'Hầm B3 mới' } } } } */
+  ...managerWrite, floorValidators.update, validate, floorController.update);
+
+router.delete('/:id',
+  /* #swagger.tags = ['MasterData']
+     #swagger.summary = 'Xóa tầng (Manager)' */
+  ...managerWrite, idParam, validate, floorController.remove);
 
 export default router;
