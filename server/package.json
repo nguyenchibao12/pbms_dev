@@ -3,6 +3,9 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
+    "swagger": "node src/config/swagger-gen.js",
+    "predev": "node src/config/swagger-gen.js",
+    "prestart": "node src/config/swagger-gen.js",
     "dev": "nodemon src/index.js",
     "start": "node src/index.js",
     "create-admin": "node scripts/createAdmin.js"
@@ -23,6 +26,7 @@
     "swagger-ui-express": "^5.0.1"
   },
   "devDependencies": {
-    "nodemon": "^3.1.10"
+    "nodemon": "^3.1.10",
+    "swagger-autogen": "^2.23.7"
   }
 }
