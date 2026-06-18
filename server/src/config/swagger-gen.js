@@ -24,6 +24,7 @@ const doc = {
     { name: 'Public', description: 'Thông tin công khai (không cần đăng nhập)' },
     { name: 'MasterData', description: 'Tầng / Khu / Chỗ / Cổng / Loại xe / Bảng giá (Manager)' },
     { name: 'Admin', description: 'Quản lý tài khoản người dùng + nhật ký (Admin)' },
+    { name: 'Sessions', description: 'Phiên gửi xe — check-in, tra cứu QR, phí (Staff)' },
   ],
   components: {
     securitySchemes: {

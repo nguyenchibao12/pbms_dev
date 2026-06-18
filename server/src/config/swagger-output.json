@@ -31,6 +31,10 @@
     {
       "name": "Admin",
       "description": "Quản lý tài khoản người dùng + nhật ký (Admin)"
+    },
+    {
+      "name": "Sessions",
+      "description": "Phiên gửi xe — check-in, tra cứu QR, phí (Staff)"
     }
   ],
   "paths": {
@@ -1249,27 +1253,6 @@
         "description": "",
         "parameters": [
           {
-            "name": "action",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "from",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "to",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
             "name": "page",
             "in": "query",
             "description": "Trang (mặc định 1)",
@@ -1291,6 +1274,30 @@
             "description": "Lọc theo user thực hiện",
             "schema": {
               "type": "integer"
+            }
+          },
+          {
+            "name": "action",
+            "in": "query",
+            "description": "Lọc theo hành động, vd user.create",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "description": "Từ ngày (ISO)",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "description": "Đến ngày (ISO)",
+            "schema": {
+              "type": "string"
             }
           }
         ],
@@ -1344,6 +1351,170 @@
           }
         },
         "security": []
+      }
+    },
+    "/api/sessions/active": {
+      "get": {
+        "tags": [
+          "Sessions"
+        ],
+        "summary": "Xe đang trong bãi (Staff)",
+        "description": "",
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        }
+      }
+    },
+    "/api/sessions/mine/active": {
+      "get": {
+        "tags": [
+          "Sessions"
+        ],
+        "summary": "Phiên đang mở của tôi (User)",
+        "description": "",
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        }
+      }
+    },
+    "/api/sessions/staff/lookup": {
+      "get": {
+        "tags": [
+          "Sessions"
+        ],
+        "summary": "Tra cứu phiên bằng QR (Staff/Manager)",
+        "description": "",
+        "parameters": [
+          {
+            "name": "qrToken",
+            "in": "query",
+            "required": true,
+            "description": "Mã QR trên vé (≥16 ký tự)",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        }
+      }
+    },
+    "/api/sessions/{id}": {
+      "get": {
+        "tags": [
+          "Sessions"
+        ],
+        "summary": "Chi tiết phiên",
+        "description": "",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        }
+      }
+    },
+    "/api/sessions/checkin": {
+      "post": {
+        "tags": [
+          "Sessions"
+        ],
+        "summary": "Check-in xe vào (Staff)",
+        "description": "",
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "example": {
+                "plateNumber": "51F-12345",
+                "vehicleTypeId": 1,
+                "floorId": 1,
+                "gateId": 1,
+                "zoneId": 1
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/sessions/preview-fee": {
+      "post": {
+        "tags": [
+          "Sessions"
+        ],
+        "summary": "Xem trước phí (Staff)",
+        "description": "",
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "example": {
+                "plateNumber": "51F-12345",
+                "lostTicket": false
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/sessions/{id}/plate": {
+      "patch": {
+        "tags": [
+          "Sessions"
+        ],
+        "summary": "Sửa biển số phiên (Staff)",
+        "description": "",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "example": {
+                "plateNumber": "51F-67890"
+              }
+            }
+          }
+        }
       }
     }
   },
