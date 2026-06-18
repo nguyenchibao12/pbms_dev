@@ -1,8 +1,8 @@
+import { readFileSync } from 'node:fs';
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import swaggerUi from 'swagger-ui-express';
-import { openapiSpec } from './config/swagger.js';
 import healthRoutes from './routes/health.routes.js';
 import authRoutes from './routes/auth.routes.js';
 import vehicleTypeRoutes from './routes/vehicleType.routes.js';
@@ -19,6 +19,11 @@ import { securityHeaders, jsonParserLimit, getCorsOrigin } from './middleware/se
 
 dotenv.config();
 
+// OpenAPI spec tự sinh từ route (swagger-autogen). Sinh lại bằng: npm run swagger
+const openapiSpec = JSON.parse(
+  readFileSync(new URL('./config/swagger-output.json', import.meta.url)),
+);
+
 const app = express();
 
 const corsOrigin = process.env.NODE_ENV === 'production' ? getCorsOrigin() : true;
@@ -33,6 +38,7 @@ app.use(
 app.use(express.json({ limit: jsonParserLimit }));
 
 app.get('/', (_req, res) => {
+  // #swagger.ignore = true
   res.json({ success: true, data: { name: 'PBMS API', version: '1.0.0' }, message: 'Welcome' });
 });
 
@@ -49,7 +55,10 @@ app.use('/api/admin/audit-logs', auditRoutes);
 app.use('/api/public', publicRoutes);
 
 // Swagger UI — tài liệu + test API trực tiếp tại /api/docs (spec JSON: /api/docs.json)
-app.get('/api/docs.json', (_req, res) => res.json(openapiSpec));
+app.get('/api/docs.json', (_req, res) => {
+  // #swagger.ignore = true
+  res.json(openapiSpec);
+});
 app.use(
   '/api/docs',
   (_req, res, next) => {
