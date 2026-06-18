@@ -1799,6 +1799,48 @@
           }
         }
       }
+    },
+    "/api/reports/overview": {
+      "get": {
+        "tags": [
+          "Reports"
+        ],
+        "summary": "Tổng quan: doanh thu + lưu lượng vào/ra + lấp đầy theo khoảng ngày (Manager)",
+        "description": "",
+        "parameters": [
+          {
+            "name": "from",
+            "in": "query",
+            "required": true,
+            "description": "Từ ngày (ISO8601)",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": true,
+            "description": "Đến ngày (ISO8601)",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "floorId",
+            "in": "query",
+            "description": "Lọc theo tầng",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        }
+      }
     }
   },
   "components": {
