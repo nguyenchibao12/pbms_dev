@@ -1,0 +1,92 @@
+import { DataTypes } from 'sequelize';
+import sequelize from '../config/db.js';
+
+export const SESSION_STATUSES = ['active', 'completed', 'exception'];
+export const SESSION_TYPES = ['walk_in', 'reservation', 'monthly_pass', 'auto_registered'];
+
+const ParkingSession = sequelize.define(
+  'parking_session',
+  {
+    session_id: {
+      type: DataTypes.INTEGER,
+      primaryKey: true,
+      autoIncrement: true,
+    },
+    user_id: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+    },
+    reservation_id: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+    },
+    pass_id: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+    },
+    gate_id: {
+      type: DataTypes.INTEGER,
+      allowNull: false,
+      comment: 'Cổng VÀO (entry gate)',
+    },
+    exit_gate_id: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+      comment: 'Cổng RA (exit gate) — ghi lúc check-out',
+    },
+    slot_id: {
+      type: DataTypes.INTEGER,
+      allowNull: false,
+    },
+    vehicle_type_id: {
+      type: DataTypes.INTEGER,
+      allowNull: false,
+    },
+    plate_number: {
+      type: DataTypes.STRING(20),
+      allowNull: false,
+    },
+    time_in: {
+      type: DataTypes.DATE,
+      allowNull: false,
+    },
+    time_out: {
+      type: DataTypes.DATE,
+      allowNull: true,
+    },
+    qr_token: {
+      type: DataTypes.STRING(64),
+      allowNull: false,
+      unique: true,
+    },
+    check_in_by: {
+      type: DataTypes.INTEGER,
+      allowNull: false,
+    },
+    check_out_by: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+    },
+    session_type: {
+      type: DataTypes.ENUM(...SESSION_TYPES),
+      allowNull: false,
+    },
+    status: {
+      type: DataTypes.ENUM(...SESSION_STATUSES),
+      allowNull: false,
+      defaultValue: 'active',
+    },
+    calculated_fee: {
+      type: DataTypes.DECIMAL(12, 2),
+      allowNull: true,
+    },
+  },
+  { tableName: 'parking_session', timestamps: true,
+    indexes: [
+      { fields: ['plate_number', 'status'], name: 'idx_session_plate_status' },
+      { fields: ['status'], name: 'idx_session_status' },
+    ],
+  }
+);
+
+export default ParkingSession;
