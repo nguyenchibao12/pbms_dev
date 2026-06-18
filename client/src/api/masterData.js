@@ -19,6 +19,17 @@ export const zonesApi = {
   remove: (id) => api.delete(`/zones/${id}`),
 };
 
+// CRUD chỗ đỗ (parking_slot) trong từng khu (zone). Lọc list theo zoneId.
+// Đổi trạng thái slot thực hiện qua update (PUT) với field `status`.
+// Đọc cho mọi vai trò đã đăng nhập, ghi chỉ Manager.
+export const parkingSlotsApi = {
+  list: (zoneId) => api.get('/parking-slots', { params: zoneId ? { zoneId } : {} }),
+  get: (id) => api.get(`/parking-slots/${id}`),
+  create: (data) => api.post('/parking-slots', data),
+  update: (id, data) => api.put(`/parking-slots/${id}`, data),
+  remove: (id) => api.delete(`/parking-slots/${id}`),
+};
+
 // CRUD loại xe (Car / Motorbike / SUV...). Đọc cho mọi vai trò đã đăng nhập,
 // ghi (create/update/remove) chỉ Manager — backend tự kiểm tra quyền.
 export const vehicleTypesApi = {
