@@ -36,6 +36,7 @@ export const openapiSpec = {
     { name: 'Auth', description: 'Đăng ký / đăng nhập / quên mật khẩu / Google' },
     { name: 'MasterData', description: 'Tầng/Khu/Chỗ/Cổng/Loại xe/Bảng giá (Manager)' },
     { name: 'Admin', description: 'Quản lý tài khoản người dùng (Admin)' },
+    { name: 'Sessions', description: 'Phiên gửi xe — check-in/out, tra cứu, phí (Staff)' },
     { name: 'System', description: 'Health check' },
   ],
   paths: {
@@ -147,6 +148,46 @@ export const openapiSpec = {
       get: { tags: ['MasterData'], summary: 'Chi tiết cổng', security: bearer, parameters: [idPath], responses: { 200: ok } },
       put: { tags: ['MasterData'], summary: 'Sửa cổng (Manager)', security: bearer, parameters: [idPath], requestBody: jsonBody({ isActive: true }), responses: { 200: ok } },
       delete: { tags: ['MasterData'], summary: 'Xóa cổng (Manager)', security: bearer, parameters: [idPath], responses: { 200: ok } },
+    },
+
+    // ===== SESSIONS (Staff) =====
+    '/sessions/active': {
+      get: { tags: ['Sessions'], summary: 'Xe đang trong bãi (Staff)', security: bearer, responses: { 200: ok, 403: { description: 'Không phải Staff' } } },
+    },
+    '/sessions/mine/active': {
+      get: { tags: ['Sessions'], summary: 'Phiên đang mở của tôi (User)', security: bearer, responses: { 200: ok } },
+    },
+    '/sessions/staff/lookup': {
+      get: {
+        tags: ['Sessions'], summary: 'Tra cứu phiên bằng QR (Staff/Manager)', security: bearer,
+        parameters: [q('qrToken', 'Mã QR trên vé (≥16 ký tự)', true)],
+        responses: { 200: ok, 404: { description: 'Không tìm thấy phiên' } },
+      },
+    },
+    '/sessions/checkin': {
+      post: {
+        tags: ['Sessions'], summary: 'Check-in xe vào (Staff)', security: bearer,
+        requestBody: jsonBody({ plateNumber: '51F-12345', vehicleTypeId: 1, floorId: 1, gateId: 1, zoneId: 1 }),
+        responses: { 201: ok, 400: { description: 'Dữ liệu không hợp lệ / bãi đóng cửa' }, 409: { description: 'Xe đang có phiên mở' } },
+      },
+    },
+    '/sessions/preview-fee': {
+      post: {
+        tags: ['Sessions'], summary: 'Xem trước phí (Staff)', security: bearer,
+        requestBody: jsonBody({ plateNumber: '51F-12345', lostTicket: false }),
+        responses: { 200: ok, 400: { description: 'Cần sessionId, qrToken hoặc plateNumber' }, 404: { description: 'Không tìm thấy phiên' } },
+      },
+    },
+    // '/sessions/checkout' — tạm ẩn: phụ thuộc module payment (chưa merge). Bật lại cùng route.
+    '/sessions/{id}': {
+      get: { tags: ['Sessions'], summary: 'Chi tiết phiên', security: bearer, parameters: [idPath], responses: { 200: ok, 404: { description: 'Không tìm thấy' } } },
+    },
+    '/sessions/{id}/plate': {
+      patch: {
+        tags: ['Sessions'], summary: 'Sửa biển số phiên (Staff)', security: bearer, parameters: [idPath],
+        requestBody: jsonBody({ plateNumber: '51F-67890' }),
+        responses: { 200: ok, 404: { description: 'Không tìm thấy phiên' } },
+      },
     },
 
     // ===== ADMIN — USERS =====
