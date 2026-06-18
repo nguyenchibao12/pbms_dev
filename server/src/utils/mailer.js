@@ -58,3 +58,31 @@ export const sendPasswordResetEmail = async (to, resetUrl) => {
       </div>`,
   });
 };
+
+export const sendVerificationEmail = async (to, verifyUrl) => {
+  const tx = getTransporter();
+  if (!tx) {
+    throw new AppError(
+      'Tính năng gửi email chưa được cấu hình (thiếu SMTP_HOST/SMTP_USER/SMTP_PASS).',
+      503,
+      'MAIL_NOT_CONFIGURED',
+    );
+  }
+  const { from } = cfg();
+  await tx.sendMail({
+    from,
+    to,
+    subject: 'PBMS — Xác minh email',
+    text: `Cảm ơn bạn đã đăng ký PBMS.\n\nMở liên kết sau để xác minh email:\n${verifyUrl}\n\nNếu không phải bạn, hãy bỏ qua email này.`,
+    html: `
+      <div style="font-family:Arial,sans-serif;max-width:480px;margin:auto">
+        <h2 style="color:#2563eb">Xác minh email PBMS</h2>
+        <p>Cảm ơn bạn đã đăng ký. Nhấn nút dưới để xác minh địa chỉ email này:</p>
+        <p style="text-align:center;margin:24px 0">
+          <a href="${verifyUrl}" style="background:#2563eb;color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none">Xác minh email</a>
+        </p>
+        <p style="color:#64748b;font-size:13px">Hoặc dán liên kết này vào trình duyệt:<br>${verifyUrl}</p>
+        <p style="color:#94a3b8;font-size:12px">Nếu không phải bạn đăng ký, hãy bỏ qua email này.</p>
+      </div>`,
+  });
+};

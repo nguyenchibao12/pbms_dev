@@ -5,7 +5,7 @@ import { Role, UserAccount } from '../models/index.js';
 import { signToken } from '../utils/jwt.js';
 import { AppError } from '../utils/helpers.js';
 import { ROLES } from '../middleware/rbac.js';
-import { sendPasswordResetEmail } from '../utils/mailer.js';
+import { sendPasswordResetEmail, sendVerificationEmail, isMailConfigured } from '../utils/mailer.js';
 import { verifyGoogleIdToken } from '../utils/google.js';
 
 const formatUser = (user) => ({
@@ -15,6 +15,7 @@ const formatUser = (user) => ({
   email: user.email,
   phone: user.phone,
   isActive: user.is_active,
+  emailVerified: user.email_verified,
   authProvider: user.auth_provider,
   role: user.role
     ? { roleId: user.role.role_id, roleName: user.role.role_name }
@@ -50,6 +51,25 @@ const deriveUsername = async (email) => {
   return candidate.slice(0, 50);
 };
 
+/** Sinh token xác minh, lưu hash + hạn, gửi mail (chỉ khi SMTP cấu hình; lỗi mail không chặn luồng). */
+const issueVerificationEmail = async (user) => {
+  const token = crypto.randomBytes(32).toString('hex');
+  const ttlMin = Number(process.env.VERIFY_TOKEN_TTL_MINUTES) || 1440; // mặc định 24h
+  await user.update({
+    verification_token_hash: sha256(token),
+    verification_token_expires: new Date(Date.now() + ttlMin * 60 * 1000),
+  });
+  if (!isMailConfigured()) return; // chưa cấu hình SMTP → bỏ qua gửi, không lỗi
+  // Link bấm-được: trỏ thẳng vào endpoint GET của BE (vì click email = GET). FE chưa có trang này.
+  const apiBase = process.env.SERVER_URL || `http://localhost:${process.env.PORT || 5000}`;
+  const verifyUrl = `${apiBase}/api/auth/verify-email?token=${token}&email=${encodeURIComponent(user.email)}`;
+  try {
+    await sendVerificationEmail(user.email, verifyUrl);
+  } catch {
+    // Gửi mail lỗi (mạng/SMTP) KHÔNG chặn đăng ký — user có thể gọi /resend-verification.
+  }
+};
+
 export const register = async ({ username, password, fullName, email, phone }) => {
   const normalizedEmail = (email || '').trim().toLowerCase();
   if (!normalizedEmail) {
@@ -75,7 +95,10 @@ export const register = async ({ username, password, fullName, email, phone }) =
     role_id: userRole.role_id,
     is_active: true,
     auth_provider: 'local',
+    email_verified: false,
   });
+
+  await issueVerificationEmail(user);
 
   const token = signToken({ userId: user.user_id, roleName: ROLES.USER });
   return { user: formatUser(await withRole(user.user_id)), token };
@@ -153,6 +176,44 @@ export const resetPassword = async ({ email, token, newPassword }) => {
   return { message: 'Đặt lại mật khẩu thành công. Hãy đăng nhập bằng mật khẩu mới.' };
 };
 
+/** Xác minh email bằng token gửi qua mail lúc đăng ký. */
+export const verifyEmail = async ({ email, token }) => {
+  const normalizedEmail = (email || '').trim().toLowerCase();
+  const user = await UserAccount.unscoped().findOne({ where: { email: normalizedEmail } });
+
+  if (user && user.email_verified) {
+    return { message: 'Email đã được xác minh.' };
+  }
+  if (
+    !user ||
+    !user.verification_token_hash ||
+    !user.verification_token_expires ||
+    new Date(user.verification_token_expires) < new Date() ||
+    user.verification_token_hash !== sha256(token)
+  ) {
+    throw new AppError('Liên kết xác minh không hợp lệ hoặc đã hết hạn', 400, 'VERIFY_TOKEN_INVALID');
+  }
+
+  await user.update({
+    email_verified: true,
+    verification_token_hash: null,
+    verification_token_expires: null,
+  });
+  return { message: 'Xác minh email thành công.' };
+};
+
+/** Gửi lại email xác minh (nếu user tồn tại, là tài khoản local, chưa verify). */
+export const resendVerification = async ({ email }) => {
+  const normalizedEmail = (email || '').trim().toLowerCase();
+  const user = await UserAccount.unscoped().findOne({ where: { email: normalizedEmail } });
+
+  // Luôn trả message chung — không lộ email có tồn tại / đã verify hay chưa.
+  if (user && user.auth_provider === 'local' && !user.email_verified) {
+    await issueVerificationEmail(user);
+  }
+  return { message: 'Nếu email tồn tại và chưa xác minh, link xác minh mới đã được gửi.' };
+};
+
 /** Đăng nhập/đăng ký bằng Google ID token. */
 export const loginWithGoogle = async ({ idToken }) => {
   const profile = await verifyGoogleIdToken(idToken);
@@ -187,6 +248,7 @@ export const loginWithGoogle = async ({ idToken }) => {
       is_active: true,
       auth_provider: 'google',
       google_id: profile.sub,
+      email_verified: true,
     });
     user = await UserAccount.findByPk(created.user_id, {
       include: [{ association: 'role', attributes: ['role_id', 'role_name'] }],
