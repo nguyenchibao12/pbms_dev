@@ -63,6 +63,23 @@ export function validateVehicleTypeForm(form) {
   );
 }
 
+/**
+ * Validate form chỗ đỗ (parking_slot): khu (bắt buộc), mã chỗ (bắt buộc),
+ * khoảng cách tới cổng/thang máy (tùy chọn, số ≥ 0). slotType tự do.
+ */
+export function validateSlotForm(form) {
+  return mergeErrors(
+    validateRequired(form.zoneId, 'zoneId', 'khu vực'),
+    validateRequiredText(form.slotCode, 'slotCode', 'mã chỗ'),
+    form.distanceToGate !== '' && form.distanceToGate != null
+      ? validateNonNegativeNumber(form.distanceToGate, 'distanceToGate', { required: false })
+      : {},
+    form.distanceToElevator !== '' && form.distanceToElevator != null
+      ? validateNonNegativeNumber(form.distanceToElevator, 'distanceToElevator', { required: false })
+      : {},
+  );
+}
+
 /** Validate form khu vực (zone): tầng, loại xe, mã khu, tên, số slot. */
 export function validateZoneForm(form) {
   return mergeErrors(
