@@ -9,6 +9,7 @@ const tabs = [
   { to: '/manager/vehicle-types', label: 'Loại xe' },
   { to: '/manager/pricing-rules', label: 'Bảng giá' },
   { to: '/manager/zones', label: 'Khu vực' },
+  { to: '/manager/parking-slots', label: 'Chỗ đỗ' },
 ];
 
 export default function ManagerLayout() {
