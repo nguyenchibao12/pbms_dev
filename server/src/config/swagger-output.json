@@ -59,6 +59,10 @@
     {
       "name": "Payments",
       "description": "Thanh toán PayOS — webhook, xác minh (User/Staff)"
+    },
+    {
+      "name": "Reports",
+      "description": "Báo cáo — doanh thu, lấp đầy, giờ cao điểm (Manager)"
     }
   ],
   "paths": {
@@ -1762,6 +1766,30 @@
             "required": true,
             "schema": {
               "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        }
+      }
+    },
+    "/api/reports/occupancy": {
+      "get": {
+        "tags": [
+          "Reports"
+        ],
+        "summary": "Tỷ lệ lấp đầy hiện tại (Manager)",
+        "description": "",
+        "parameters": [
+          {
+            "name": "floorId",
+            "in": "query",
+            "description": "Lọc theo tầng",
+            "schema": {
+              "type": "integer"
             }
           }
         ],
