@@ -25,8 +25,28 @@
       "description": "Thông tin công khai (không cần đăng nhập)"
     },
     {
-      "name": "MasterData",
-      "description": "Tầng / Khu / Chỗ / Cổng / Loại xe / Bảng giá (Manager)"
+      "name": "Vehicle Types",
+      "description": "Loại xe — ô tô / xe máy (Manager)"
+    },
+    {
+      "name": "Floors",
+      "description": "Tầng — gồm thiết lập nhanh & nhân bản (Manager)"
+    },
+    {
+      "name": "Zones",
+      "description": "Khu — gắn loại xe, sinh nhiều chỗ (Manager)"
+    },
+    {
+      "name": "Parking Slots",
+      "description": "Chỗ đỗ — trạng thái & khoảng cách (Manager)"
+    },
+    {
+      "name": "Gates",
+      "description": "Cổng — theo tầng + làn loại xe, in/out (Manager)"
+    },
+    {
+      "name": "Pricing Rules",
+      "description": "Bảng giá theo loại xe (Manager)"
     },
     {
       "name": "Admin",
@@ -290,7 +310,7 @@
     "/api/vehicle-types/": {
       "get": {
         "tags": [
-          "MasterData"
+          "Vehicle Types"
         ],
         "summary": "Danh sách loại xe",
         "description": "",
@@ -302,7 +322,7 @@
       },
       "post": {
         "tags": [
-          "MasterData"
+          "Vehicle Types"
         ],
         "summary": "Thêm loại xe (Manager)",
         "description": "",
@@ -327,7 +347,7 @@
     "/api/vehicle-types/{id}": {
       "get": {
         "tags": [
-          "MasterData"
+          "Vehicle Types"
         ],
         "summary": "Chi tiết loại xe",
         "description": "",
@@ -349,7 +369,7 @@
       },
       "put": {
         "tags": [
-          "MasterData"
+          "Vehicle Types"
         ],
         "summary": "Sửa loại xe (Manager)",
         "description": "",
@@ -381,7 +401,7 @@
       },
       "delete": {
         "tags": [
-          "MasterData"
+          "Vehicle Types"
         ],
         "summary": "Xóa loại xe (Manager)",
         "description": "",
@@ -405,7 +425,7 @@
     "/api/floors/": {
       "get": {
         "tags": [
-          "MasterData"
+          "Floors"
         ],
         "summary": "Danh sách tầng",
         "description": "",
@@ -417,7 +437,7 @@
       },
       "post": {
         "tags": [
-          "MasterData"
+          "Floors"
         ],
         "summary": "Thêm tầng (Manager)",
         "description": "",
@@ -443,7 +463,7 @@
     "/api/floors/setup": {
       "post": {
         "tags": [
-          "MasterData"
+          "Floors"
         ],
         "summary": "Thiết lập nhanh tầng (Manager) — floor + zone + slot + cổng",
         "description": "",
@@ -486,7 +506,7 @@
     "/api/floors/{id}": {
       "get": {
         "tags": [
-          "MasterData"
+          "Floors"
         ],
         "summary": "Chi tiết tầng",
         "description": "",
@@ -508,7 +528,7 @@
       },
       "put": {
         "tags": [
-          "MasterData"
+          "Floors"
         ],
         "summary": "Sửa tầng (Manager)",
         "description": "",
@@ -540,7 +560,7 @@
       },
       "delete": {
         "tags": [
-          "MasterData"
+          "Floors"
         ],
         "summary": "Xóa tầng (Manager)",
         "description": "",
@@ -564,7 +584,7 @@
     "/api/floors/{id}/clone": {
       "post": {
         "tags": [
-          "MasterData"
+          "Floors"
         ],
         "summary": "Nhân bản tầng (Manager)",
         "description": "",
@@ -600,7 +620,7 @@
     "/api/zones/": {
       "get": {
         "tags": [
-          "MasterData"
+          "Zones"
         ],
         "summary": "Danh sách khu",
         "description": "",
@@ -622,7 +642,7 @@
       },
       "post": {
         "tags": [
-          "MasterData"
+          "Zones"
         ],
         "summary": "Thêm khu (Manager)",
         "description": "",
@@ -651,7 +671,7 @@
     "/api/zones/{id}": {
       "get": {
         "tags": [
-          "MasterData"
+          "Zones"
         ],
         "summary": "Chi tiết khu",
         "description": "",
@@ -673,7 +693,7 @@
       },
       "put": {
         "tags": [
-          "MasterData"
+          "Zones"
         ],
         "summary": "Sửa khu (Manager)",
         "description": "",
@@ -706,7 +726,7 @@
       },
       "delete": {
         "tags": [
-          "MasterData"
+          "Zones"
         ],
         "summary": "Xóa khu (Manager)",
         "description": "",
@@ -730,7 +750,7 @@
     "/api/zones/{id}/slots/bulk": {
       "post": {
         "tags": [
-          "MasterData"
+          "Zones"
         ],
         "summary": "Sinh nhiều chỗ cho khu (Manager)",
         "description": "",
@@ -767,7 +787,7 @@
     "/api/parking-slots/": {
       "get": {
         "tags": [
-          "MasterData"
+          "Parking Slots"
         ],
         "summary": "Danh sách chỗ",
         "description": "",
@@ -789,7 +809,7 @@
       },
       "post": {
         "tags": [
-          "MasterData"
+          "Parking Slots"
         ],
         "summary": "Thêm chỗ (Manager)",
         "description": "",
@@ -815,7 +835,7 @@
     "/api/parking-slots/{id}": {
       "get": {
         "tags": [
-          "MasterData"
+          "Parking Slots"
         ],
         "summary": "Chi tiết chỗ",
         "description": "",
@@ -837,7 +857,7 @@
       },
       "put": {
         "tags": [
-          "MasterData"
+          "Parking Slots"
         ],
         "summary": "Sửa chỗ — gồm đổi status (Manager)",
         "description": "",
@@ -870,7 +890,7 @@
       },
       "delete": {
         "tags": [
-          "MasterData"
+          "Parking Slots"
         ],
         "summary": "Xóa chỗ (Manager)",
         "description": "",
@@ -894,7 +914,7 @@
     "/api/gates/": {
       "get": {
         "tags": [
-          "MasterData"
+          "Gates"
         ],
         "summary": "Danh sách cổng",
         "description": "",
@@ -916,7 +936,7 @@
       },
       "post": {
         "tags": [
-          "MasterData"
+          "Gates"
         ],
         "summary": "Thêm cổng (Manager)",
         "description": "",
@@ -944,7 +964,7 @@
     "/api/gates/{id}": {
       "get": {
         "tags": [
-          "MasterData"
+          "Gates"
         ],
         "summary": "Chi tiết cổng",
         "description": "",
@@ -966,7 +986,7 @@
       },
       "put": {
         "tags": [
-          "MasterData"
+          "Gates"
         ],
         "summary": "Sửa cổng (Manager)",
         "description": "",
@@ -998,7 +1018,7 @@
       },
       "delete": {
         "tags": [
-          "MasterData"
+          "Gates"
         ],
         "summary": "Xóa cổng (Manager)",
         "description": "",
@@ -1022,7 +1042,7 @@
     "/api/pricing-rules/": {
       "get": {
         "tags": [
-          "MasterData"
+          "Pricing Rules"
         ],
         "summary": "Danh sách bảng giá",
         "description": "",
@@ -1044,7 +1064,7 @@
       },
       "post": {
         "tags": [
-          "MasterData"
+          "Pricing Rules"
         ],
         "summary": "Thêm bảng giá (Manager)",
         "description": "",
@@ -1071,7 +1091,7 @@
     "/api/pricing-rules/{id}": {
       "get": {
         "tags": [
-          "MasterData"
+          "Pricing Rules"
         ],
         "summary": "Chi tiết bảng giá",
         "description": "",
@@ -1093,7 +1113,7 @@
       },
       "put": {
         "tags": [
-          "MasterData"
+          "Pricing Rules"
         ],
         "summary": "Sửa bảng giá (Manager)",
         "description": "",
@@ -1125,7 +1145,7 @@
       },
       "delete": {
         "tags": [
-          "MasterData"
+          "Pricing Rules"
         ],
         "summary": "Xóa bảng giá (Manager)",
         "description": "",
