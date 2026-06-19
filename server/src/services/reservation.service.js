@@ -5,6 +5,7 @@ import {
   Payment,
   ParkingSession,
   ParkingSlot,
+  Gate,
   Floor,
   VehicleType,
 } from '../models/index.js';
@@ -15,10 +16,14 @@ import {
   lockSlotReserved,
   releaseReservedSlot,
   releaseSlot,
+  occupyReservedSlot,
 } from '../utils/slotSuggest.js';
 import { createPayOSPaymentLink, generateOrderCode } from './payos.client.js';
 import { logSuggestion } from './aiLog.service.js';
+import { getSession } from './session.service.js';
+import { recordWrongFloorIncident, recordIncident } from './incident.service.js';
 import { validateAndNormalizePlateVN } from '../utils/plateVN.js';
+import { assertGateVehicleType } from '../utils/gateVehicle.js';
 import { assertReservationTransition, buildRevokedQrToken } from '../utils/stateGuards.js';
 import { resolveShiftWindow } from '../utils/shifts.js';
 import {
@@ -26,6 +31,8 @@ import {
   getBookingRefundCutoffHours,
 } from '../utils/settings.js';
 import { logAdminAction } from '../utils/auditLog.js';
+
+const CHECKIN_EARLY_GRACE_MS = 15 * 60 * 1000;
 
 const reservationIncludes = [
   { association: 'slot', include: [{ association: 'zone', include: [{ association: 'floor' }] }] },
@@ -412,3 +419,170 @@ export const cancelUserReservation = async (userId, reservationId) => {
 
 /** @deprecated alias */
 export const cancelPendingReservation = cancelUserReservation;
+
+/** Staff — booking đã thanh toán, chờ check-in (chưa vào bãi) */
+export const listStaffUpcomingReservations = async () => {
+  const now = new Date();
+  return Reservation.findAll({
+    where: {
+      status: 'confirmed',
+      end_time: { [Op.gte]: now },
+    },
+    include: reservationIncludes,
+    order: [['start_time', 'ASC']],
+    limit: 100,
+  });
+};
+
+/** Staff — tra cứu đặt chỗ từ mã QR (preview trước check-in) */
+export const staffLookupReservationByQr = async (qrToken) => {
+  const token = String(qrToken || '').trim();
+  if (!token || token.startsWith('revoked-')) {
+    throw new AppError('Mã QR không hợp lệ hoặc đã vô hiệu', 400, 'VALIDATION_ERROR');
+  }
+  const reservation = await Reservation.findOne({
+    where: { qr_token: token },
+    include: reservationIncludes,
+  });
+  if (!reservation) {
+    throw new AppError('Không tìm thấy đặt chỗ với mã QR này', 404, 'NOT_FOUND');
+  }
+  return reservation;
+};
+
+/** Staff cho xe vào bãi: kiểm confirmed + đúng cổng/tầng/khung giờ → tạo session active. */
+export const checkinReservation = async (staffUserId, data) => {
+  let reservation;
+
+  if (data.reservationId) {
+    reservation = await Reservation.findByPk(data.reservationId);
+  } else if (data.qrToken) {
+    reservation = await Reservation.findOne({ where: { qr_token: data.qrToken } });
+  } else {
+    throw new AppError('Provide reservationId or qrToken', 400, 'VALIDATION_ERROR');
+  }
+
+  if (!reservation) throw new AppError('Reservation not found', 404, 'NOT_FOUND');
+  if (reservation.status === 'cancelled') {
+    throw new AppError('Đặt chỗ đã bị hủy', 409, 'CONFLICT');
+  }
+  if (reservation.status !== 'confirmed') {
+    throw new AppError(`Reservation must be confirmed (current: ${reservation.status})`, 409, 'CONFLICT');
+  }
+
+  const gate = await Gate.findByPk(data.gateId);
+  if (!gate || !gate.is_active) {
+    throw new AppError('Gate not found or inactive', 404, 'NOT_FOUND');
+  }
+  if (gate.direction !== 'in') {
+    throw new AppError('Check-in must use an IN gate', 400, 'VALIDATION_ERROR');
+  }
+  assertGateVehicleType(gate, reservation.vehicle_type_id);
+  if (gate.floor_id !== reservation.floor_id) {
+    await recordWrongFloorIncident({
+      gateFloorId: gate.floor_id,
+      expectedFloorId: reservation.floor_id,
+      reservationId: reservation.reservation_id,
+      userId: reservation.user_id,
+      slotId: reservation.slot_id,
+    });
+    throw new AppError('Wrong floor — QR floor does not match gate floor', 403, 'FORBIDDEN');
+  }
+
+  const now = new Date();
+  // Không chặn theo giờ mở cửa tòa (DV-14) cho đặt chỗ: khung CA đã đặt (kể cả ca
+  // qua đêm 22:00→06:00) chính là sự cho phép vào. Giới hạn entry do cửa sổ start/end bên dưới.
+
+  const graceMs = CHECKIN_EARLY_GRACE_MS;
+  if (now.getTime() < reservation.start_time.getTime() - graceMs) {
+    await recordIncident({
+      type: 'window_violation',
+      description: `Check-in too early for reservation ${reservation.reservation_id}`,
+      reservationId: reservation.reservation_id,
+      userId: reservation.user_id,
+      slotId: reservation.slot_id,
+    });
+    throw new AppError('Quá sớm — ngoài khung giờ đặt chỗ (sớm tối đa 15 phút)', 409, 'CONFLICT');
+  }
+  if (now > reservation.end_time) {
+    await recordIncident({
+      type: 'window_violation',
+      description: `Check-in too late for reservation ${reservation.reservation_id}`,
+      reservationId: reservation.reservation_id,
+      userId: reservation.user_id,
+      slotId: reservation.slot_id,
+    });
+    throw new AppError('Too late — reservation window ended', 409, 'CONFLICT');
+  }
+
+  const activeSession = await findActiveSessionByPlate(reservation.plate_number);
+
+  const sessionQrToken = generateQrToken();
+  const timeIn = new Date();
+
+  const session = await sequelize.transaction(async (transaction) => {
+    if (activeSession) {
+      const locked = await ParkingSession.findByPk(activeSession.session_id, {
+        transaction,
+        lock: transaction.LOCK.UPDATE,
+      });
+      if (
+        locked?.status === 'active' &&
+        locked.session_type === 'walk_in' &&
+        !locked.reservation_id
+      ) {
+        const { voidActiveSession } = await import('./session.service.js');
+        await voidActiveSession(locked, transaction);
+      } else if (locked?.status === 'active') {
+        await recordIncident({
+          type: 'duplicate_session',
+          description: `Plate ${reservation.plate_number} already has active session ${locked.session_id}`,
+          reservationId: reservation.reservation_id,
+          userId: reservation.user_id,
+          sessionId: locked.session_id,
+        });
+        throw new AppError('Vehicle already has an active session', 409, 'CONFLICT');
+      }
+    }
+
+    await occupyReservedSlot(reservation.slot_id, transaction);
+
+    const created = await ParkingSession.create(
+      {
+        user_id: reservation.user_id,
+        reservation_id: reservation.reservation_id,
+        gate_id: data.gateId,
+        slot_id: reservation.slot_id,
+        vehicle_type_id: reservation.vehicle_type_id,
+        plate_number: reservation.plate_number,
+        time_in: timeIn,
+        qr_token: sessionQrToken,
+        check_in_by: staffUserId,
+        session_type: 'reservation',
+        status: 'active',
+      },
+      { transaction }
+    );
+
+    assertReservationTransition(reservation.status, 'checked_in');
+    await reservation.update({ status: 'checked_in' }, { transaction });
+    return created;
+  });
+
+  return {
+    session: await getSession(session.session_id),
+    reservation: await getReservation(reservation.reservation_id),
+  };
+};
+
+/**
+ * Gọi NGƯỢC từ payment.service khi session hoàn tất (xe ra + đã thanh toán):
+ * chuyển reservation checked_in -> completed. Phụ thuộc một chiều.
+ */
+export const markReservationCompleted = async (reservationId, transaction) => {
+  const reservation = await Reservation.findByPk(reservationId, { transaction });
+  if (reservation && reservation.status === 'checked_in') {
+    assertReservationTransition(reservation.status, 'completed');
+    await reservation.update({ status: 'completed' }, { transaction });
+  }
+};

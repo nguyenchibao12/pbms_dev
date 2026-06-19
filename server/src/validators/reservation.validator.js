@@ -1,4 +1,4 @@
-import { body, param } from 'express-validator';
+import { body, param, query } from 'express-validator';
 import { requiredPlateNumber } from './plate.validator.js';
 import { SHIFT_IDS } from '../utils/shifts.js';
 
@@ -27,4 +27,20 @@ export const createReservationValidator = [
 
 export const reservationIdParam = [
   param('id').isInt({ min: 1 }).withMessage('Invalid reservation id'),
+];
+
+export const checkinReservationValidator = [
+  body('gateId').isInt({ min: 1 }).withMessage('gateId is required'),
+  body('reservationId').optional().isInt({ min: 1 }),
+  body('qrToken').optional().isString().notEmpty(),
+  body().custom((_value, { req }) => {
+    if (!req.body.reservationId && !req.body.qrToken) {
+      throw new Error('Provide reservationId or qrToken');
+    }
+    return true;
+  }),
+];
+
+export const staffQrLookupValidator = [
+  query('qrToken').isString().trim().notEmpty().isLength({ min: 16 }),
 ];

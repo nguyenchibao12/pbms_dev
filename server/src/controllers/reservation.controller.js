@@ -28,3 +28,18 @@ export const cancel = asyncHandler(async (req, res) => {
   );
   successResponse(res, reservation, 'Reservation cancelled');
 });
+
+export const listStaffUpcoming = asyncHandler(async (_req, res) => {
+  const list = await reservationService.listStaffUpcomingReservations();
+  successResponse(res, list);
+});
+
+export const staffLookupByQr = asyncHandler(async (req, res) => {
+  const reservation = await reservationService.staffLookupReservationByQr(req.query.qrToken);
+  successResponse(res, reservation);
+});
+
+export const checkin = asyncHandler(async (req, res) => {
+  const result = await reservationService.checkinReservation(req.user.user_id, req.body);
+  successResponse(res, result, 'Reservation check-in successful', 201);
+});
