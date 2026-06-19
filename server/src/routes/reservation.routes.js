@@ -13,5 +13,6 @@ router.post('/', ...userOnly, createReservationValidator, validate, reservationC
 router.get('/mine', ...userOnly, reservationController.listMine);
 // LƯU Ý: '/:id' (route bắt-tất) phải nằm DƯỚI mọi route chữ cụ thể như '/mine'.
 router.get('/:id', ...authenticated, reservationIdParam, validate, reservationController.get);
+router.post('/:id/cancel', ...userOnly, reservationIdParam, validate, reservationController.cancel);
 
 export default router;

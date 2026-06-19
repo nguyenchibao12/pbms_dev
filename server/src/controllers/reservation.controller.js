@@ -20,3 +20,11 @@ export const get = asyncHandler(async (req, res) => {
   }
   successResponse(res, reservation);
 });
+
+export const cancel = asyncHandler(async (req, res) => {
+  const reservation = await reservationService.cancelUserReservation(
+    req.user.user_id,
+    req.params.id
+  );
+  successResponse(res, reservation, 'Reservation cancelled');
+});

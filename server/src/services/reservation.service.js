@@ -4,18 +4,27 @@ import {
   Reservation,
   Payment,
   ParkingSession,
+  ParkingSlot,
   Floor,
   VehicleType,
 } from '../models/index.js';
 import { AppError } from '../utils/helpers.js';
 import { generateQrToken } from '../utils/qr.js';
-import { suggestSlot, lockSlotReserved } from '../utils/slotSuggest.js';
+import {
+  suggestSlot,
+  lockSlotReserved,
+  releaseReservedSlot,
+  releaseSlot,
+} from '../utils/slotSuggest.js';
 import { createPayOSPaymentLink, generateOrderCode } from './payos.client.js';
 import { logSuggestion } from './aiLog.service.js';
 import { validateAndNormalizePlateVN } from '../utils/plateVN.js';
-import { assertReservationTransition } from '../utils/stateGuards.js';
+import { assertReservationTransition, buildRevokedQrToken } from '../utils/stateGuards.js';
 import { resolveShiftWindow } from '../utils/shifts.js';
-import { getBookingFee as getBookingFeeFromSettings } from '../utils/settings.js';
+import {
+  getBookingFee as getBookingFeeFromSettings,
+  getBookingRefundCutoffHours,
+} from '../utils/settings.js';
 import { logAdminAction } from '../utils/auditLog.js';
 
 const reservationIncludes = [
@@ -238,3 +247,168 @@ export const confirmReservationAfterPayment = async (payment) => {
     confirmed: true,
   };
 };
+
+/**
+ * Gọi NGƯỢC từ payment.service khi thanh toán thất bại/hết hạn:
+ * hủy đặt chỗ pending/confirmed + nhả slot đã giữ. Phụ thuộc một chiều.
+ */
+export const cancelReservationOnPaymentFail = async (reservationId, payload) => {
+  const reservation = await Reservation.findByPk(reservationId);
+  if (!reservation) return null;
+  if (!['pending', 'confirmed'].includes(reservation.status)) return reservation;
+
+  await sequelize.transaction(async (transaction) => {
+    if (reservation.status === 'pending') {
+      await releaseReservedSlot(reservation.slot_id, transaction);
+    }
+    await reservation.update({ status: 'cancelled' }, { transaction });
+  });
+
+  if (payload) {
+    const failedPayment = await Payment.findOne({
+      where: { reservation_id: reservationId, status: 'failed' },
+    });
+    if (failedPayment) {
+      await failedPayment.update({ gateway_response: JSON.stringify(payload) });
+    }
+  }
+
+  return getReservation(reservationId);
+};
+
+/** User tự hủy đặt chỗ của mình (pending/confirmed) + chính sách hoàn phí theo cutoff. */
+export const cancelUserReservation = async (userId, reservationId) => {
+  const reservation = await Reservation.findByPk(reservationId);
+  if (!reservation) throw new AppError('Reservation not found', 404, 'NOT_FOUND');
+  if (reservation.user_id !== userId) {
+    throw new AppError('Not your reservation', 403, 'FORBIDDEN');
+  }
+  if (reservation.status === 'checked_in') {
+    throw new AppError(
+      'Xe đã vào bãi — không thể hủy. Ra cổng hoặc liên hệ nhân viên.',
+      409,
+      'CONFLICT',
+    );
+  }
+  if (!['pending', 'confirmed'].includes(reservation.status)) {
+    throw new AppError(
+      'Chỉ hủy được đặt chỗ pending hoặc confirmed (DV-09)',
+      409,
+      'CONFLICT',
+    );
+  }
+
+  // Chính sách hoàn phí booking theo thời gian: hủy confirmed trước giờ vào >= cutoff → được hoàn
+  const wasConfirmed = reservation.status === 'confirmed';
+  const cutoffHours = getBookingRefundCutoffHours();
+  const msUntilStart = new Date(reservation.start_time).getTime() - Date.now();
+  const beforeCutoff = msUntilStart >= cutoffHours * 60 * 60 * 1000;
+  let refund = { applicable: wasConfirmed, eligible: false, amount: 0, cutoffHours };
+
+  await sequelize.transaction(async (transaction) => {
+    assertReservationTransition(reservation.status, 'cancelled');
+
+    const { voidActiveSession } = await import('./session.service.js');
+    const sessionsToVoid = await ParkingSession.findAll({
+      where: {
+        status: 'active',
+        [Op.or]: [
+          { reservation_id: reservationId },
+          {
+            plate_number: reservation.plate_number,
+            reservation_id: null,
+            session_type: { [Op.in]: ['walk_in', 'reservation'] },
+          },
+        ],
+      },
+      transaction,
+    });
+
+    for (const session of sessionsToVoid) {
+      await voidActiveSession(session, transaction);
+    }
+
+    const slot = await ParkingSlot.findByPk(reservation.slot_id, {
+      transaction,
+      lock: transaction.LOCK.UPDATE,
+    });
+    if (slot?.status === 'reserved') {
+      await releaseReservedSlot(reservation.slot_id, transaction);
+    } else if (slot?.status === 'occupied') {
+      await releaseSlot(reservation.slot_id, transaction);
+    }
+
+    // OR-16: vô hiệu hóa QR khi hủy
+    await reservation.update(
+      {
+        status: 'cancelled',
+        qr_token: buildRevokedQrToken('reservation', reservation.reservation_id),
+      },
+      { transaction },
+    );
+
+    const payment = await Payment.findOne({
+      where: {
+        reservation_id: reservationId,
+        status: { [Op.in]: ['pending', 'success'] },
+      },
+      transaction,
+    });
+    if (payment) {
+      if (payment.status === 'pending') {
+        // Chưa trả tiền → hủy link, không có gì để hoàn
+        await payment.update({ status: 'failed' }, { transaction });
+      } else if (payment.status === 'success') {
+        if (beforeCutoff) {
+          let meta = {};
+          try {
+            meta = payment.gateway_response ? JSON.parse(payment.gateway_response) : {};
+          } catch {
+            meta = {};
+          }
+          await payment.update(
+            {
+              status: 'refunded',
+              gateway_response: JSON.stringify({
+                ...meta,
+                refund: {
+                  amount: Number(payment.amount),
+                  reason: 'user_cancel_before_cutoff',
+                  cutoffHours,
+                  at: new Date().toISOString(),
+                  processedManually: true,
+                },
+              }),
+            },
+            { transaction },
+          );
+          refund = { applicable: true, eligible: true, amount: Number(payment.amount), cutoffHours };
+        } else {
+          // Hủy sát giờ → mất phí giữ chỗ (payment giữ nguyên 'success')
+          refund = {
+            applicable: true,
+            eligible: false,
+            amount: 0,
+            cutoffHours,
+            forfeitedAmount: Number(payment.amount),
+          };
+        }
+      }
+    }
+  });
+
+  if (refund.eligible) {
+    await logAdminAction(userId, 'RESERVATION_REFUND_OWED', {
+      reservationId,
+      amount: refund.amount,
+      note: 'Hoàn phí booking khi hủy trước cutoff — PayOS cần chuyển khoản hoàn thủ công',
+    });
+  }
+
+  const result = (await getReservation(reservationId)).toJSON();
+  result.refund = refund;
+  return result;
+};
+
+/** @deprecated alias */
+export const cancelPendingReservation = cancelUserReservation;
