@@ -55,6 +55,10 @@
     {
       "name": "Sessions",
       "description": "Phiên gửi xe — check-in, tra cứu QR, phí (Staff)"
+    },
+    {
+      "name": "Payments",
+      "description": "Thanh toán PayOS — webhook, xác minh (User/Staff)"
     }
   ],
   "paths": {
@@ -1533,6 +1537,182 @@
                 "plateNumber": "51F-67890"
               }
             }
+          }
+        }
+      }
+    },
+    "/api/reservations/": {
+      "post": {
+        "description": "",
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        }
+      }
+    },
+    "/api/reservations/mine": {
+      "get": {
+        "description": "",
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        }
+      }
+    },
+    "/api/reservations/staff/upcoming": {
+      "get": {
+        "description": "",
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        }
+      }
+    },
+    "/api/reservations/staff/lookup": {
+      "get": {
+        "description": "",
+        "parameters": [
+          {
+            "name": "qrToken",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        }
+      }
+    },
+    "/api/reservations/checkin": {
+      "post": {
+        "description": "",
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        }
+      }
+    },
+    "/api/reservations/{id}": {
+      "get": {
+        "description": "",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        }
+      }
+    },
+    "/api/reservations/{id}/cancel": {
+      "post": {
+        "description": "",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        }
+      }
+    },
+    "/api/payments/webhook": {
+      "post": {
+        "tags": [
+          "Payments"
+        ],
+        "summary": "Webhook PayOS (PayOS gọi — không cần đăng nhập)",
+        "description": "",
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        },
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "example": {
+                "code": "00",
+                "data": {
+                  "orderCode": 123
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/payments/verify": {
+      "get": {
+        "tags": [
+          "Payments"
+        ],
+        "summary": "Xác minh thanh toán sau khi PayOS redirect về",
+        "description": "",
+        "parameters": [
+          {
+            "name": "orderCode",
+            "in": "query",
+            "required": true,
+            "description": "Mã đơn PayOS",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        }
+      }
+    },
+    "/api/payments/{id}": {
+      "get": {
+        "tags": [
+          "Payments"
+        ],
+        "summary": "Chi tiết thanh toán",
+        "description": "",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": ""
           }
         }
       }
