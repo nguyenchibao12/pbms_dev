@@ -201,6 +201,41 @@ CREATE TABLE IF NOT EXISTS `monthly_pass` (
     REFERENCES `floor` (`floor_id`) ON DELETE RESTRICT ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- Đặt chỗ trước (reservation) — khách đặt 1 slot cụ thể trong khung giờ; trả phí booking qua PayOS.
+-- status: pending→confirmed→checked_in→completed (hoặc cancelled/no_show). Khớp reservation.model.js.
+CREATE TABLE IF NOT EXISTS `reservation` (
+  `reservation_id`   INT         NOT NULL AUTO_INCREMENT,
+  `user_id`          INT         NOT NULL,
+  `vehicle_type_id`  INT         NOT NULL,
+  `floor_id`         INT         NOT NULL,
+  `zone_id`          INT         NOT NULL,
+  `slot_id`          INT         NOT NULL,
+  `plate_number`     VARCHAR(20) NOT NULL,
+  `start_time`       DATETIME    NOT NULL,
+  `end_time`         DATETIME    NOT NULL,
+  `status`           ENUM('pending','confirmed','checked_in','completed','cancelled','no_show')
+                     NOT NULL DEFAULT 'pending',
+  `reservation_type` VARCHAR(30) NOT NULL DEFAULT 'standard',
+  `qr_token`         VARCHAR(64) NULL,
+  `created_at`       DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at`       DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`reservation_id`),
+  UNIQUE KEY `uq_reservation_qr` (`qr_token`),
+  KEY `idx_reservation_user` (`user_id`),
+  KEY `idx_reservation_slot` (`slot_id`),
+  KEY `idx_reservation_status` (`status`),
+  CONSTRAINT `fk_reservation_user` FOREIGN KEY (`user_id`)
+    REFERENCES `user_account` (`user_id`) ON DELETE RESTRICT ON UPDATE CASCADE,
+  CONSTRAINT `fk_reservation_vehicle_type` FOREIGN KEY (`vehicle_type_id`)
+    REFERENCES `vehicle_type` (`vehicle_type_id`) ON DELETE RESTRICT ON UPDATE CASCADE,
+  CONSTRAINT `fk_reservation_floor` FOREIGN KEY (`floor_id`)
+    REFERENCES `floor` (`floor_id`) ON DELETE RESTRICT ON UPDATE CASCADE,
+  CONSTRAINT `fk_reservation_zone` FOREIGN KEY (`zone_id`)
+    REFERENCES `zone` (`zone_id`) ON DELETE RESTRICT ON UPDATE CASCADE,
+  CONSTRAINT `fk_reservation_slot` FOREIGN KEY (`slot_id`)
+    REFERENCES `parking_slot` (`slot_id`) ON DELETE RESTRICT ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 SET FOREIGN_KEY_CHECKS = 1;
 
 -- Hai loại xe mặc định (tùy chọn — Manager có thể thêm/sửa qua API)
