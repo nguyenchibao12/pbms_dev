@@ -56,3 +56,18 @@ export const windowAvailability = asyncHandler(async (req, res) => {
   });
   successResponse(res, data);
 });
+
+export const suggestSlotPreview = asyncHandler(async (req, res) => {
+  const data = await reservationService.previewSuggestSlot({
+    floorId: Number(req.query.floorId),
+    vehicleTypeId: Number(req.query.vehicleTypeId),
+    startTime: req.query.startTime,
+    endTime: req.query.endTime,
+    shiftId: req.query.shiftId,
+    arrivalDate: req.query.arrivalDate,
+    zoneId: req.query.zoneId ? Number(req.query.zoneId) : undefined,
+    topN: req.query.topN ? Number(req.query.topN) : undefined,
+    userId: req.user?.user_id,
+  });
+  successResponse(res, data);
+});
