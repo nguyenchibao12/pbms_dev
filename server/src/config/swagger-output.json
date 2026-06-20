@@ -59,6 +59,10 @@
     {
       "name": "Payments",
       "description": "Thanh toán PayOS — webhook, xác minh (User/Staff)"
+    },
+    {
+      "name": "Reports",
+      "description": "Báo cáo — doanh thu, lấp đầy, giờ cao điểm (Manager)"
     }
   ],
   "paths": {
@@ -1762,6 +1766,72 @@
             "required": true,
             "schema": {
               "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        }
+      }
+    },
+    "/api/reports/occupancy": {
+      "get": {
+        "tags": [
+          "Reports"
+        ],
+        "summary": "Tỷ lệ lấp đầy hiện tại (Manager)",
+        "description": "",
+        "parameters": [
+          {
+            "name": "floorId",
+            "in": "query",
+            "description": "Lọc theo tầng",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        }
+      }
+    },
+    "/api/reports/overview": {
+      "get": {
+        "tags": [
+          "Reports"
+        ],
+        "summary": "Tổng quan: doanh thu + lưu lượng vào/ra + lấp đầy theo khoảng ngày (Manager)",
+        "description": "",
+        "parameters": [
+          {
+            "name": "from",
+            "in": "query",
+            "required": true,
+            "description": "Từ ngày (ISO8601)",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": true,
+            "description": "Đến ngày (ISO8601)",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "floorId",
+            "in": "query",
+            "description": "Lọc theo tầng",
+            "schema": {
+              "type": "integer"
             }
           }
         ],

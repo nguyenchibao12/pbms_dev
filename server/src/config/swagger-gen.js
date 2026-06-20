@@ -32,6 +32,7 @@ const doc = {
     { name: 'Admin', description: 'Quản lý tài khoản người dùng + nhật ký (Admin)' },
     { name: 'Sessions', description: 'Phiên gửi xe — check-in, tra cứu QR, phí (Staff)' },
     { name: 'Payments', description: 'Thanh toán PayOS — webhook, xác minh (User/Staff)' },
+    { name: 'Reports', description: 'Báo cáo — doanh thu, lấp đầy, giờ cao điểm (Manager)' },
   ],
   components: {
     securitySchemes: {
