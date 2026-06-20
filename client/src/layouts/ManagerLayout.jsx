@@ -10,6 +10,7 @@ const tabs = [
   { to: '/manager/pricing-rules', label: 'Bảng giá' },
   { to: '/manager/zones', label: 'Khu vực' },
   { to: '/manager/parking-slots', label: 'Chỗ đỗ' },
+  { to: '/manager/gates', label: 'Cổng' },
 ];
 
 export default function ManagerLayout() {
