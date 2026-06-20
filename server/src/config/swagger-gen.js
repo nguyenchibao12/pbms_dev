@@ -31,6 +31,7 @@ const doc = {
     { name: 'Pricing Rules', description: 'Bảng giá theo loại xe (Manager)' },
     { name: 'Admin', description: 'Quản lý tài khoản người dùng + nhật ký (Admin)' },
     { name: 'Sessions', description: 'Phiên gửi xe — check-in, tra cứu QR, phí (Staff)' },
+    { name: 'Reservations', description: 'Đặt chỗ — booking, hủy/hoàn phí, check-in theo đặt chỗ (User/Staff)' },
     { name: 'Payments', description: 'Thanh toán PayOS — webhook, xác minh (User/Staff)' },
   ],
   components: {
