@@ -31,13 +31,23 @@ export const createZone = async (data) => {
   });
   if (existing) throw new AppError('Zone code already exists on this floor', 409, 'CONFLICT');
 
+  const totalSlots = data.totalSlots ?? 0;
+  const monthlyPassCapacity = data.monthlyPassCapacity ?? 0;
+  if (monthlyPassCapacity > totalSlots) {
+    throw new AppError(
+      'monthlyPassCapacity cannot exceed totalSlots',
+      400,
+      'VALIDATION_ERROR',
+    );
+  }
+
   return Zone.create({
     floor_id: data.floorId,
     vehicle_type_id: data.vehicleTypeId,
     zone_code: data.zoneCode,
     label: data.label,
-    total_slots: data.totalSlots ?? 0,
-    monthly_pass_capacity: data.monthlyPassCapacity ?? 0,
+    total_slots: totalSlots,
+    monthly_pass_capacity: monthlyPassCapacity,
   });
 };
 
@@ -65,13 +75,23 @@ export const updateZone = async (id, data) => {
     }
   }
 
+  const newTotalSlots = data.totalSlots ?? zone.total_slots;
+  const newCapacity = data.monthlyPassCapacity ?? zone.monthly_pass_capacity;
+  if (newCapacity > newTotalSlots) {
+    throw new AppError(
+      'monthlyPassCapacity cannot exceed totalSlots',
+      400,
+      'VALIDATION_ERROR',
+    );
+  }
+
   await zone.update({
     floor_id: newFloorId,
     vehicle_type_id: data.vehicleTypeId ?? zone.vehicle_type_id,
     zone_code: newZoneCode,
     label: data.label ?? zone.label,
-    total_slots: data.totalSlots ?? zone.total_slots,
-    monthly_pass_capacity: data.monthlyPassCapacity ?? zone.monthly_pass_capacity,
+    total_slots: newTotalSlots,
+    monthly_pass_capacity: newCapacity,
   });
   return zone;
 };

@@ -15,6 +15,8 @@ import userAdminRoutes from './routes/userAdmin.routes.js';
 import auditRoutes from './routes/audit.routes.js';
 import publicRoutes from './routes/public.routes.js';
 import sessionRoutes from './routes/session.routes.js';
+import reservationRoutes from './routes/reservation.routes.js';
+import paymentRoutes from './routes/payment.routes.js';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler.js';
 import { securityHeaders, jsonParserLimit, getCorsOrigin } from './middleware/security.js';
 
@@ -55,6 +57,8 @@ app.use('/api/admin/users', userAdminRoutes);
 app.use('/api/admin/audit-logs', auditRoutes);
 app.use('/api/public', publicRoutes);
 app.use('/api/sessions', sessionRoutes);
+app.use('/api/reservations', reservationRoutes);
+app.use('/api/payments', paymentRoutes);
 
 // Swagger UI — tài liệu + test API trực tiếp tại /api/docs (spec JSON: /api/docs.json)
 app.get('/api/docs.json', (_req, res) => {

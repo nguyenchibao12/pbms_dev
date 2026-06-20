@@ -17,6 +17,7 @@ import VehicleTypesPage from './pages/manager/VehicleTypesPage';
 import PricingRulesPage from './pages/manager/PricingRulesPage';
 import ZonesPage from './pages/manager/ZonesPage';
 import ParkingSlotsPage from './pages/manager/ParkingSlotsPage';
+import GatesPage from './pages/manager/GatesPage';
 
 export default function App() {
   return (
@@ -54,6 +55,7 @@ export default function App() {
               <Route path="pricing-rules" element={<PricingRulesPage />} />
               <Route path="zones" element={<ZonesPage />} />
               <Route path="parking-slots" element={<ParkingSlotsPage />} />
+              <Route path="gates" element={<GatesPage />} />
             </Route>
           </Route>
           <Route element={<ProtectedRoute allowedRoles={['Staff']} />}>

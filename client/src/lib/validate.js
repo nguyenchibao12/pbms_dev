@@ -93,3 +93,11 @@ export function validateZoneForm(form) {
       : {},
   );
 }
+
+/** Validate form cổng (gate): tầng (bắt buộc), mã cổng (bắt buộc). */
+export function validateGateForm(form) {
+  return mergeErrors(
+    validateRequired(form.floorId, 'floorId', 'tầng'),
+    validateRequiredText(form.gateCode, 'gateCode', 'mã cổng'),
+  );
+}

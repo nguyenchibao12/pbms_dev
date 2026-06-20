@@ -94,6 +94,14 @@ export const quickSetupFloor = async (payload) => {
       const vt = await VehicleType.findByPk(zc.vehicleTypeId, { transaction });
       if (!vt) throw new AppError('Vehicle type not found', 404, 'NOT_FOUND');
 
+      if ((zc.monthlyPassCapacity ?? 0) > zc.slotCount) {
+        throw new AppError(
+          `Zone "${zc.zoneCode}": monthlyPassCapacity cannot exceed slotCount`,
+          400,
+          'VALIDATION_ERROR',
+        );
+      }
+
       const zone = await Zone.create(
         {
           floor_id: floor.floor_id,

@@ -22,9 +22,16 @@ const doc = {
     { name: 'Auth', description: 'Đăng ký / đăng nhập / quên mật khẩu / Google / xác minh email' },
     { name: 'System', description: 'Health check' },
     { name: 'Public', description: 'Thông tin công khai (không cần đăng nhập)' },
-    { name: 'MasterData', description: 'Tầng / Khu / Chỗ / Cổng / Loại xe / Bảng giá (Manager)' },
+    // MasterData tách thành từng resource cho dễ phân biệt (Manager)
+    { name: 'Vehicle Types', description: 'Loại xe — ô tô / xe máy (Manager)' },
+    { name: 'Floors', description: 'Tầng — gồm thiết lập nhanh & nhân bản (Manager)' },
+    { name: 'Zones', description: 'Khu — gắn loại xe, sinh nhiều chỗ (Manager)' },
+    { name: 'Parking Slots', description: 'Chỗ đỗ — trạng thái & khoảng cách (Manager)' },
+    { name: 'Gates', description: 'Cổng — theo tầng + làn loại xe, in/out (Manager)' },
+    { name: 'Pricing Rules', description: 'Bảng giá theo loại xe (Manager)' },
     { name: 'Admin', description: 'Quản lý tài khoản người dùng + nhật ký (Admin)' },
     { name: 'Sessions', description: 'Phiên gửi xe — check-in, tra cứu QR, phí (Staff)' },
+    { name: 'Payments', description: 'Thanh toán PayOS — webhook, xác minh (User/Staff)' },
   ],
   components: {
     securitySchemes: {
