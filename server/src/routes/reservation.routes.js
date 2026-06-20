@@ -8,6 +8,7 @@ import {
   checkinReservationValidator,
   staffQrLookupValidator,
   windowAvailabilityValidator,
+  suggestSlotValidator,
 } from '../validators/reservation.validator.js';
 
 const router = Router();
@@ -61,7 +62,24 @@ router.get(
   validate,
   reservationController.windowAvailability,
 );
-// LƯU Ý: '/:id' (route bắt-tất) phải nằm DƯỚI mọi route chữ cụ thể như '/mine', '/staff/*', '/checkin', '/window-availability'.
+router.get(
+  '/suggest-slot',
+  /* #swagger.tags = ['Reservations']
+     #swagger.summary = 'Gợi ý chỗ đỗ tốt nhất trong khung giờ (User) — preview'
+     #swagger.parameters['floorId'] = { in: 'query', required: true, schema: { type: 'integer' } }
+     #swagger.parameters['vehicleTypeId'] = { in: 'query', required: true, schema: { type: 'integer' } }
+     #swagger.parameters['shiftId'] = { in: 'query', description: 'morning|afternoon|evening|overnight (đi kèm arrivalDate)', schema: { type: 'string' } }
+     #swagger.parameters['arrivalDate'] = { in: 'query', description: 'YYYY-MM-DD (đi với shiftId)', schema: { type: 'string' } }
+     #swagger.parameters['startTime'] = { in: 'query', description: 'ISO — thay cho ca, đi với endTime', schema: { type: 'string' } }
+     #swagger.parameters['endTime'] = { in: 'query', description: 'ISO — đi với startTime', schema: { type: 'string' } }
+     #swagger.parameters['zoneId'] = { in: 'query', schema: { type: 'integer' } }
+     #swagger.parameters['topN'] = { in: 'query', description: 'Số ứng viên trả về (1–10, mặc định 5)', schema: { type: 'integer' } } */
+  ...userOnly,
+  suggestSlotValidator,
+  validate,
+  reservationController.suggestSlotPreview,
+);
+// LƯU Ý: '/:id' (route bắt-tất) phải nằm DƯỚI mọi route chữ cụ thể như '/mine', '/staff/*', '/checkin', '/window-availability', '/suggest-slot'.
 router.get('/:id',
   /* #swagger.tags = ['Reservations']
      #swagger.summary = 'Chi tiết đặt chỗ' */
