@@ -44,3 +44,21 @@ export const checkinReservationValidator = [
 export const staffQrLookupValidator = [
   query('qrToken').isString().trim().notEmpty().isLength({ min: 16 }),
 ];
+
+export const windowAvailabilityValidator = [
+  query('floorId').isInt({ min: 1 }).withMessage('floorId is required'),
+  query('vehicleTypeId').isInt({ min: 1 }).withMessage('vehicleTypeId is required'),
+  query('shiftId').optional().isIn(SHIFT_IDS).withMessage('Invalid shiftId'),
+  query('arrivalDate').optional().isISO8601().withMessage('arrivalDate as YYYY-MM-DD'),
+  query('startTime').optional().isISO8601().withMessage('startTime as ISO date'),
+  query('endTime').optional().isISO8601().withMessage('endTime as ISO date'),
+  query('zoneId').optional().isInt({ min: 1 }),
+  query().custom((_value, { req }) => {
+    const hasShift = Boolean(req.query.shiftId && req.query.arrivalDate);
+    const hasWindow = Boolean(req.query.startTime && req.query.endTime);
+    if (!hasShift && !hasWindow) {
+      throw new Error('Provide shiftId + arrivalDate, or startTime + endTime');
+    }
+    return true;
+  }),
+];

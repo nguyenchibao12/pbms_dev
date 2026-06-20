@@ -43,3 +43,16 @@ export const checkin = asyncHandler(async (req, res) => {
   const result = await reservationService.checkinReservation(req.user.user_id, req.body);
   successResponse(res, result, 'Reservation check-in successful', 201);
 });
+
+export const windowAvailability = asyncHandler(async (req, res) => {
+  const data = await reservationService.getWindowAvailability({
+    floorId: Number(req.query.floorId),
+    vehicleTypeId: Number(req.query.vehicleTypeId),
+    startTime: req.query.startTime,
+    endTime: req.query.endTime,
+    shiftId: req.query.shiftId,
+    arrivalDate: req.query.arrivalDate,
+    zoneId: req.query.zoneId ? Number(req.query.zoneId) : undefined,
+  });
+  successResponse(res, data);
+});

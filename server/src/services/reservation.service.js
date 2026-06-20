@@ -18,6 +18,7 @@ import {
   releaseSlot,
   occupyReservedSlot,
 } from '../utils/slotSuggest.js';
+import { resolveZoneIds, findSlotsAvailableForWindow } from '../utils/slotWindow.js';
 import { createPayOSPaymentLink, generateOrderCode } from './payos.client.js';
 import { logSuggestion } from './aiLog.service.js';
 import { getSession } from './session.service.js';
@@ -80,6 +81,70 @@ export const listUserReservations = async (userId) =>
     include: reservationIncludes,
     order: [['start_time', 'DESC']],
   });
+
+/**
+ * Đếm chỗ còn trống trong một khung giờ (CA hoặc start/end) cho preview trước khi đặt.
+ * Chỉ đọc — không tạo reservation, không giữ slot.
+ */
+export const getWindowAvailability = async (data) => {
+  const { startTime, endTime } = resolveBookingWindow(data);
+
+  if (Number.isNaN(startTime.getTime()) || Number.isNaN(endTime.getTime())) {
+    throw new AppError('Invalid start or end time', 400, 'VALIDATION_ERROR');
+  }
+  if (endTime <= startTime) {
+    throw new AppError('endTime must be after startTime', 400, 'VALIDATION_ERROR');
+  }
+  if (startTime < new Date()) {
+    throw new AppError('startTime must be in the future', 400, 'VALIDATION_ERROR');
+  }
+
+  const floor = await Floor.findByPk(data.floorId);
+  if (!floor) throw new AppError('Floor not found', 404, 'NOT_FOUND');
+
+  const vehicleType = await VehicleType.findByPk(data.vehicleTypeId);
+  if (!vehicleType) throw new AppError('Vehicle type not found', 404, 'NOT_FOUND');
+
+  const zoneIds = await resolveZoneIds({
+    floorId: data.floorId,
+    vehicleTypeId: data.vehicleTypeId,
+    zoneId: data.zoneId,
+  });
+
+  if (zoneIds.length === 0) {
+    return {
+      floorId: data.floorId,
+      vehicleTypeId: data.vehicleTypeId,
+      startTime: startTime.toISOString(),
+      endTime: endTime.toISOString(),
+      totalSlots: 0,
+      availableCount: 0,
+      canBook: false,
+      blockedByReservation: 0,
+      blockedByActiveSession: 0,
+    };
+  }
+
+  const result = await findSlotsAvailableForWindow({
+    floorId: data.floorId,
+    vehicleTypeId: data.vehicleTypeId,
+    zoneId: data.zoneId,
+    startTime,
+    endTime,
+  });
+
+  return {
+    floorId: data.floorId,
+    vehicleTypeId: data.vehicleTypeId,
+    startTime: startTime.toISOString(),
+    endTime: endTime.toISOString(),
+    totalSlots: result.totalSlots,
+    availableCount: result.availableCount,
+    canBook: result.availableCount > 0,
+    blockedByReservation: result.blockedByReservation,
+    blockedByActiveSession: result.blockedByActiveSession,
+  };
+};
 
 const findActiveSessionByPlate = async (plateNumber) =>
   ParkingSession.findOne({
