@@ -101,3 +101,13 @@ export function validateGateForm(form) {
     validateRequiredText(form.gateCode, 'gateCode', 'mã cổng'),
   );
 }
+
+/** Validate form check-in (Staff): biển số, loại xe, tầng, cổng vào. */
+export function validateCheckinForm(form) {
+  return mergeErrors(
+    validateRequiredText(form.plateNumber, 'plateNumber', 'biển số xe'),
+    validateRequired(form.vehicleTypeId, 'vehicleTypeId', 'loại xe'),
+    validateRequired(form.floorId, 'floorId', 'tầng'),
+    validateRequired(form.gateId, 'gateId', 'cổng vào'),
+  );
+}
