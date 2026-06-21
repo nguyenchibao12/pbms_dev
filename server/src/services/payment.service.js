@@ -260,7 +260,17 @@ export const handlePaymentWebhook = async (body) => {
     throw new AppError('Invalid webhook payload', 400, 'VALIDATION_ERROR');
   }
 
-  const payment = await getPaymentByOrderCode(orderCode);
+  // PayOS gọi ping xác minh khi đăng ký webhook (orderCode test, chưa có payment).
+  // Chữ ký đã verify ở trên → chỉ cần trả 200 để PayOS chấp nhận URL.
+  let payment;
+  try {
+    payment = await getPaymentByOrderCode(orderCode);
+  } catch (err) {
+    if (err.code === 'NOT_FOUND') {
+      return { acknowledged: true, orderCode };
+    }
+    throw err;
+  }
 
   if (payment.status === 'success') {
     if (payment.reservation_id) {
