@@ -36,6 +36,8 @@ import {
 import { logAdminAction } from '../utils/auditLog.js';
 
 const CHECKIN_EARLY_GRACE_MS = 15 * 60 * 1000;
+// 3.4 — số ứng viên slot tối đa thử khoá khi gặp race (giới hạn row-lock giữ trong 1 transaction)
+const MAX_SLOT_LOCK_ATTEMPTS = 5;
 
 const reservationIncludes = [
   { association: 'slot', include: [{ association: 'zone', include: [{ association: 'floor' }] }] },
@@ -268,7 +270,7 @@ export const createReservation = async (userId, data) => {
     throw new AppError('Vehicle already has an overlapping reservation', 409, 'CONFLICT');
   }
 
-  const { slot: suggestedSlot, meta: suggestMeta } = await suggestSlot({
+  const { slot: suggestedSlot, rankedSlots, meta: suggestMeta } = await suggestSlot({
     floorId: data.floorId,
     vehicleTypeId: data.vehicleTypeId,
     zoneId: data.zoneId,
@@ -278,15 +280,38 @@ export const createReservation = async (userId, data) => {
 
   const bookingFee = getBookingFee();
 
-  const reservation = await sequelize.transaction(async (transaction) => {
-    await lockSlotReserved(suggestedSlot.slot_id, transaction);
-    return Reservation.create(
+  // 3.4 — suggestSlot đọc "slot trống" NGOÀI transaction; tới khi khoá, người khác có thể đã
+  // giật mất. Thay vì fail cứng, thử lần lượt các ứng viên đã xếp hạng (best-first). Giới hạn
+  // MAX_SLOT_LOCK_ATTEMPTS để không giữ quá nhiều row-lock trong 1 transaction.
+  const candidates = (rankedSlots?.length ? rankedSlots : [suggestedSlot]).slice(
+    0,
+    MAX_SLOT_LOCK_ATTEMPTS,
+  );
+
+  const { reservation, chosenSlot } = await sequelize.transaction(async (transaction) => {
+    let locked = null;
+    for (const candidate of candidates) {
+      try {
+        await lockSlotReserved(candidate.slot_id, transaction);
+        locked = candidate;
+        break;
+      } catch (err) {
+        // 409 = slot vừa bị giật giữa lúc suggest và lock → thử ứng viên kế.
+        if (err.statusCode === 409) continue;
+        throw err;
+      }
+    }
+    if (!locked) {
+      throw new AppError('Các chỗ gợi ý vừa bị giữ hết, vui lòng thử lại', 409, 'SLOT_RACE_LOST');
+    }
+
+    const created = await Reservation.create(
       {
         user_id: userId,
         vehicle_type_id: data.vehicleTypeId,
         floor_id: data.floorId,
-        zone_id: suggestedSlot.zone_id,
-        slot_id: suggestedSlot.slot_id,
+        zone_id: locked.zone_id,
+        slot_id: locked.slot_id,
         plate_number: plateNumber,
         start_time: startTime,
         end_time: endTime,
@@ -296,31 +321,55 @@ export const createReservation = async (userId, data) => {
       },
       { transaction }
     );
+    return { reservation: created, chosenSlot: locked };
   });
 
   await logSuggestion({
     ...suggestMeta,
+    // Ghi đúng slot thực sự khoá được (có thể khác slot best ban đầu nếu phải retry).
+    selectedSlotId: chosenSlot.slot_id,
     context: 'reservation',
   });
 
-  const orderCode = generateOrderCode();
-  const payosResult = await createPayOSPaymentLink({
-    orderCode,
-    amount: bookingFee,
-    description: `Booking ${plateNumber}`,
-    returnUrl: `${process.env.CLIENT_URL}/reservations`,
-    cancelUrl: `${process.env.CLIENT_URL}/reservations`,
-  });
+  // 3.2 — Slot đã `reserved` + reservation `pending` đã COMMIT ở trên. Nếu tạo link PayOS
+  // hoặc ghi Payment lỗi mà không bù trừ, slot sẽ kẹt `reserved` vĩnh viễn (không payment,
+  // không webhook nào tới). Bọc saga: hỏng -> nhả slot + huỷ reservation (tái dùng
+  // cancelReservationOnPaymentFail). Job nền 3.3 là lớp dự phòng nếu cả bù trừ cũng hỏng.
+  let payosResult;
+  let payment;
+  try {
+    const orderCode = generateOrderCode();
+    payosResult = await createPayOSPaymentLink({
+      orderCode,
+      amount: bookingFee,
+      description: `Booking ${plateNumber}`,
+      returnUrl: `${process.env.CLIENT_URL}/reservations`,
+      cancelUrl: `${process.env.CLIENT_URL}/reservations`,
+    });
 
-  const payment = await Payment.create({
-    reservation_id: reservation.reservation_id,
-    order_code: orderCode,
-    amount: bookingFee,
-    status: 'pending',
-    method: 'payos',
-    gateway_transaction_id: payosResult.paymentLinkId ? String(payosResult.paymentLinkId) : null,
-    gateway_response: JSON.stringify(payosResult),
-  });
+    payment = await Payment.create({
+      reservation_id: reservation.reservation_id,
+      order_code: orderCode,
+      amount: bookingFee,
+      status: 'pending',
+      method: 'payos',
+      gateway_transaction_id: payosResult.paymentLinkId ? String(payosResult.paymentLinkId) : null,
+      gateway_response: JSON.stringify(payosResult),
+    });
+  } catch (err) {
+    await cancelReservationOnPaymentFail(reservation.reservation_id).catch((cleanupErr) =>
+      console.error(
+        `[createReservation] bù trừ thất bại cho #${reservation.reservation_id} (job 3.3 sẽ dọn):`,
+        cleanupErr.message,
+      ),
+    );
+    console.error('[createReservation] tạo thanh toán PayOS lỗi:', err.message);
+    throw new AppError(
+      'Không tạo được liên kết thanh toán, đã hủy giữ chỗ — vui lòng thử lại',
+      502,
+      'PAYMENT_GATEWAY_ERROR',
+    );
+  }
 
   const full = await getReservation(reservation.reservation_id);
   return {
@@ -424,6 +473,45 @@ export const cancelReservationOnPaymentFail = async (reservationId, payload) => 
       await failedPayment.update({ gateway_response: JSON.stringify(payload) });
     }
   }
+
+  return getReservation(reservationId);
+};
+
+/**
+ * Job nền (3.3): đặt chỗ confirmed đã quá khung giờ mà không check-in -> no_show + nhả slot.
+ * KHÔNG hoàn phí booking (no-show = mất phí giữ chỗ). Vô hiệu QR. Guard theo status để
+ * idempotent (chạy trùng nhịp với webhook/checkin cũng không hỏng).
+ */
+export const markReservationNoShow = async (reservationId) => {
+  const reservation = await Reservation.findByPk(reservationId);
+  if (!reservation) return null;
+  if (reservation.status !== 'confirmed') return reservation;
+
+  await sequelize.transaction(async (transaction) => {
+    const locked = await Reservation.findByPk(reservationId, {
+      transaction,
+      lock: transaction.LOCK.UPDATE,
+    });
+    // Có thể đã đổi trạng thái (check-in/hủy) giữa lúc đọc và khoá → bỏ qua.
+    if (!locked || locked.status !== 'confirmed') return;
+
+    const slot = await ParkingSlot.findByPk(locked.slot_id, {
+      transaction,
+      lock: transaction.LOCK.UPDATE,
+    });
+    if (slot?.status === 'reserved') {
+      await releaseReservedSlot(locked.slot_id, transaction);
+    }
+
+    assertReservationTransition(locked.status, 'no_show');
+    await locked.update(
+      {
+        status: 'no_show',
+        qr_token: buildRevokedQrToken('reservation', locked.reservation_id),
+      },
+      { transaction },
+    );
+  });
 
   return getReservation(reservationId);
 };

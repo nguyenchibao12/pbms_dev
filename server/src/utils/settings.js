@@ -33,6 +33,10 @@ const DEFAULT_SYSTEM = {
   max_parking_hours: null,
   // Hủy đặt chỗ confirmed trước giờ vào >= ngần này (giờ) → hoàn phí booking; sát giờ → không hoàn
   booking_refund_cutoff_hours: 1,
+  // Đơn pending quá ngần này (phút) chưa thanh toán → job nền tự hủy + nhả slot (3.3)
+  booking_pending_ttl_minutes: 15,
+  // Đặt chỗ confirmed quá end_time + ngần này (phút) mà không check-in → no_show + nhả slot (3.3)
+  booking_no_show_grace_minutes: 15,
 };
 
 let buildingCache = null;
@@ -58,6 +62,15 @@ const envSystemDefaults = () => ({
     process.env.BOOKING_REFUND_CUTOFF_HOURS != null && process.env.BOOKING_REFUND_CUTOFF_HOURS !== ''
       ? Number(process.env.BOOKING_REFUND_CUTOFF_HOURS)
       : DEFAULT_SYSTEM.booking_refund_cutoff_hours,
+  booking_pending_ttl_minutes:
+    process.env.BOOKING_PENDING_TTL_MINUTES != null && process.env.BOOKING_PENDING_TTL_MINUTES !== ''
+      ? Number(process.env.BOOKING_PENDING_TTL_MINUTES)
+      : DEFAULT_SYSTEM.booking_pending_ttl_minutes,
+  booking_no_show_grace_minutes:
+    process.env.BOOKING_NO_SHOW_GRACE_MINUTES != null &&
+    process.env.BOOKING_NO_SHOW_GRACE_MINUTES !== ''
+      ? Number(process.env.BOOKING_NO_SHOW_GRACE_MINUTES)
+      : DEFAULT_SYSTEM.booking_no_show_grace_minutes,
 });
 
 export const clearSettingsCache = () => {
@@ -114,6 +127,16 @@ export const getMaxParkingHours = () => {
 export const getBookingRefundCutoffHours = () => {
   const v = getSystemSettingsSync().booking_refund_cutoff_hours;
   return v != null && v >= 0 ? Number(v) : 1;
+};
+
+export const getBookingPendingTtlMinutes = () => {
+  const v = getSystemSettingsSync().booking_pending_ttl_minutes;
+  return v != null && v > 0 ? Number(v) : DEFAULT_SYSTEM.booking_pending_ttl_minutes;
+};
+
+export const getBookingNoShowGraceMinutes = () => {
+  const v = getSystemSettingsSync().booking_no_show_grace_minutes;
+  return v != null && v >= 0 ? Number(v) : DEFAULT_SYSTEM.booking_no_show_grace_minutes;
 };
 
 export const getDefaultBuildingSettings = () => ({ ...readFileBuilding() });

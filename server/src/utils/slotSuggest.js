@@ -98,6 +98,8 @@ export const suggestSlot = async ({
 
   return {
     slot: selected.slot,
+    // Danh sách ứng viên đã xếp hạng (best-first) để caller retry khi lock thua race (3.4).
+    rankedSlots: ranked.map((r) => r.slot),
     meta: {
       algorithm,
       candidatesCount: slots.length,
