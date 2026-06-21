@@ -5,6 +5,7 @@ import ProtectedRoute from './components/ProtectedRoute';
 import MainLayout from './layouts/MainLayout';
 import ManagerLayout from './layouts/ManagerLayout';
 import AdminLayout from './layouts/AdminLayout';
+import GuestLayout from './layouts/GuestLayout';
 import HomePage from './pages/HomePage';
 import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
@@ -18,6 +19,7 @@ import PricingRulesPage from './pages/manager/PricingRulesPage';
 import ZonesPage from './pages/manager/ZonesPage';
 import ParkingSlotsPage from './pages/manager/ParkingSlotsPage';
 import GatesPage from './pages/manager/GatesPage';
+import PricingPage from './pages/guest/PricingPage';
 
 export default function App() {
   return (
@@ -27,6 +29,11 @@ export default function App() {
         <Routes>
           <Route element={<MainLayout />}>
             <Route index element={<HomePage />} />
+          </Route>
+
+          {/* Khu công khai (Guest) — không cần đăng nhập, GuestLayout bọc header/nav/footer */}
+          <Route element={<GuestLayout />}>
+            <Route path="/pricing" element={<PricingPage />} />
           </Route>
 
           {/* Trang công khai */}
