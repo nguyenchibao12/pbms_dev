@@ -30,6 +30,16 @@ export const parkingSlotsApi = {
   remove: (id) => api.delete(`/parking-slots/${id}`),
 };
 
+// CRUD cổng (gate) ra/vào theo tầng. Lọc list theo floorId.
+// Mỗi cổng nên gắn loại xe để validate khi staff check-in. Ghi chỉ Manager.
+export const gatesApi = {
+  list: (floorId) => api.get('/gates', { params: floorId ? { floorId } : {} }),
+  get: (id) => api.get(`/gates/${id}`),
+  create: (data) => api.post('/gates', data),
+  update: (id, data) => api.put(`/gates/${id}`, data),
+  remove: (id) => api.delete(`/gates/${id}`),
+};
+
 // CRUD loại xe (Car / Motorbike / SUV...). Đọc cho mọi vai trò đã đăng nhập,
 // ghi (create/update/remove) chỉ Manager — backend tự kiểm tra quyền.
 export const vehicleTypesApi = {

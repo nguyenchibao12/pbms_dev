@@ -18,8 +18,11 @@ import {
   releaseSlot,
   occupyReservedSlot,
 } from '../utils/slotSuggest.js';
+import { resolveZoneIds, findSlotsAvailableForWindow } from '../utils/slotWindow.js';
+import { buildScoreReason } from '../utils/slotScoring.js';
 import { createPayOSPaymentLink, generateOrderCode } from './payos.client.js';
 import { logSuggestion } from './aiLog.service.js';
+import { getParkingInsights, getUserParkingPreferences } from './prediction.service.js';
 import { getSession } from './session.service.js';
 import { recordWrongFloorIncident, recordIncident } from './incident.service.js';
 import { validateAndNormalizePlateVN } from '../utils/plateVN.js';
@@ -80,6 +83,148 @@ export const listUserReservations = async (userId) =>
     include: reservationIncludes,
     order: [['start_time', 'DESC']],
   });
+
+/**
+ * Đếm chỗ còn trống trong một khung giờ (CA hoặc start/end) cho preview trước khi đặt.
+ * Chỉ đọc — không tạo reservation, không giữ slot.
+ */
+export const getWindowAvailability = async (data) => {
+  const { startTime, endTime } = resolveBookingWindow(data);
+
+  if (Number.isNaN(startTime.getTime()) || Number.isNaN(endTime.getTime())) {
+    throw new AppError('Invalid start or end time', 400, 'VALIDATION_ERROR');
+  }
+  if (endTime <= startTime) {
+    throw new AppError('endTime must be after startTime', 400, 'VALIDATION_ERROR');
+  }
+  if (startTime < new Date()) {
+    throw new AppError('startTime must be in the future', 400, 'VALIDATION_ERROR');
+  }
+
+  const floor = await Floor.findByPk(data.floorId);
+  if (!floor) throw new AppError('Floor not found', 404, 'NOT_FOUND');
+
+  const vehicleType = await VehicleType.findByPk(data.vehicleTypeId);
+  if (!vehicleType) throw new AppError('Vehicle type not found', 404, 'NOT_FOUND');
+
+  const zoneIds = await resolveZoneIds({
+    floorId: data.floorId,
+    vehicleTypeId: data.vehicleTypeId,
+    zoneId: data.zoneId,
+  });
+
+  if (zoneIds.length === 0) {
+    return {
+      floorId: data.floorId,
+      vehicleTypeId: data.vehicleTypeId,
+      startTime: startTime.toISOString(),
+      endTime: endTime.toISOString(),
+      totalSlots: 0,
+      availableCount: 0,
+      canBook: false,
+      blockedByReservation: 0,
+      blockedByActiveSession: 0,
+    };
+  }
+
+  const result = await findSlotsAvailableForWindow({
+    floorId: data.floorId,
+    vehicleTypeId: data.vehicleTypeId,
+    zoneId: data.zoneId,
+    startTime,
+    endTime,
+  });
+
+  return {
+    floorId: data.floorId,
+    vehicleTypeId: data.vehicleTypeId,
+    startTime: startTime.toISOString(),
+    endTime: endTime.toISOString(),
+    totalSlots: result.totalSlots,
+    availableCount: result.availableCount,
+    canBook: result.availableCount > 0,
+    blockedByReservation: result.blockedByReservation,
+    blockedByActiveSession: result.blockedByActiveSession,
+  };
+};
+
+/**
+ * Gợi ý chỗ đỗ tốt nhất cho khung giờ — preview, KHÔNG tạo reservation, KHÔNG ghi ai_log.
+ * Bản cơ bản: chấm điểm theo khoảng cách/cổng (slotScoring). Phần insights/ưu tiên chỗ
+ * quen theo lịch sử user sẽ bổ sung ở Module 2c (prediction.service).
+ */
+export const previewSuggestSlot = async (data) => {
+  const { startTime, endTime } = resolveBookingWindow(data);
+
+  if (Number.isNaN(startTime.getTime()) || Number.isNaN(endTime.getTime())) {
+    throw new AppError('Invalid start or end time', 400, 'VALIDATION_ERROR');
+  }
+  if (endTime <= startTime) {
+    throw new AppError('endTime must be after startTime', 400, 'VALIDATION_ERROR');
+  }
+
+  const floor = await Floor.findByPk(data.floorId);
+  if (!floor) throw new AppError('Floor not found', 404, 'NOT_FOUND');
+
+  const vehicleType = await VehicleType.findByPk(data.vehicleTypeId);
+  if (!vehicleType) throw new AppError('Vehicle type not found', 404, 'NOT_FOUND');
+
+  const topN = Math.min(Number(data.topN) || 5, 10);
+  const userPrefs = data.userId ? await getUserParkingPreferences(data.userId) : null;
+
+  const [suggestResult, insights] = await Promise.all([
+    suggestSlot({
+      floorId: data.floorId,
+      vehicleTypeId: data.vehicleTypeId,
+      zoneId: data.zoneId,
+      startTime,
+      endTime,
+      topN,
+      userPrefs,
+    }),
+    getParkingInsights({
+      floorId: data.floorId,
+      vehicleTypeId: data.vehicleTypeId,
+      userId: data.userId,
+      startTime,
+      endTime,
+    }),
+  ]);
+
+  const { slot, meta } = suggestResult;
+
+  const distanceToGate =
+    slot.distance_to_gate != null ? Number(slot.distance_to_gate) : null;
+  const distanceToElevator =
+    slot.distance_to_elevator != null ? Number(slot.distance_to_elevator) : null;
+  const topPick = meta.topCandidates?.[0];
+
+  return {
+    slot: {
+      slotId: slot.slot_id,
+      slotCode: slot.slot_code,
+      zoneCode: slot.zone?.zone_code ?? null,
+      floorCode: slot.zone?.floor?.floor_code ?? floor.floor_code,
+    },
+    reason: buildScoreReason(topPick?.breakdown, {
+      distanceToGate,
+      distanceToElevator,
+    }),
+    algorithm: meta.algorithm,
+    score: meta.score,
+    distanceToGate,
+    distanceToElevator,
+    candidatesCount: meta.candidatesCount,
+    topCandidates: (meta.topCandidates || []).map((c) => ({
+      ...c,
+      reason: buildScoreReason(c.breakdown, {
+        distanceToGate: c.distanceToGate,
+        distanceToElevator: c.distanceToElevator,
+      }),
+    })),
+    insights,
+  };
+};
 
 const findActiveSessionByPlate = async (plateNumber) =>
   ParkingSession.findOne({

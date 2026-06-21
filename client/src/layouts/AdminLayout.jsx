@@ -3,17 +3,14 @@ import { useAuth } from '../context/AuthContext';
 import { useLogout } from '../hooks/useLogout';
 import { getRoleName, roleLabels } from '../lib/auth';
 
-// Các tab khu vực Quản lý — module sau chỉ cần thêm dòng vào đây + route trong App.jsx.
+// Các tab khu vực Quản trị (Admin) — thêm module mới chỉ cần thêm 1 dòng + route trong App.jsx.
 const tabs = [
-  { to: '/manager/floors', label: 'Tầng' },
-  { to: '/manager/vehicle-types', label: 'Loại xe' },
-  { to: '/manager/pricing-rules', label: 'Bảng giá' },
-  { to: '/manager/zones', label: 'Khu vực' },
-  { to: '/manager/parking-slots', label: 'Chỗ đỗ' },
-  { to: '/manager/gates', label: 'Cổng' },
+  { to: '/admin', label: 'Tổng quan', end: true },
+  { to: '/admin/users', label: 'Người dùng' },
+  { to: '/admin/audit-logs', label: 'Nhật ký' },
 ];
 
-export default function ManagerLayout() {
+export default function AdminLayout() {
   const { user } = useAuth();
   const logout = useLogout();
   const roleName = getRoleName(user);
@@ -50,6 +47,7 @@ export default function ManagerLayout() {
             <NavLink
               key={tab.to}
               to={tab.to}
+              end={tab.end}
               className={({ isActive }) =>
                 `-mb-px border-b-2 px-3 py-2.5 text-sm font-medium transition-colors ${
                   isActive
