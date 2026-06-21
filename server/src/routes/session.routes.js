@@ -4,6 +4,7 @@ import { validate } from '../middleware/validate.js';
 import { staffOnly, staffOrManager, authenticated, userOnly } from '../middleware/access.js';
 import {
   checkinValidator,
+  checkoutValidator,
   previewFeeValidator,
   sessionIdParam,
   correctPlateValidator,
@@ -44,9 +45,11 @@ router.post('/checkin',
      #swagger.requestBody = { required: true, content: { 'application/json': { example: { plateNumber: '51F-12345', vehicleTypeId: 1, floorId: 1, gateId: 1, zoneId: 1 } } } } */
   ...staffOnly, checkinValidator, validate, sessionController.checkin);
 
-// TODO(payment): bật lại khi services/payment.service.js (module thanh toán) được merge.
-// checkout phụ thuộc initiateSessionCheckout trong payment.service nên tạm chưa mount.
-// router.post('/checkout', ...staffOnly, checkoutValidator, validate, sessionController.checkout);
+router.post('/checkout',
+  /* #swagger.tags = ['Sessions']
+     #swagger.summary = 'Check-out xe ra + tính phí (Staff)'
+     #swagger.requestBody = { required: true, content: { 'application/json': { example: { plateNumber: '51F-12345', gateId: 2, lostTicket: false } } } } */
+  ...staffOnly, checkoutValidator, validate, sessionController.checkout);
 
 router.post('/preview-fee',
   /* #swagger.tags = ['Sessions']

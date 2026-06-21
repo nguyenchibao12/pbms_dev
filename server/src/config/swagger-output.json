@@ -1486,6 +1486,32 @@
         }
       }
     },
+    "/api/sessions/checkout": {
+      "post": {
+        "tags": [
+          "Sessions"
+        ],
+        "summary": "Check-out xe ra + tính phí (Staff)",
+        "description": "",
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "example": {
+                "plateNumber": "51F-12345",
+                "gateId": 2,
+                "lostTicket": false
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/sessions/preview-fee": {
       "post": {
         "tags": [
@@ -1651,6 +1677,156 @@
         }
       }
     },
+    "/api/reservations/window-availability": {
+      "get": {
+        "tags": [
+          "Reservations"
+        ],
+        "summary": "Đếm chỗ còn trống trong khung giờ (User) — preview trước khi đặt",
+        "description": "",
+        "parameters": [
+          {
+            "name": "floorId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "vehicleTypeId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "shiftId",
+            "in": "query",
+            "description": "morning|afternoon|evening|overnight (đi kèm arrivalDate)",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "arrivalDate",
+            "in": "query",
+            "description": "YYYY-MM-DD (đi với shiftId)",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "startTime",
+            "in": "query",
+            "description": "ISO — thay cho ca, đi với endTime",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "endTime",
+            "in": "query",
+            "description": "ISO — đi với startTime",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "zoneId",
+            "in": "query",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        }
+      }
+    },
+    "/api/reservations/suggest-slot": {
+      "get": {
+        "tags": [
+          "Reservations"
+        ],
+        "summary": "Gợi ý chỗ đỗ tốt nhất trong khung giờ (User) — preview",
+        "description": "",
+        "parameters": [
+          {
+            "name": "floorId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "vehicleTypeId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "shiftId",
+            "in": "query",
+            "description": "morning|afternoon|evening|overnight (đi kèm arrivalDate)",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "arrivalDate",
+            "in": "query",
+            "description": "YYYY-MM-DD (đi với shiftId)",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "startTime",
+            "in": "query",
+            "description": "ISO — thay cho ca, đi với endTime",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "endTime",
+            "in": "query",
+            "description": "ISO — đi với startTime",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "zoneId",
+            "in": "query",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "topN",
+            "in": "query",
+            "description": "Số ứng viên trả về (1–10, mặc định 5)",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        }
+      }
+    },
     "/api/reservations/{id}": {
       "get": {
         "tags": [
@@ -1681,6 +1857,103 @@
           "Reservations"
         ],
         "summary": "Hủy đặt chỗ + hoàn phí (User)",
+        "description": "",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        }
+      }
+    },
+    "/api/monthly-passes/": {
+      "post": {
+        "tags": [
+          "Monthly Passes"
+        ],
+        "summary": "Mua vé tháng (User) — tạo đơn + link thanh toán PayOS",
+        "description": "Vé cố định 1 tháng; ngày kết thúc + khung giờ (theo giờ mở cửa tòa) do server tự tính.",
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "example": {
+                "plateNumber": "51F-67890",
+                "vehicleTypeId": 1,
+                "floorId": 1,
+                "startDate": "2026-07-01"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/monthly-passes/mine": {
+      "get": {
+        "tags": [
+          "Monthly Passes"
+        ],
+        "summary": "Vé tháng của tôi (User)",
+        "description": "",
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        }
+      }
+    },
+    "/api/monthly-passes/capacity": {
+      "get": {
+        "tags": [
+          "Monthly Passes"
+        ],
+        "summary": "Sức chứa vé tháng còn lại theo tầng + loại xe",
+        "description": "",
+        "parameters": [
+          {
+            "name": "floorId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "vehicleTypeId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        }
+      }
+    },
+    "/api/monthly-passes/{id}": {
+      "get": {
+        "tags": [
+          "Monthly Passes"
+        ],
+        "summary": "Chi tiết vé tháng (chủ vé hoặc Staff)",
         "description": "",
         "parameters": [
           {
