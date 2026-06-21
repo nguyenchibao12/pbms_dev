@@ -24,10 +24,10 @@
     "mysql2": "^3.14.1",
     "nodemailer": "^8.0.11",
     "sequelize": "^6.37.7",
+    "swagger-autogen": "^2.23.7",
     "swagger-ui-express": "^5.0.1"
   },
   "devDependencies": {
-    "nodemon": "^3.1.10",
-    "swagger-autogen": "^2.23.7"
+    "nodemon": "^3.1.10"
   }
 }
