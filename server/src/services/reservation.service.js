@@ -22,6 +22,7 @@ import { resolveZoneIds, findSlotsAvailableForWindow } from '../utils/slotWindow
 import { buildScoreReason } from '../utils/slotScoring.js';
 import { createPayOSPaymentLink, generateOrderCode } from './payos.client.js';
 import { logSuggestion } from './aiLog.service.js';
+import { getParkingInsights, getUserParkingPreferences } from './prediction.service.js';
 import { getSession } from './session.service.js';
 import { recordWrongFloorIncident, recordIncident } from './incident.service.js';
 import { validateAndNormalizePlateVN } from '../utils/plateVN.js';
@@ -169,15 +170,28 @@ export const previewSuggestSlot = async (data) => {
   if (!vehicleType) throw new AppError('Vehicle type not found', 404, 'NOT_FOUND');
 
   const topN = Math.min(Number(data.topN) || 5, 10);
+  const userPrefs = data.userId ? await getUserParkingPreferences(data.userId) : null;
 
-  const { slot, meta } = await suggestSlot({
-    floorId: data.floorId,
-    vehicleTypeId: data.vehicleTypeId,
-    zoneId: data.zoneId,
-    startTime,
-    endTime,
-    topN,
-  });
+  const [suggestResult, insights] = await Promise.all([
+    suggestSlot({
+      floorId: data.floorId,
+      vehicleTypeId: data.vehicleTypeId,
+      zoneId: data.zoneId,
+      startTime,
+      endTime,
+      topN,
+      userPrefs,
+    }),
+    getParkingInsights({
+      floorId: data.floorId,
+      vehicleTypeId: data.vehicleTypeId,
+      userId: data.userId,
+      startTime,
+      endTime,
+    }),
+  ]);
+
+  const { slot, meta } = suggestResult;
 
   const distanceToGate =
     slot.distance_to_gate != null ? Number(slot.distance_to_gate) : null;
@@ -208,6 +222,7 @@ export const previewSuggestSlot = async (data) => {
         distanceToElevator: c.distanceToElevator,
       }),
     })),
+    insights,
   };
 };
 
