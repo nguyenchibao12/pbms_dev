@@ -11,7 +11,7 @@ import { AppError } from '../utils/helpers.js';
 import { generateQrToken } from '../utils/qr.js';
 import { suggestSlot, lockSlotOccupied, releaseSlot } from '../utils/slotSuggest.js';
 import { calculateParkingFee, getEffectivePricingRule } from '../utils/feeCalc.js';
-import { isSessionFreeUnderPass } from '../utils/passWindow.js';
+import { isSessionFreeUnderPass, isWithinPassWindow } from '../utils/passWindow.js';
 import { logSuggestion } from './aiLog.service.js';
 import { validateAndNormalizePlateVN } from '../utils/plateVN.js';
 import { assertBuildingOpenForCheckIn } from '../utils/buildingHours.js';
@@ -222,6 +222,38 @@ export const checkin = async (staffUserId, data) => {
     );
   }
 
+  // === Vé tháng: nếu biển số có pass active → check-in dạng monthly_pass (calculated_fee = 0) ===
+  // Tìm theo biển số (không lọc tầng) để phát hiện trường hợp khách lên SAI TẦNG.
+  const { findActivePassByPlate } = await import('./monthlyPass.service.js');
+  let activePass = null;
+  const passForPlate = await findActivePassByPlate(plateNumber);
+  if (passForPlate) {
+    if (passForPlate.floor_id !== data.floorId) {
+      await createIncident(staffUserId, {
+        type: 'wrong_floor',
+        description: `Vé tháng biển ${plateNumber} thuộc tầng "${passForPlate.floor?.name || passForPlate.floor_id}", khách quét tại tầng ${data.floorId}`,
+        passId: passForPlate.pass_id,
+        userId: passForPlate.user_id,
+      });
+      throw new AppError(
+        `Biển ${plateNumber} có vé tháng ở tầng "${passForPlate.floor?.name || passForPlate.floor_id}" — vui lòng lên đúng tầng đó để quét`,
+        409,
+        'PASS_WRONG_FLOOR',
+      );
+    }
+    if (passForPlate.vehicle_type_id !== data.vehicleTypeId) {
+      throw new AppError(
+        `Vé tháng của biển ${plateNumber} đăng ký loại xe khác — chọn đúng loại xe`,
+        409,
+        'PASS_VEHICLE_MISMATCH',
+      );
+    }
+    // Trong khung giờ pass → miễn phí; ngoài khung giờ → bỏ qua, xử lý như walk-in (tính phí).
+    if (isWithinPassWindow(passForPlate, now)) {
+      activePass = passForPlate;
+    }
+  }
+
   const gate = await Gate.findByPk(data.gateId, {
     include: [{ association: 'floor' }],
   });
@@ -249,14 +281,19 @@ export const checkin = async (staffUserId, data) => {
   });
 
   const qrToken = generateQrToken();
-  const sessionType = data.sessionType === 'auto_registered' ? 'auto_registered' : 'walk_in';
+  const sessionType = activePass
+    ? 'monthly_pass'
+    : data.sessionType === 'auto_registered'
+      ? 'auto_registered'
+      : 'walk_in';
 
   const session = await sequelize.transaction(async (transaction) => {
     await lockSlotOccupied(suggestedSlot.slot_id, transaction);
 
     return ParkingSession.create(
       {
-        user_id: data.userId || null,
+        user_id: activePass ? activePass.user_id : data.userId || null,
+        pass_id: activePass ? activePass.pass_id : null,
         gate_id: data.gateId,
         slot_id: suggestedSlot.slot_id,
         vehicle_type_id: data.vehicleTypeId,
@@ -266,6 +303,7 @@ export const checkin = async (staffUserId, data) => {
         check_in_by: staffUserId,
         session_type: sessionType,
         status: 'active',
+        calculated_fee: activePass ? 0 : null,
       },
       { transaction }
     );
@@ -274,7 +312,7 @@ export const checkin = async (staffUserId, data) => {
   await logSuggestion({
     ...suggestMeta,
     sessionId: session.session_id,
-    context: 'walk_in',
+    context: activePass ? 'monthly' : 'walk_in',
   });
 
   return getSession(session.session_id);
