@@ -1,6 +1,14 @@
 import * as monthlyPassService from '../services/monthlyPass.service.js';
 import { asyncHandler, successResponse, AppError } from '../utils/helpers.js';
 
+export const purchase = asyncHandler(async (req, res) => {
+  const result = await monthlyPassService.purchaseMonthlyPass(req.user.user_id, {
+    ...req.body,
+    startDate: req.body.startDate.slice(0, 10),
+  });
+  successResponse(res, result, 'Monthly pass created — complete payment to activate', 201);
+});
+
 export const listMine = asyncHandler(async (req, res) => {
   const list = await monthlyPassService.listUserPasses(req.user.user_id);
   successResponse(res, list);

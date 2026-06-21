@@ -2,9 +2,16 @@ import { Router } from 'express';
 import * as monthlyPassController from '../controllers/monthlyPass.controller.js';
 import { validate } from '../middleware/validate.js';
 import { authenticated, userOnly } from '../middleware/access.js';
-import { passIdParam } from '../validators/monthlyPass.validator.js';
+import { purchasePassValidator, passIdParam } from '../validators/monthlyPass.validator.js';
 
 const router = Router();
+
+router.post('/',
+  /* #swagger.tags = ['Monthly Passes']
+     #swagger.summary = 'Mua vé tháng (User) — tạo đơn + link thanh toán PayOS'
+     #swagger.requestBody = { required: true, content: { 'application/json': { example: { plateNumber: '51F-67890', vehicleTypeId: 1, floorId: 1, startDate: '2026-07-01' } } } }
+     #swagger.description = 'Vé cố định 1 tháng; ngày kết thúc + khung giờ (theo giờ mở cửa tòa) do server tự tính.' */
+  ...userOnly, purchasePassValidator, validate, monthlyPassController.purchase);
 
 router.get('/mine',
   /* #swagger.tags = ['Monthly Passes']
