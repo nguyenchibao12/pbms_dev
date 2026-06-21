@@ -2,6 +2,7 @@ import dotenv from 'dotenv';
 import app from './app.js';
 import sequelize, { syncSchema } from './config/db.js';
 import { ensureRoles } from './utils/ensureRoles.js';
+import { startReservationMaintenanceJob } from './jobs/reservationMaintenance.job.js';
 import './models/index.js';
 
 dotenv.config();
@@ -33,6 +34,9 @@ const start = async () => {
     console.log('Database synced');
 
     await ensureRoles();
+
+    startReservationMaintenanceJob();
+    console.log('Reservation maintenance job started (pending TTL + no-show)');
 
     app.listen(PORT, () => {
       console.log(`Server running on http://localhost:${PORT}`);
