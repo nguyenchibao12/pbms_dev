@@ -5,6 +5,7 @@ import ProtectedRoute from './components/ProtectedRoute';
 import MainLayout from './layouts/MainLayout';
 import ManagerLayout from './layouts/ManagerLayout';
 import AdminLayout from './layouts/AdminLayout';
+import StaffLayout from './layouts/StaffLayout';
 import GuestLayout from './layouts/GuestLayout';
 import HomePage from './pages/HomePage';
 import LoginPage from './pages/LoginPage';
@@ -19,6 +20,7 @@ import PricingRulesPage from './pages/manager/PricingRulesPage';
 import ZonesPage from './pages/manager/ZonesPage';
 import ParkingSlotsPage from './pages/manager/ParkingSlotsPage';
 import GatesPage from './pages/manager/GatesPage';
+import StaffOperationsPage from './pages/staff/StaffOperationsPage';
 import PricingPage from './pages/guest/PricingPage';
 import InfoPage from './pages/guest/InfoPage';
 
@@ -67,8 +69,11 @@ export default function App() {
               <Route path="gates" element={<GatesPage />} />
             </Route>
           </Route>
+          {/* Khu vực Nhân viên — StaffLayout bọc trang vận hành */}
           <Route element={<ProtectedRoute allowedRoles={['Staff']} />}>
-            <Route path="/staff" element={<DashboardPage />} />
+            <Route path="/staff" element={<StaffLayout />}>
+              <Route index element={<StaffOperationsPage />} />
+            </Route>
           </Route>
           <Route element={<ProtectedRoute allowedRoles={['User']} />}>
             <Route path="/reservations" element={<DashboardPage />} />
