@@ -20,6 +20,7 @@ import ZonesPage from './pages/manager/ZonesPage';
 import ParkingSlotsPage from './pages/manager/ParkingSlotsPage';
 import GatesPage from './pages/manager/GatesPage';
 import PricingPage from './pages/guest/PricingPage';
+import InfoPage from './pages/guest/InfoPage';
 
 export default function App() {
   return (
@@ -34,6 +35,7 @@ export default function App() {
           {/* Khu công khai (Guest) — không cần đăng nhập, GuestLayout bọc header/nav/footer */}
           <Route element={<GuestLayout />}>
             <Route path="/pricing" element={<PricingPage />} />
+            <Route path="/info" element={<InfoPage />} />
           </Route>
 
           {/* Trang công khai */}
