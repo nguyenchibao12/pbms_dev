@@ -118,7 +118,8 @@ const assertAndRecordExitGate = async (staffUserId, session, gateId) => {
   assertGateVehicleType(gate, session.vehicle_type_id);
 
   const sessionFloorId = session.slot?.zone?.floor_id ?? session.slot?.zone?.floor?.floor_id ?? null;
-  if (sessionFloorId && gate.floor_id !== sessionFloorId) {
+  // Cổng cấp tòa nhà (floor_id = NULL) là điểm ra chung — bỏ qua kiểm tra trùng tầng.
+  if (sessionFloorId && gate.floor_id != null && gate.floor_id !== sessionFloorId) {
     await recordIncident({
       type: 'wrong_floor',
       description: `Sai tầng tại cổng ra: cổng ở tầng ${gate.floor_id}, xe đang đỗ tầng ${sessionFloorId}`,

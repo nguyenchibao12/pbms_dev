@@ -11,7 +11,8 @@ const Gate = sequelize.define(
     },
     floor_id: {
       type: DataTypes.INTEGER,
-      allowNull: false,
+      allowNull: true,
+      comment: 'NULL = cổng cấp tòa nhà (không thuộc tầng nào)',
     },
     gate_code: {
       type: DataTypes.STRING(20),

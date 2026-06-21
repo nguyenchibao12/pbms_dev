@@ -158,7 +158,8 @@ CREATE TABLE `parking_slot` (
 -- ---------------------------------------------------------------------
 CREATE TABLE `gate` (
   `gate_id`         INT         NOT NULL AUTO_INCREMENT,
-  `floor_id`        INT         NOT NULL,
+  `floor_id`        INT         NULL
+                    COMMENT 'NULL = cổng cấp tòa nhà (không thuộc tầng nào)',
   `gate_code`       VARCHAR(20) NOT NULL,
   `direction`       ENUM('in','out') NOT NULL,
   `vehicle_type_id` INT         NULL

@@ -3,6 +3,11 @@ import { SLOT_STATUSES } from '../models/parkingSlot.model.js';
 
 export const idParam = [param('id').isInt({ min: 1 }).withMessage('Invalid id')];
 
+export const gateScanValidator = [
+  body('gateId').isInt({ min: 1 }).withMessage('gateId is required'),
+  body('qrToken').isString().trim().notEmpty().withMessage('qrToken is required'),
+];
+
 export const floorValidators = {
   create: [
     body('floorCode')
@@ -187,7 +192,8 @@ export const gateValidators = {
     query('floorId').optional().isInt({ min: 1 }).withMessage('floorId phải là số nguyên dương').toInt(),
   ],
   create: [
-    body('floorId').isInt({ min: 1 }).withMessage('floorId không hợp lệ (số nguyên dương)').toInt(),
+    body('floorId').optional({ values: 'null' }).isInt({ min: 1 })
+      .withMessage('floorId phải là số (bỏ trống = cổng cấp tòa nhà)').toInt(),
     body('gateCode')
       .trim()
       .notEmpty().withMessage('Mã cổng không được để trống')

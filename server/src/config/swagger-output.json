@@ -923,6 +923,32 @@
         }
       }
     },
+    "/api/gates/scan": {
+      "post": {
+        "tags": [
+          "Gates"
+        ],
+        "summary": "Kiosk cổng — quét QR mở/đóng cổng (header X-Kiosk-Key, không cần đăng nhập)",
+        "description": "",
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        },
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "example": {
+                "gateId": 1,
+                "qrToken": "xxxxxxxxxxxxxxxx"
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/gates/": {
       "get": {
         "tags": [
