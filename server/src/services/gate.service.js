@@ -17,14 +17,33 @@ export const getGate = async (id) => {
   return gate;
 };
 
+// Mỗi phạm vi (1 tầng, hoặc cấp tòa nhà = floor_id NULL) chỉ được 1 cổng IN + 1 cổng OUT.
+const assertSingleDirectionGate = async (floorId, direction, excludeGateId = null) => {
+  if (!direction) return;
+  const existing = await Gate.findOne({ where: { floor_id: floorId, direction } });
+  if (existing && existing.gate_id !== excludeGateId) {
+    const scope = floorId == null ? 'tòa nhà' : `tầng (floorId=${floorId})`;
+    throw new AppError(
+      `Mỗi ${scope} chỉ được 1 cổng ${direction.toUpperCase()} (đã có cổng "${existing.gate_code}")`,
+      409,
+      'CONFLICT',
+    );
+  }
+};
+
 export const createGate = async (data) => {
-  const floor = await Floor.findByPk(data.floorId);
-  if (!floor) throw new AppError('Floor not found', 404, 'NOT_FOUND');
+  const floorId = data.floorId ?? null; // NULL = cổng cấp tòa nhà
+  if (floorId != null) {
+    const floor = await Floor.findByPk(floorId);
+    if (!floor) throw new AppError('Floor not found', 404, 'NOT_FOUND');
+  }
 
   const existing = await Gate.findOne({
-    where: { floor_id: data.floorId, gate_code: data.gateCode },
+    where: { floor_id: floorId, gate_code: data.gateCode },
   });
-  if (existing) throw new AppError('Gate code already exists on this floor', 409, 'CONFLICT');
+  if (existing) throw new AppError('Gate code already exists on this scope', 409, 'CONFLICT');
+
+  await assertSingleDirectionGate(floorId, data.direction, null);
 
   if (data.vehicleTypeId) {
     const vt = await VehicleType.findByPk(data.vehicleTypeId);
@@ -32,7 +51,7 @@ export const createGate = async (data) => {
   }
 
   return Gate.create({
-    floor_id: data.floorId,
+    floor_id: floorId,
     gate_code: data.gateCode,
     direction: data.direction,
     vehicle_type_id: data.vehicleTypeId ?? null,
@@ -45,20 +64,25 @@ export const updateGate = async (id, data) => {
   const gate = await Gate.findByPk(id);
   if (!gate) throw new AppError('Gate not found', 404, 'NOT_FOUND');
 
-  if (data.floorId) {
-    const floor = await Floor.findByPk(data.floorId);
+  const newFloorId = data.floorId !== undefined ? data.floorId : gate.floor_id;
+  if (newFloorId != null) {
+    const floor = await Floor.findByPk(newFloorId);
     if (!floor) throw new AppError('Floor not found', 404, 'NOT_FOUND');
   }
 
-  const newFloorId = data.floorId ?? gate.floor_id;
   const newGateCode = data.gateCode ?? gate.gate_code;
   if (newGateCode !== gate.gate_code || newFloorId !== gate.floor_id) {
     const existing = await Gate.findOne({
       where: { floor_id: newFloorId, gate_code: newGateCode },
     });
     if (existing && existing.gate_id !== gate.gate_id) {
-      throw new AppError('Gate code already exists on this floor', 409, 'CONFLICT');
+      throw new AppError('Gate code already exists on this scope', 409, 'CONFLICT');
     }
+  }
+
+  const newDirection = data.direction ?? gate.direction;
+  if (newDirection !== gate.direction || newFloorId !== gate.floor_id) {
+    await assertSingleDirectionGate(newFloorId, newDirection, gate.gate_id);
   }
 
   if (data.vehicleTypeId !== undefined) {

@@ -1,5 +1,12 @@
 import * as gateService from '../services/gate.service.js';
+import { scanGate } from '../services/gateScan.service.js';
 import { asyncHandler, successResponse } from '../utils/helpers.js';
+
+// Kiosk cổng: quét QR → mở/đóng cổng (không cần đăng nhập staff).
+export const scan = asyncHandler(async (req, res) => {
+  const result = await scanGate({ qrToken: req.body.qrToken, gateId: req.body.gateId });
+  successResponse(res, result, 'Gate scan processed');
+});
 
 export const list = asyncHandler(async (req, res) => {
   const gates = await gateService.listGates(req.query.floorId);

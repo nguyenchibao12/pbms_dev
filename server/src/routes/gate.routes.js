@@ -2,9 +2,17 @@ import { Router } from 'express';
 import * as gateController from '../controllers/gate.controller.js';
 import { validate } from '../middleware/validate.js';
 import { authenticated, managerWrite } from '../middleware/access.js';
-import { gateValidators, idParam } from '../validators/masterData.validator.js';
+import { kioskAuth } from '../middleware/kiosk.js';
+import { gateValidators, gateScanValidator, idParam } from '../validators/masterData.validator.js';
 
 const router = Router();
+
+router.post('/scan',
+  /* #swagger.tags = ['Gates']
+     #swagger.summary = 'Kiosk cổng — quét QR mở/đóng cổng (header X-Kiosk-Key, không cần đăng nhập)'
+     #swagger.security = []
+     #swagger.requestBody = { required: true, content: { 'application/json': { example: { gateId: 1, qrToken: 'xxxxxxxxxxxxxxxx' } } } } */
+  kioskAuth, gateScanValidator, validate, gateController.scan);
 
 router.get('/',
   /* #swagger.tags = ['Gates']
