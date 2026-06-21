@@ -22,6 +22,7 @@ import ParkingSlotsPage from './pages/manager/ParkingSlotsPage';
 import GatesPage from './pages/manager/GatesPage';
 import StaffOperationsPage from './pages/staff/StaffOperationsPage';
 import PricingPage from './pages/guest/PricingPage';
+import AvailabilityPage from './pages/guest/AvailabilityPage';
 import InfoPage from './pages/guest/InfoPage';
 
 export default function App() {
@@ -37,6 +38,7 @@ export default function App() {
           {/* Khu công khai (Guest) — không cần đăng nhập, GuestLayout bọc header/nav/footer */}
           <Route element={<GuestLayout />}>
             <Route path="/pricing" element={<PricingPage />} />
+            <Route path="/availability" element={<AvailabilityPage />} />
             <Route path="/info" element={<InfoPage />} />
           </Route>
 
