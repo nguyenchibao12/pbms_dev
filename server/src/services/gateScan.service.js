@@ -2,6 +2,7 @@ import { Gate, Reservation, ParkingSession } from '../models/index.js';
 import { AppError } from '../utils/helpers.js';
 import { checkinReservation } from './reservation.service.js';
 import { initiateSessionCheckout } from './payment.service.js';
+import { recordIncident } from './incident.service.js';
 
 // LƯU Ý: bản này CHƯA hỗ trợ check-in vé tháng ở cổng (pbms_dev chưa có checkinWithPass).
 // Khi monthlyPass.service có hàm check-in, bổ sung nhánh 'pass' tương tự nhánh 'reservation'.
@@ -49,8 +50,22 @@ const floorCheckin = async (ref, gate) => {
     });
     return open('floor-in', { kind: 'reservation', info: result });
   }
-  // QR phiên đã active → đã vào rồi, mở idempotent.
-  return open('floor-in', { kind: 'session', sessionId: ref.session.session_id, alreadyIn: true });
+  // QR phiên walk-in đã active → cổng IN phải đúng tầng của slot đã gán mới mở (idempotent).
+  const session = await ParkingSession.findByPk(ref.session.session_id, {
+    include: [{ association: 'slot', include: [{ association: 'zone' }] }],
+  });
+  const sessionFloorId = session?.slot?.zone?.floor_id ?? null;
+  if (sessionFloorId && gate.floor_id != null && gate.floor_id !== sessionFloorId) {
+    await recordIncident({
+      type: 'wrong_floor',
+      description: `Walk-in QR sai tầng tại cổng vào: cổng tầng ${gate.floor_id}, slot ở tầng ${sessionFloorId}`,
+      sessionId: session.session_id,
+      slotId: session.slot_id,
+      userId: session.user_id,
+    });
+    throw new AppError('Sai tầng — mã không thuộc tầng của cổng này. Barrier không mở.', 403, 'WRONG_FLOOR');
+  }
+  return open('floor-in', { kind: 'session', sessionId: session.session_id, alreadyIn: true });
 };
 
 // CỔNG OUT TẦNG: chỉ xác nhận có phiên + mở (xe rời tầng). Không đổi trạng thái.
