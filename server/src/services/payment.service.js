@@ -3,6 +3,7 @@ import { Payment, ParkingSession, Gate } from '../models/index.js';
 import { AppError } from '../utils/helpers.js';
 import { releaseSlot } from '../utils/slotSuggest.js';
 import { assertGateVehicleType } from '../utils/gateVehicle.js';
+import { resolveFloorGate } from '../utils/gateResolve.js';
 import {
   createPayOSPaymentLink,
   generateOrderCode,
@@ -105,19 +106,26 @@ export const completeSessionAfterPayment = async (payment, staffUserId = null) =
  * Ghi lại exit_gate_id để truy vết.
  */
 const assertAndRecordExitGate = async (staffUserId, session, gateId) => {
-  if (!gateId) {
-    throw new AppError('Vui lòng chọn cổng ra (OUT)', 400, 'VALIDATION_ERROR');
-  }
-  const gate = await Gate.findByPk(Number(gateId), { include: [{ association: 'floor' }] });
-  if (!gate || !gate.is_active) {
-    throw new AppError('Cổng ra không tồn tại hoặc đang bảo trì', 404, 'NOT_FOUND');
+  const sessionFloorId = session.slot?.zone?.floor_id ?? session.slot?.zone?.floor?.floor_id ?? null;
+
+  let gate;
+  if (gateId) {
+    gate = await Gate.findByPk(Number(gateId), { include: [{ association: 'floor' }] });
+    if (!gate || !gate.is_active) {
+      throw new AppError('Cổng ra không tồn tại hoặc đang bảo trì', 404, 'NOT_FOUND');
+    }
+  } else {
+    // Không gửi gateId: tự suy cổng ra của đúng tầng xe đang đỗ.
+    gate = await resolveFloorGate({
+      floorId: sessionFloorId,
+      direction: 'out',
+      vehicleTypeId: session.vehicle_type_id,
+    });
   }
   if (gate.direction !== 'out') {
     throw new AppError('Check-out phải dùng cổng RA (OUT)', 400, 'VALIDATION_ERROR');
   }
   assertGateVehicleType(gate, session.vehicle_type_id);
-
-  const sessionFloorId = session.slot?.zone?.floor_id ?? session.slot?.zone?.floor?.floor_id ?? null;
   // Cổng cấp tòa nhà (floor_id = NULL) là điểm ra chung — bỏ qua kiểm tra trùng tầng.
   if (sessionFloorId && gate.floor_id != null && gate.floor_id !== sessionFloorId) {
     await recordIncident({
@@ -243,6 +251,56 @@ const buildCheckoutPayload = async (staffUserId, lookup) => {
 
 export const initiateSessionCheckout = async (staffUserId, lookup) =>
   buildCheckoutPayload(staffUserId, lookup);
+
+/**
+ * Tất toán tiền mặt tại booth: staff thu đủ tiền → mở barie ngay (không qua PayOS).
+ * Ghi Payment method 'cash' rồi completeSessionAfterPayment (giải phóng slot + đóng phiên).
+ * Nếu phiên đã có payment pending (vd khách lỡ bấm PayOS rồi đổi sang tiền mặt) thì
+ * chuyển luôn payment đó sang 'cash' thay vì tạo bản ghi mới.
+ */
+export const settleCashCheckout = async (staffUserId, lookup) => {
+  const preview = await previewCheckoutFee(lookup);
+  const sessionId = preview.session.session_id;
+
+  // Chốt cổng ra (auto-resolve nếu thiếu gateId) + ghi exit_gate_id, kiểm tra đúng tầng.
+  await assertAndRecordExitGate(staffUserId, preview.session, lookup.gateId);
+
+  // preview.fee đã gồm phụ thu mất vé (nếu lookup.lostTicket = true).
+  const fee = Number(preview.fee);
+  if (lookup.lostTicket) {
+    const lostTicketFee = Number(lookup.lostTicketFee ?? getLostTicketFee());
+    await createIncident(staffUserId, {
+      type: 'lost_ticket',
+      description: `Lost ticket at cash checkout — surcharge ${lostTicketFee} VND`,
+      sessionId,
+      userId: preview.session.user_id,
+    });
+  }
+
+  let payment = await Payment.findOne({
+    where: { session_id: sessionId, status: 'pending' },
+  });
+  if (payment) {
+    await payment.update({ method: 'cash', amount: fee });
+  } else {
+    payment = await Payment.create({
+      session_id: sessionId,
+      order_code: generateOrderCode(),
+      amount: fee,
+      status: 'pending',
+      method: 'cash',
+    });
+  }
+
+  const result = await completeSessionAfterPayment(payment, staffUserId);
+  return {
+    ...result,
+    fee,
+    method: 'cash',
+    pricingRule: preview.pricingRule,
+    passCovered: preview.passCovered || false,
+  };
+};
 
 export const markPaymentFailed = async (payment, payload) => {
   await payment.update({

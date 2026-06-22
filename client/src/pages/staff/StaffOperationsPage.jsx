@@ -4,6 +4,7 @@ import { sessionsApi } from '../../api/sessions';
 import { staffReservationsApi } from '../../api/staffReservations';
 import { floorsApi, vehicleTypesApi, gatesApi, zonesApi } from '../../api/masterData';
 import { friendlyReservationError, reservationCheckinBadge } from '../../lib/reservationStatus';
+import { publicApi } from '../../api/public';
 import { validateCheckinForm } from '../../lib/validate';
 import Card from '../../components/ui/Card';
 import Modal from '../../components/ui/Modal';
@@ -38,6 +39,7 @@ export default function StaffOperationsPage() {
   const [vehicleTypes, setVehicleTypes] = useState([]);
   const [gates, setGates] = useState([]); // cổng IN theo tầng đã chọn
   const [zones, setZones] = useState([]); // khu theo tầng đã chọn (tùy chọn)
+  const [availability, setAvailability] = useState([]); // số chỗ trống theo tầng/khu
 
   // Check-in
   const [form, setForm] = useState(emptyCheckin);
@@ -98,7 +100,17 @@ export default function StaffOperationsPage() {
     }
   };
 
-  // Tải danh mục + danh sách xe đang đỗ + đặt chỗ sắp tới khi mở trang.
+  // Số chỗ trống theo tầng/khu (GET /public/availability) — cập nhật dropdown + panel.
+  const loadAvailability = async () => {
+    try {
+      const { data } = await publicApi.availability();
+      setAvailability(data.data || []);
+    } catch {
+      // lỗi tải số chỗ trống không chặn nghiệp vụ check-in
+    }
+  };
+
+  // Tải danh mục + danh sách xe đang đỗ + đặt chỗ sắp tới + số chỗ trống khi mở trang.
   useEffect(() => {
     (async () => {
       try {
@@ -110,6 +122,7 @@ export default function StaffOperationsPage() {
       }
       loadActive();
       loadUpcoming();
+      loadAvailability();
     })();
   }, []);
 
@@ -123,7 +136,9 @@ export default function StaffOperationsPage() {
     if (!floorId) return;
     try {
       const gRes = await gatesApi.list(floorId);
-      setCiGates((gRes.data.data || []).filter((g) => g.direction === 'in' && g.is_active));
+      const inGates = (gRes.data.data || []).filter((g) => g.direction === 'in' && g.is_active);
+      setCiGates(inGates);
+      if (inGates.length === 1) setCiGateId(String(inGates[0].gate_id)); // 1 cổng IN -> tự chọn
     } catch {
       setCiError('Không tải được cổng vào của tầng đã đặt');
     }
@@ -149,21 +164,18 @@ export default function StaffOperationsPage() {
 
   const handleReservationCheckin = async (e) => {
     e.preventDefault();
-    if (!ciGateId) {
-      setCiError('Vui lòng chọn cổng vào');
-      return;
-    }
     setCiError('');
     setCiSubmitting(true);
     try {
       await staffReservationsApi.checkin({
         reservationId: ciRes.reservation_id,
-        gateId: Number(ciGateId),
+        ...(ciGateId ? { gateId: Number(ciGateId) } : {}), // BE tự suy cổng IN nếu bỏ trống
       });
       toast.success('Cho xe đặt chỗ vào bãi thành công');
       setCiRes(null);
       loadActive();
       loadUpcoming();
+      loadAvailability();
     } catch (err) {
       setCiError(friendlyReservationError(err));
     } finally {
@@ -181,7 +193,10 @@ export default function StaffOperationsPage() {
     }
     try {
       const [gRes, zRes] = await Promise.all([gatesApi.list(floorId), zonesApi.list(floorId)]);
-      setGates((gRes.data.data || []).filter((g) => g.direction === 'in' && g.is_active));
+      const inGates = (gRes.data.data || []).filter((g) => g.direction === 'in' && g.is_active);
+      setGates(inGates);
+      // BE tự suy cổng khi tầng chỉ có 1 cổng IN -> tự điền sẵn, staff khỏi chọn.
+      if (inGates.length === 1) setForm((f) => ({ ...f, gateId: String(inGates[0].gate_id) }));
       setZones(zRes.data.data || []);
     } catch {
       toast.error('Không tải được cổng/khu của tầng');
@@ -200,7 +215,7 @@ export default function StaffOperationsPage() {
         plateNumber: form.plateNumber.trim().toUpperCase(),
         vehicleTypeId: Number(form.vehicleTypeId),
         floorId: Number(form.floorId),
-        gateId: Number(form.gateId),
+        ...(form.gateId ? { gateId: Number(form.gateId) } : {}), // BE tự suy nếu bỏ trống
         ...(form.zoneId ? { zoneId: Number(form.zoneId) } : {}),
       };
       const { data } = await sessionsApi.checkin(payload);
@@ -208,6 +223,7 @@ export default function StaffOperationsPage() {
       toast.success('Check-in thành công');
       setForm((f) => ({ ...emptyCheckin, floorId: f.floorId, gateId: f.gateId })); // giữ tầng/cổng cho lượt sau
       loadActive();
+      loadAvailability();
     } catch (err) {
       setCheckinError(err.response?.data?.error?.message || 'Check-in thất bại');
     } finally {
@@ -250,7 +266,9 @@ export default function StaffOperationsPage() {
         floorId ? gatesApi.list(floorId) : Promise.resolve({ data: { data: [] } }),
         sessionsApi.previewFee({ sessionId: session.session_id }),
       ]);
-      setCoGates((gRes.data.data || []).filter((g) => g.direction === 'out' && g.is_active));
+      const outGates = (gRes.data.data || []).filter((g) => g.direction === 'out' && g.is_active);
+      setCoGates(outGates);
+      if (outGates.length === 1) setCoGateId(String(outGates[0].gate_id)); // 1 cổng OUT -> tự chọn
       setCoPreview(pRes.data.data);
     } catch (err) {
       setCoError(err.response?.data?.error?.message || 'Không tải được cổng ra / phí');
@@ -259,32 +277,46 @@ export default function StaffOperationsPage() {
 
   const handleCheckout = async (e) => {
     e.preventDefault();
-    if (!coGateId) {
-      setCoError('Vui lòng chọn cổng ra');
-      return;
-    }
     setCoError('');
     setCoSubmitting(true);
     try {
       const { data } = await sessionsApi.checkout({
         sessionId: coSession.session_id,
-        gateId: Number(coGateId),
+        ...(coGateId ? { gateId: Number(coGateId) } : {}), // BE tự suy cổng OUT nếu bỏ trống
         lostTicket: coLost,
       });
       setCoResult(data.data);
       if (data.data?.barrierOpened) {
         toast.success('Xe ra thành công — barie mở');
-        loadActive(); // phiên rời khỏi danh sách đang đỗ
       } else {
         toast.info('Cần thanh toán để mở barie');
-        loadActive();
       }
+      loadActive(); // phiên rời khỏi danh sách đang đỗ
+      loadAvailability();
     } catch (err) {
       setCoError(err.response?.data?.error?.message || 'Check-out thất bại');
     } finally {
       setCoSubmitting(false);
     }
   };
+
+  // Số chỗ trống cho tầng đang chọn (theo loại xe nếu đã chọn) — dùng cho dropdown + panel.
+  const floorMetaFor = (floorId) => availability.find((f) => String(f.floorId) === String(floorId)) || null;
+  const freeFor = (floorMeta, vehicleTypeId) => {
+    if (!floorMeta) return null;
+    if (!vehicleTypeId) return { available: floorMeta.available, total: floorMeta.total };
+    const zs = (floorMeta.zones || []).filter((z) => String(z.vehicleTypeId) === String(vehicleTypeId));
+    return {
+      available: zs.reduce((s, z) => s + (z.available || 0), 0),
+      total: zs.reduce((s, z) => s + (z.total || 0), 0),
+    };
+  };
+  const selectedFloorMeta = floorMetaFor(form.floorId);
+  const selectedFloorFree = freeFor(selectedFloorMeta, form.vehicleTypeId);
+  const selectedVtName = vehicleTypes.find((v) => String(v.vehicle_type_id) === String(form.vehicleTypeId))?.type_name;
+  // Khu của tầng đang chọn, lọc theo loại xe (để staff khỏi chọn nhầm khu khác loại).
+  const visibleZones = zones.filter((z) => !form.vehicleTypeId || String(z.vehicle_type_id) === String(form.vehicleTypeId));
+  const zoneAvailById = (zoneId) => (selectedFloorMeta?.zones || []).find((z) => String(z.zoneId) === String(zoneId)) || null;
 
   return (
     <div>
@@ -329,7 +361,7 @@ export default function StaffOperationsPage() {
                 />
               </Field>
               <Field label="Loại xe" required error={fieldErrors.vehicleTypeId}>
-                <select className={inputClass} value={form.vehicleTypeId} onChange={(e) => setForm({ ...form, vehicleTypeId: e.target.value })} required>
+                <select className={inputClass} value={form.vehicleTypeId} onChange={(e) => setForm({ ...form, vehicleTypeId: e.target.value, zoneId: '' })} required>
                   <option value="">— Chọn loại xe —</option>
                   {vehicleTypes.map((v) => (
                     <option key={v.vehicle_type_id} value={v.vehicle_type_id}>{v.type_name}</option>
@@ -339,28 +371,57 @@ export default function StaffOperationsPage() {
               <Field label="Tầng" required error={fieldErrors.floorId}>
                 <select className={inputClass} value={form.floorId} onChange={(e) => onFloorChange(e.target.value)} required>
                   <option value="">— Chọn tầng —</option>
-                  {floors.map((f) => (
-                    <option key={f.floor_id} value={f.floor_id}>{f.floor_code} — {f.label}</option>
-                  ))}
+                  {floors.map((f) => {
+                    const fr = freeFor(floorMetaFor(f.floor_id), form.vehicleTypeId);
+                    return (
+                      <option key={f.floor_id} value={f.floor_id}>
+                        {f.floor_code} — {f.label}{fr ? ` (${fr.available} trống)` : ''}
+                      </option>
+                    );
+                  })}
                 </select>
               </Field>
-              <Field label="Cổng vào (IN)" required error={fieldErrors.gateId} hint={form.floorId ? undefined : 'Chọn tầng trước'}>
-                <select className={inputClass} value={form.gateId} onChange={(e) => setForm({ ...form, gateId: e.target.value })} required disabled={!form.floorId}>
-                  <option value="">— Chọn cổng vào —</option>
-                  {gates.map((g) => (
-                    <option key={g.gate_id} value={g.gate_id}>{g.gate_code}</option>
-                  ))}
-                </select>
+              <Field label="Cổng vào (IN)" error={fieldErrors.gateId} hint={form.floorId ? 'Cổng do hệ thống tự chọn theo tầng' : 'Chọn tầng trước'}>
+                {!form.floorId ? (
+                  <div className={`${inputClass} text-slate-400`}>— Chọn tầng trước —</div>
+                ) : gates.length === 0 ? (
+                  <p className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-700">Tầng chưa có cổng vào — báo Manager tạo cổng chiều IN.</p>
+                ) : gates.length === 1 ? (
+                  <div className={`${inputClass} flex items-center justify-between bg-slate-50`}>
+                    <span className="font-medium text-slate-700">{gates[0].gate_code}</span>
+                    <span className="text-xs text-slate-400">tự chọn</span>
+                  </div>
+                ) : (
+                  <select className={inputClass} value={form.gateId} onChange={(e) => setForm({ ...form, gateId: e.target.value })} required>
+                    <option value="">— Chọn cổng vào —</option>
+                    {gates.map((g) => (
+                      <option key={g.gate_id} value={g.gate_id}>{g.gate_code}</option>
+                    ))}
+                  </select>
+                )}
               </Field>
               <Field label="Khu vực (tùy chọn)" hint="Để trống = hệ thống tự chọn chỗ trống">
                 <select className={inputClass} value={form.zoneId} onChange={(e) => setForm({ ...form, zoneId: e.target.value })} disabled={!form.floorId}>
                   <option value="">— Tự động —</option>
-                  {zones.map((z) => (
-                    <option key={z.zone_id} value={z.zone_id}>{z.zone_code} — {z.label}</option>
-                  ))}
+                  {visibleZones.map((z) => {
+                    const za = zoneAvailById(z.zone_id);
+                    const full = za ? za.available === 0 : false;
+                    return (
+                      <option key={z.zone_id} value={z.zone_id} disabled={full}>
+                        {z.zone_code} — {z.label}{za ? ` (${za.available}/${za.total} trống)` : ''}{full ? ' — đầy' : ''}
+                      </option>
+                    );
+                  })}
                 </select>
               </Field>
-              <Button type="submit" className="brand-gradient w-full border-0 shadow-(--shadow-soft)" loading={submitting}>
+              {form.floorId && selectedFloorFree && (
+                <div className={`rounded-lg px-3 py-2 text-sm ${selectedFloorFree.available === 0 ? 'bg-red-50 text-red-600' : 'bg-emerald-50 text-emerald-700'}`}>
+                  {selectedFloorFree.available === 0
+                    ? `Tầng đầy${selectedVtName ? ` cho ${selectedVtName}` : ''} (${selectedFloorFree.available}/${selectedFloorFree.total} chỗ)`
+                    : `Còn ${selectedFloorFree.available}/${selectedFloorFree.total} chỗ${selectedVtName ? ` cho ${selectedVtName}` : ''}`}
+                </div>
+              )}
+              <Button type="submit" className="brand-gradient w-full border-0 shadow-(--shadow-soft)" loading={submitting} disabled={!!form.floorId && gates.length === 0}>
                 Check-in xe vào
               </Button>
             </form>
@@ -531,13 +592,22 @@ export default function StaffOperationsPage() {
             <div className="flex justify-between"><span className="text-slate-500">Khung giờ</span><span>{ciRes?.start_time ? new Date(ciRes.start_time).toLocaleString('vi-VN') : '—'}</span></div>
           </div>
 
-          <Field label="Cổng vào (IN)" required hint={ciGates.length ? undefined : 'Tầng đã đặt chưa có cổng vào — Manager cần tạo cổng chiều IN'}>
-            <select className={inputClass} value={ciGateId} onChange={(e) => setCiGateId(e.target.value)} required>
-              <option value="">— Chọn cổng vào —</option>
-              {ciGates.map((g) => (
-                <option key={g.gate_id} value={g.gate_id}>{g.gate_code}</option>
-              ))}
-            </select>
+          <Field label="Cổng vào (IN)" hint="Cổng do hệ thống tự chọn theo tầng đã đặt">
+            {ciGates.length === 0 ? (
+              <p className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-700">Tầng đã đặt chưa có cổng vào — Manager cần tạo cổng chiều IN.</p>
+            ) : ciGates.length === 1 ? (
+              <div className={`${inputClass} flex items-center justify-between bg-slate-50`}>
+                <span className="font-medium text-slate-700">{ciGates[0].gate_code}</span>
+                <span className="text-xs text-slate-400">tự chọn</span>
+              </div>
+            ) : (
+              <select className={inputClass} value={ciGateId} onChange={(e) => setCiGateId(e.target.value)} required>
+                <option value="">— Chọn cổng vào —</option>
+                {ciGates.map((g) => (
+                  <option key={g.gate_id} value={g.gate_id}>{g.gate_code}</option>
+                ))}
+              </select>
+            )}
           </Field>
 
           <div className="flex justify-end gap-2 pt-2">
@@ -581,13 +651,22 @@ export default function StaffOperationsPage() {
               </div>
             </div>
 
-            <Field label="Cổng ra (OUT)" required hint={coGates.length ? undefined : 'Tầng này chưa có cổng ra — Manager cần tạo cổng chiều OUT'}>
-              <select className={inputClass} value={coGateId} onChange={(e) => setCoGateId(e.target.value)} required>
-                <option value="">— Chọn cổng ra —</option>
-                {coGates.map((g) => (
-                  <option key={g.gate_id} value={g.gate_id}>{g.gate_code}</option>
-                ))}
-              </select>
+            <Field label="Cổng ra (OUT)" hint="Cổng do hệ thống tự chọn theo tầng">
+              {coGates.length === 0 ? (
+                <p className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-700">Tầng này chưa có cổng ra — Manager cần tạo cổng chiều OUT.</p>
+              ) : coGates.length === 1 ? (
+                <div className={`${inputClass} flex items-center justify-between bg-slate-50`}>
+                  <span className="font-medium text-slate-700">{coGates[0].gate_code}</span>
+                  <span className="text-xs text-slate-400">tự chọn</span>
+                </div>
+              ) : (
+                <select className={inputClass} value={coGateId} onChange={(e) => setCoGateId(e.target.value)} required>
+                  <option value="">— Chọn cổng ra —</option>
+                  {coGates.map((g) => (
+                    <option key={g.gate_id} value={g.gate_id}>{g.gate_code}</option>
+                  ))}
+                </select>
+              )}
             </Field>
 
             <label className="flex items-center gap-2 text-sm text-slate-700">

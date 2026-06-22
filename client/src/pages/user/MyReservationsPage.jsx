@@ -1,5 +1,5 @@
-import { useEffect, useState, useCallback } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { useEffect, useState, useCallback, useMemo } from 'react';
+import { Link, Navigate, useSearchParams } from 'react-router-dom';
 import { QRCodeSVG } from 'qrcode.react';
 import { CalendarPlus, RefreshCw, MapPin, CheckCircle2 } from 'lucide-react';
 import { reservationsApi } from '../../api/reservations';
@@ -53,7 +53,7 @@ const pendingCheckoutUrl = (r) => {
 const isCancellable = (status) => status === 'pending' || status === 'confirmed';
 
 export default function MyReservationsPage() {
-  const [searchParams, setSearchParams] = useSearchParams();
+  const [searchParams] = useSearchParams();
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -76,31 +76,21 @@ export default function MyReservationsPage() {
     }
   }, []);
 
+  // PayOS redirect quay về /reservations?status=...|cancel=... (returnUrl/cancelUrl cố định ở BE).
+  // Suy ra kết quả để đưa sang trang hứng riêng — thành công (PAID) hay thất bại (cancel/CANCELLED).
+  const paymentResult = useMemo(() => {
+    const orderCode = searchParams.get('orderCode');
+    const status = searchParams.get('status');
+    const cancelled = searchParams.get('cancel') === 'true' || status === 'CANCELLED';
+    if (!orderCode && !cancelled) return null;
+    return { type: cancelled ? 'failed' : 'success', orderCode: orderCode || '' };
+  }, [searchParams]);
+
   useEffect(() => {
+    if (paymentResult) return; // Đang chuyển sang trang kết quả — khỏi tải danh sách.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     load('initial');
-  }, [load]);
-
-  // PayOS redirect quay về /reservations?status=...|cancel=... — báo trạng thái rồi tải lại.
-  // Server tự xác nhận thanh toán qua webhook; ở đây chỉ làm mới danh sách.
-  useEffect(() => {
-    const orderCode = searchParams.get('orderCode');
-    const cancelled =
-      searchParams.get('cancel') === 'true' || searchParams.get('status') === 'CANCELLED';
-    if (!orderCode && !cancelled) return;
-
-    const cleared = new URLSearchParams(searchParams);
-    ['orderCode', 'status', 'cancel', 'code', 'id'].forEach((k) => cleared.delete(k));
-    setSearchParams(cleared, { replace: true });
-
-    if (cancelled) {
-      toast.info('Đã hủy thanh toán đặt chỗ');
-    } else {
-      toast.success('Đã nhận thanh toán — đang cập nhật trạng thái đơn');
-    }
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    load('manual');
-  }, [searchParams, setSearchParams, load]);
+  }, [load, paymentResult]);
 
   const handleCancel = async () => {
     if (!cancelTarget || cancelLoading) return;
@@ -123,6 +113,11 @@ export default function MyReservationsPage() {
       setCancelLoading(false);
     }
   };
+
+  if (paymentResult) {
+    const qs = paymentResult.orderCode ? `?orderCode=${paymentResult.orderCode}` : '';
+    return <Navigate to={`/reservations/payment/${paymentResult.type}${qs}`} replace />;
+  }
 
   return (
     <div className="space-y-6">

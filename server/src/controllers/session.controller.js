@@ -44,6 +44,11 @@ export const checkout = asyncHandler(async (req, res) => {
   successResponse(res, result, message);
 });
 
+export const cashCheckout = asyncHandler(async (req, res) => {
+  const result = await sessionService.cashCheckout(req.user.user_id, req.body);
+  successResponse(res, result, 'Cash check-out completed — barrier opened');
+});
+
 export const previewFee = asyncHandler(async (req, res) => {
   const result = await sessionService.previewCheckoutFee(req.body);
   successResponse(res, result, 'Fee preview');

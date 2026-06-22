@@ -108,7 +108,7 @@ export const quickSetupFloor = async (payload) => {
           vehicle_type_id: zc.vehicleTypeId,
           zone_code: zc.zoneCode,
           label: zc.label,
-          total_slots: 0,
+          total_slots: zc.slotCount,
           monthly_pass_capacity: zc.monthlyPassCapacity ?? 0,
         },
         { transaction },

@@ -2,7 +2,6 @@ import { Op } from 'sequelize';
 import sequelize from '../config/db.js';
 import {
   ParkingSession,
-  Gate,
   VehicleType,
   MonthlyPass,
   Reservation,
@@ -16,6 +15,7 @@ import { logSuggestion } from './aiLog.service.js';
 import { validateAndNormalizePlateVN } from '../utils/plateVN.js';
 import { assertBuildingOpenForCheckIn } from '../utils/buildingHours.js';
 import { assertGateVehicleType } from '../utils/gateVehicle.js';
+import { resolveFloorGate } from '../utils/gateResolve.js';
 import { getMaxParkingHours, getLostTicketFee } from '../utils/settings.js';
 import { assertSessionActive, buildRevokedQrToken } from '../utils/stateGuards.js';
 import { createIncident } from './incident.service.js';
@@ -254,19 +254,13 @@ export const checkin = async (staffUserId, data) => {
     }
   }
 
-  const gate = await Gate.findByPk(data.gateId, {
-    include: [{ association: 'floor' }],
+  // Cổng IN: nếu staff không gửi gateId, tự suy cổng vào duy nhất của tầng.
+  const gate = await resolveFloorGate({
+    floorId: data.floorId,
+    direction: 'in',
+    gateId: data.gateId,
+    vehicleTypeId: data.vehicleTypeId,
   });
-  if (!gate || !gate.is_active) {
-    throw new AppError('Gate not found or inactive', 404, 'NOT_FOUND');
-  }
-  if (gate.direction !== 'in') {
-    throw new AppError('Check-in must use an IN gate', 400, 'VALIDATION_ERROR');
-  }
-  if (gate.floor_id !== data.floorId) {
-    throw new AppError('Gate does not belong to the selected floor', 400, 'VALIDATION_ERROR');
-  }
-  assertGateVehicleType(gate, data.vehicleTypeId);
 
   const vehicleType = await VehicleType.findByPk(data.vehicleTypeId);
   if (!vehicleType) throw new AppError('Vehicle type not found', 404, 'NOT_FOUND');
@@ -294,7 +288,7 @@ export const checkin = async (staffUserId, data) => {
       {
         user_id: activePass ? activePass.user_id : data.userId || null,
         pass_id: activePass ? activePass.pass_id : null,
-        gate_id: data.gateId,
+        gate_id: gate.gate_id,
         slot_id: suggestedSlot.slot_id,
         vehicle_type_id: data.vehicleTypeId,
         plate_number: plateNumber,
@@ -321,6 +315,11 @@ export const checkin = async (staffUserId, data) => {
 export const checkout = async (staffUserId, data) => {
   const { initiateSessionCheckout } = await import('./payment.service.js');
   return initiateSessionCheckout(staffUserId, data);
+};
+
+export const cashCheckout = async (staffUserId, data) => {
+  const { settleCashCheckout } = await import('./payment.service.js');
+  return settleCashCheckout(staffUserId, data);
 };
 
 export const previewCheckoutFee = async (data) => {

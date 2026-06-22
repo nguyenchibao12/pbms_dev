@@ -33,7 +33,8 @@ export default function GatesPage() {
         floorsApi.list(),
         vehicleTypesApi.list(),
       ]);
-      setItems(gatesRes.data.data);
+      // Mỗi tầng cần đủ cổng vào (IN) + ra (OUT) — hiển thị cả hai chiều cho Manager quản.
+      setItems(gatesRes.data.data || []);
       setFloors(floorsRes.data.data);
       setVehicleTypes(typesRes.data.data);
     } catch (err) {
