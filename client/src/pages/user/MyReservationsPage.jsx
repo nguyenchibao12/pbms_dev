@@ -237,7 +237,7 @@ export default function MyReservationsPage() {
                     <div className="flex flex-col items-center gap-1 rounded-lg border border-slate-200 bg-white p-2">
                       <QRCodeSVG value={r.qr_token} size={120} aria-label="Mã QR check-in" />
                       <span
-                        className="max-w-[120px] cursor-default select-all truncate font-mono text-[10px] text-slate-400"
+                        className="max-w-[120px] cursor-default select-all break-all font-mono text-[10px] text-slate-400"
                         title={r.qr_token}
                       >
                         {r.qr_token}

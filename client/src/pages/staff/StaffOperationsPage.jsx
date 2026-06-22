@@ -443,7 +443,7 @@ export default function StaffOperationsPage() {
                   <div className="mt-3 flex flex-col items-center gap-2 border-t border-slate-200 pt-3">
                     <QRCodeSVG value={lastCheckin.qr_token} size={140} aria-label="Mã QR vé ra cổng" />
                     <span
-                      className="max-w-[140px] cursor-default select-all truncate font-mono text-[10px] text-slate-400"
+                      className="max-w-[140px] cursor-default select-all break-all font-mono text-[10px] text-slate-400"
                       title={lastCheckin.qr_token}
                     >
                       {lastCheckin.qr_token}
