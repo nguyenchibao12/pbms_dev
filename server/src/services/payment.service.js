@@ -3,6 +3,7 @@ import { Payment, ParkingSession, Gate } from '../models/index.js';
 import { AppError } from '../utils/helpers.js';
 import { releaseSlot } from '../utils/slotSuggest.js';
 import { assertGateVehicleType } from '../utils/gateVehicle.js';
+import { resolveFloorGate } from '../utils/gateResolve.js';
 import {
   createPayOSPaymentLink,
   generateOrderCode,
@@ -105,19 +106,26 @@ export const completeSessionAfterPayment = async (payment, staffUserId = null) =
  * Ghi lại exit_gate_id để truy vết.
  */
 const assertAndRecordExitGate = async (staffUserId, session, gateId) => {
-  if (!gateId) {
-    throw new AppError('Vui lòng chọn cổng ra (OUT)', 400, 'VALIDATION_ERROR');
-  }
-  const gate = await Gate.findByPk(Number(gateId), { include: [{ association: 'floor' }] });
-  if (!gate || !gate.is_active) {
-    throw new AppError('Cổng ra không tồn tại hoặc đang bảo trì', 404, 'NOT_FOUND');
+  const sessionFloorId = session.slot?.zone?.floor_id ?? session.slot?.zone?.floor?.floor_id ?? null;
+
+  let gate;
+  if (gateId) {
+    gate = await Gate.findByPk(Number(gateId), { include: [{ association: 'floor' }] });
+    if (!gate || !gate.is_active) {
+      throw new AppError('Cổng ra không tồn tại hoặc đang bảo trì', 404, 'NOT_FOUND');
+    }
+  } else {
+    // Không gửi gateId: tự suy cổng ra của đúng tầng xe đang đỗ.
+    gate = await resolveFloorGate({
+      floorId: sessionFloorId,
+      direction: 'out',
+      vehicleTypeId: session.vehicle_type_id,
+    });
   }
   if (gate.direction !== 'out') {
     throw new AppError('Check-out phải dùng cổng RA (OUT)', 400, 'VALIDATION_ERROR');
   }
   assertGateVehicleType(gate, session.vehicle_type_id);
-
-  const sessionFloorId = session.slot?.zone?.floor_id ?? session.slot?.zone?.floor?.floor_id ?? null;
   // Cổng cấp tòa nhà (floor_id = NULL) là điểm ra chung — bỏ qua kiểm tra trùng tầng.
   if (sessionFloorId && gate.floor_id != null && gate.floor_id !== sessionFloorId) {
     await recordIncident({

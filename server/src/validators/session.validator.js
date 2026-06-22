@@ -5,7 +5,8 @@ export const checkinValidator = [
   requiredPlateNumber('plateNumber'),
   body('vehicleTypeId').isInt({ min: 1 }).withMessage('vehicleTypeId is required'),
   body('floorId').isInt({ min: 1 }).withMessage('floorId is required'),
-  body('gateId').isInt({ min: 1 }).withMessage('gateId is required'),
+  // Optional: nếu bỏ trống, BE tự suy cổng IN duy nhất của tầng.
+  body('gateId').optional().isInt({ min: 1 }),
   body('zoneId').optional().isInt({ min: 1 }),
   body('userId').optional().isInt({ min: 1 }),
 ];
@@ -28,7 +29,8 @@ export const previewFeeValidator = [
 // Check-out: cần thêm cổng RA (OUT) để kiểm tra đúng tầng + ghi exit_gate_id
 export const checkoutValidator = [
   ...previewFeeValidator,
-  body('gateId').isInt({ min: 1 }).withMessage('gateId (cổng ra) is required'),
+  // Optional: nếu bỏ trống, BE tự suy cổng OUT duy nhất của tầng xe đang đỗ.
+  body('gateId').optional().isInt({ min: 1 }),
 ];
 
 export const sessionIdParam = [param('id').isInt({ min: 1 }).withMessage('Invalid session id')];

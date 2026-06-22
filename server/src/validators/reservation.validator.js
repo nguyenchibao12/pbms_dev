@@ -30,7 +30,8 @@ export const reservationIdParam = [
 ];
 
 export const checkinReservationValidator = [
-  body('gateId').isInt({ min: 1 }).withMessage('gateId is required'),
+  // Optional: nếu bỏ trống, BE tự suy cổng IN duy nhất của tầng đã đặt.
+  body('gateId').optional().isInt({ min: 1 }),
   body('reservationId').optional().isInt({ min: 1 }),
   body('qrToken').optional().isString().notEmpty(),
   body().custom((_value, { req }) => {

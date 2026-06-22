@@ -27,6 +27,7 @@ import { getSession } from './session.service.js';
 import { recordWrongFloorIncident, recordIncident } from './incident.service.js';
 import { validateAndNormalizePlateVN } from '../utils/plateVN.js';
 import { assertGateVehicleType } from '../utils/gateVehicle.js';
+import { resolveFloorGate } from '../utils/gateResolve.js';
 import { assertReservationTransition, buildRevokedQrToken } from '../utils/stateGuards.js';
 import { resolveShiftWindow } from '../utils/shifts.js';
 import {
@@ -703,23 +704,34 @@ export const checkinReservation = async (staffUserId, data) => {
     throw new AppError(`Reservation must be confirmed (current: ${reservation.status})`, 409, 'CONFLICT');
   }
 
-  const gate = await Gate.findByPk(data.gateId);
-  if (!gate || !gate.is_active) {
-    throw new AppError('Gate not found or inactive', 404, 'NOT_FOUND');
-  }
-  if (gate.direction !== 'in') {
-    throw new AppError('Check-in must use an IN gate', 400, 'VALIDATION_ERROR');
-  }
-  assertGateVehicleType(gate, reservation.vehicle_type_id);
-  if (gate.floor_id !== reservation.floor_id) {
-    await recordWrongFloorIncident({
-      gateFloorId: gate.floor_id,
-      expectedFloorId: reservation.floor_id,
-      reservationId: reservation.reservation_id,
-      userId: reservation.user_id,
-      slotId: reservation.slot_id,
+  let gate;
+  if (data.gateId) {
+    // Cổng được chỉ định: validate + ghi incident nếu sai tầng (giữ nguyên hành vi cũ).
+    gate = await Gate.findByPk(data.gateId);
+    if (!gate || !gate.is_active) {
+      throw new AppError('Gate not found or inactive', 404, 'NOT_FOUND');
+    }
+    if (gate.direction !== 'in') {
+      throw new AppError('Check-in must use an IN gate', 400, 'VALIDATION_ERROR');
+    }
+    assertGateVehicleType(gate, reservation.vehicle_type_id);
+    if (gate.floor_id !== reservation.floor_id) {
+      await recordWrongFloorIncident({
+        gateFloorId: gate.floor_id,
+        expectedFloorId: reservation.floor_id,
+        reservationId: reservation.reservation_id,
+        userId: reservation.user_id,
+        slotId: reservation.slot_id,
+      });
+      throw new AppError('Wrong floor — QR floor does not match gate floor', 403, 'FORBIDDEN');
+    }
+  } else {
+    // Không gửi gateId: tự suy cổng vào của đúng tầng đã đặt.
+    gate = await resolveFloorGate({
+      floorId: reservation.floor_id,
+      direction: 'in',
+      vehicleTypeId: reservation.vehicle_type_id,
     });
-    throw new AppError('Wrong floor — QR floor does not match gate floor', 403, 'FORBIDDEN');
   }
 
   const now = new Date();
@@ -784,7 +796,7 @@ export const checkinReservation = async (staffUserId, data) => {
       {
         user_id: reservation.user_id,
         reservation_id: reservation.reservation_id,
-        gate_id: data.gateId,
+        gate_id: gate.gate_id,
         slot_id: reservation.slot_id,
         vehicle_type_id: reservation.vehicle_type_id,
         plate_number: reservation.plate_number,
