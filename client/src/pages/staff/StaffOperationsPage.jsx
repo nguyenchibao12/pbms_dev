@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { sessionsApi } from '../../api/sessions';
 import { staffReservationsApi } from '../../api/staffReservations';
 import { floorsApi, vehicleTypesApi, gatesApi, zonesApi } from '../../api/masterData';
+import { publicApi } from '../../api/public';
 import { validateCheckinForm } from '../../lib/validate';
 import Card from '../../components/ui/Card';
 import Modal from '../../components/ui/Modal';
@@ -36,6 +37,7 @@ export default function StaffOperationsPage() {
   const [vehicleTypes, setVehicleTypes] = useState([]);
   const [gates, setGates] = useState([]); // cổng IN theo tầng đã chọn
   const [zones, setZones] = useState([]); // khu theo tầng đã chọn (tùy chọn)
+  const [availability, setAvailability] = useState([]); // số chỗ trống theo tầng/khu
 
   // Check-in
   const [form, setForm] = useState(emptyCheckin);
@@ -96,7 +98,17 @@ export default function StaffOperationsPage() {
     }
   };
 
-  // Tải danh mục + danh sách xe đang đỗ + đặt chỗ sắp tới khi mở trang.
+  // Số chỗ trống theo tầng/khu (GET /public/availability) — cập nhật dropdown + panel.
+  const loadAvailability = async () => {
+    try {
+      const { data } = await publicApi.availability();
+      setAvailability(data.data || []);
+    } catch {
+      // lỗi tải số chỗ trống không chặn nghiệp vụ check-in
+    }
+  };
+
+  // Tải danh mục + danh sách xe đang đỗ + đặt chỗ sắp tới + số chỗ trống khi mở trang.
   useEffect(() => {
     (async () => {
       try {
@@ -108,6 +120,7 @@ export default function StaffOperationsPage() {
       }
       loadActive();
       loadUpcoming();
+      loadAvailability();
     })();
   }, []);
 
@@ -160,6 +173,7 @@ export default function StaffOperationsPage() {
       setCiRes(null);
       loadActive();
       loadUpcoming();
+      loadAvailability();
     } catch (err) {
       setCiError(err.response?.data?.error?.message || 'Cho xe vào thất bại');
     } finally {
@@ -207,6 +221,7 @@ export default function StaffOperationsPage() {
       toast.success('Check-in thành công');
       setForm((f) => ({ ...emptyCheckin, floorId: f.floorId, gateId: f.gateId })); // giữ tầng/cổng cho lượt sau
       loadActive();
+      loadAvailability();
     } catch (err) {
       setCheckinError(err.response?.data?.error?.message || 'Check-in thất bại');
     } finally {
@@ -271,17 +286,31 @@ export default function StaffOperationsPage() {
       setCoResult(data.data);
       if (data.data?.barrierOpened) {
         toast.success('Xe ra thành công — barie mở');
-        loadActive(); // phiên rời khỏi danh sách đang đỗ
       } else {
         toast.info('Cần thanh toán để mở barie');
-        loadActive();
       }
+      loadActive(); // phiên rời khỏi danh sách đang đỗ
+      loadAvailability();
     } catch (err) {
       setCoError(err.response?.data?.error?.message || 'Check-out thất bại');
     } finally {
       setCoSubmitting(false);
     }
   };
+
+  // Số chỗ trống cho tầng đang chọn (theo loại xe nếu đã chọn) — dùng cho dropdown + panel.
+  const floorMetaFor = (floorId) => availability.find((f) => String(f.floorId) === String(floorId)) || null;
+  const freeFor = (floorMeta, vehicleTypeId) => {
+    if (!floorMeta) return null;
+    if (!vehicleTypeId) return { available: floorMeta.available, total: floorMeta.total };
+    const zs = (floorMeta.zones || []).filter((z) => String(z.vehicleTypeId) === String(vehicleTypeId));
+    return {
+      available: zs.reduce((s, z) => s + (z.available || 0), 0),
+      total: zs.reduce((s, z) => s + (z.total || 0), 0),
+    };
+  };
+  const selectedFloorFree = freeFor(floorMetaFor(form.floorId), form.vehicleTypeId);
+  const selectedVtName = vehicleTypes.find((v) => String(v.vehicle_type_id) === String(form.vehicleTypeId))?.type_name;
 
   return (
     <div>
@@ -336,9 +365,14 @@ export default function StaffOperationsPage() {
               <Field label="Tầng" required error={fieldErrors.floorId}>
                 <select className={inputClass} value={form.floorId} onChange={(e) => onFloorChange(e.target.value)} required>
                   <option value="">— Chọn tầng —</option>
-                  {floors.map((f) => (
-                    <option key={f.floor_id} value={f.floor_id}>{f.floor_code} — {f.label}</option>
-                  ))}
+                  {floors.map((f) => {
+                    const fr = freeFor(floorMetaFor(f.floor_id), form.vehicleTypeId);
+                    return (
+                      <option key={f.floor_id} value={f.floor_id}>
+                        {f.floor_code} — {f.label}{fr ? ` (${fr.available} trống)` : ''}
+                      </option>
+                    );
+                  })}
                 </select>
               </Field>
               <Field label="Cổng vào (IN)" error={fieldErrors.gateId} hint={form.floorId ? 'Cổng do hệ thống tự chọn theo tầng' : 'Chọn tầng trước'}>
@@ -368,6 +402,13 @@ export default function StaffOperationsPage() {
                   ))}
                 </select>
               </Field>
+              {form.floorId && selectedFloorFree && (
+                <div className={`rounded-lg px-3 py-2 text-sm ${selectedFloorFree.available === 0 ? 'bg-red-50 text-red-600' : 'bg-emerald-50 text-emerald-700'}`}>
+                  {selectedFloorFree.available === 0
+                    ? `Tầng đầy${selectedVtName ? ` cho ${selectedVtName}` : ''} (${selectedFloorFree.available}/${selectedFloorFree.total} chỗ)`
+                    : `Còn ${selectedFloorFree.available}/${selectedFloorFree.total} chỗ${selectedVtName ? ` cho ${selectedVtName}` : ''}`}
+                </div>
+              )}
               <Button type="submit" className="brand-gradient w-full border-0 shadow-(--shadow-soft)" loading={submitting} disabled={!!form.floorId && gates.length === 0}>
                 Check-in xe vào
               </Button>
