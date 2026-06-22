@@ -29,6 +29,8 @@ import AvailabilityPage from './pages/guest/AvailabilityPage';
 import InfoPage from './pages/guest/InfoPage';
 import MyReservationsPage from './pages/user/MyReservationsPage';
 import ReservePage from './pages/user/ReservePage';
+import PaymentSuccessPage from './pages/user/PaymentSuccessPage';
+import PaymentFailedPage from './pages/user/PaymentFailedPage';
 
 export default function App() {
   return (
@@ -89,6 +91,8 @@ export default function App() {
             <Route path="/reservations" element={<UserLayout />}>
               <Route index element={<MyReservationsPage />} />
               <Route path="new" element={<ReservePage />} />
+              <Route path="payment/success" element={<PaymentSuccessPage />} />
+              <Route path="payment/failed" element={<PaymentFailedPage />} />
             </Route>
           </Route>
         </Routes>
