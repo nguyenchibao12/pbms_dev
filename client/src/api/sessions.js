@@ -14,4 +14,7 @@ export const sessionsApi = {
   checkout: (data) => api.post('/sessions/checkout', data),
   // Sửa biển số phiên đang mở
   correctPlate: (id, plateNumber) => api.patch(`/sessions/${id}/plate`, { plateNumber }),
+  // Tất toán TIỀN MẶT tại booth (cần token Staff): { qrToken | sessionId, gateId?, lostTicket? }
+  // Trả về { barrierOpened, fee, method: 'cash', session, payment }
+  cashCheckout: (data) => api.post('/sessions/cash-checkout', data),
 };

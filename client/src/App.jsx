@@ -29,6 +29,7 @@ import AvailabilityPage from './pages/guest/AvailabilityPage';
 import InfoPage from './pages/guest/InfoPage';
 import MyReservationsPage from './pages/user/MyReservationsPage';
 import ReservePage from './pages/user/ReservePage';
+import GateKioskPage from './pages/kiosk/GateKioskPage';
 import PaymentSuccessPage from './pages/user/PaymentSuccessPage';
 import PaymentFailedPage from './pages/user/PaymentFailedPage';
 
@@ -48,6 +49,9 @@ export default function App() {
             <Route path="/availability" element={<AvailabilityPage />} />
             <Route path="/info" element={<InfoPage />} />
           </Route>
+
+          {/* Kiosk cổng tự phục vụ — công khai, KHÔNG đăng nhập (xác thực bằng kiosk key) */}
+          <Route path="/kiosk/gate" element={<GateKioskPage />} />
 
           {/* Trang công khai */}
           <Route path="/login" element={<LoginPage />} />
@@ -86,6 +90,11 @@ export default function App() {
               <Route index element={<StaffOperationsPage />} />
             </Route>
           </Route>
+          {/* Chốt thu phí (booth) — màn kiosk có staff đăng nhập, thêm thu tiền mặt */}
+          <Route element={<ProtectedRoute allowedRoles={['Staff', 'Manager']} />}>
+            <Route path="/staff/booth" element={<GateKioskPage booth />} />
+          </Route>
+
           {/* Khu vực Khách hàng — UserLayout bọc các trang đặt chỗ */}
           <Route element={<ProtectedRoute allowedRoles={['User']} />}>
             <Route path="/reservations" element={<UserLayout />}>
