@@ -86,6 +86,11 @@ export default function LoginPage() {
                 required
               />
             </Field>
+            <div className="text-right">
+              <Link to="/forgot-password" className="text-sm font-medium text-brand hover:underline">
+                Quên mật khẩu?
+              </Link>
+            </div>
             <Button type="submit" className="brand-gradient w-full border-0 shadow-(--shadow-soft)" loading={submitting}>
               Đăng nhập
             </Button>
