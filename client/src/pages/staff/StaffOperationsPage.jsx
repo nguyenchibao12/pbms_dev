@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react';
+import { QRCodeSVG } from 'qrcode.react';
 import { sessionsApi } from '../../api/sessions';
 import { staffReservationsApi } from '../../api/staffReservations';
 import { floorsApi, vehicleTypesApi, gatesApi, zonesApi } from '../../api/masterData';
+import { friendlyReservationError, reservationCheckinBadge } from '../../lib/reservationStatus';
 import { publicApi } from '../../api/public';
 import { validateCheckinForm } from '../../lib/validate';
 import Card from '../../components/ui/Card';
@@ -154,7 +156,7 @@ export default function StaffOperationsPage() {
       setResQr('');
       openReservationCheckin(data.data);
     } catch (err) {
-      setResLookupError(err.response?.data?.error?.message || 'Không tìm thấy đặt chỗ với mã QR này');
+      setResLookupError(friendlyReservationError(err));
     } finally {
       setResLooking(false);
     }
@@ -175,7 +177,7 @@ export default function StaffOperationsPage() {
       loadUpcoming();
       loadAvailability();
     } catch (err) {
-      setCiError(err.response?.data?.error?.message || 'Cho xe vào thất bại');
+      setCiError(friendlyReservationError(err));
     } finally {
       setCiSubmitting(false);
     }
@@ -437,6 +439,12 @@ export default function StaffOperationsPage() {
                   <div className="flex justify-between"><dt className="text-slate-500">Khu / Tầng</dt><dd>{lastCheckin.slot?.zone?.label || '—'}{lastCheckin.slot?.zone?.floor ? ` · ${lastCheckin.slot.zone.floor.floor_code}` : ''}</dd></div>
                   <div className="flex justify-between"><dt className="text-slate-500">Giờ vào</dt><dd>{lastCheckin.time_in ? new Date(lastCheckin.time_in).toLocaleString('vi-VN') : '—'}</dd></div>
                 </dl>
+                {lastCheckin.qr_token && (
+                  <div className="mt-3 flex flex-col items-center gap-2 border-t border-slate-200 pt-3">
+                    <QRCodeSVG value={lastCheckin.qr_token} size={140} aria-label="Mã QR vé ra cổng" />
+                    <p className="text-xs text-slate-500">Khách chụp mã này làm vé — xuất trình khi ra cổng</p>
+                  </div>
+                )}
               </Card>
             ) : (
               <Card className="flex h-full items-center justify-center text-center text-sm text-slate-400">
@@ -532,16 +540,19 @@ export default function StaffOperationsPage() {
                     <th className="px-4 py-3 font-medium">Loại xe</th>
                     <th className="px-4 py-3 font-medium">Tầng · Chỗ</th>
                     <th className="px-4 py-3 font-medium">Khung giờ</th>
+                    <th className="px-4 py-3 font-medium">Trạng thái</th>
                     <th className="px-4 py-3 text-right font-medium">Thao tác</th>
                   </tr>
                 </thead>
                 <tbody>
                   {loadingUpcoming ? (
-                    <tr><td colSpan={5} className="px-4 py-10 text-center text-slate-400">Đang tải...</td></tr>
+                    <tr><td colSpan={6} className="px-4 py-10 text-center text-slate-400">Đang tải...</td></tr>
                   ) : upcoming.length === 0 ? (
-                    <tr><td colSpan={5} className="px-4 py-10 text-center text-slate-400">Chưa có đặt chỗ nào chờ vào</td></tr>
+                    <tr><td colSpan={6} className="px-4 py-10 text-center text-slate-400">Chưa có đặt chỗ nào chờ vào</td></tr>
                   ) : (
-                    upcoming.map((r) => (
+                    upcoming.map((r) => {
+                      const badge = reservationCheckinBadge(r);
+                      return (
                       <tr key={r.reservation_id} className="border-t border-slate-100 hover:bg-slate-50/60">
                         <td className="px-4 py-3 font-mono font-medium text-slate-800">{r.plate_number}</td>
                         <td className="px-4 py-3">{r.vehicleType?.type_name || '—'}</td>
@@ -550,11 +561,15 @@ export default function StaffOperationsPage() {
                           {r.start_time ? new Date(r.start_time).toLocaleString('vi-VN') : '—'}
                           {r.end_time ? ` → ${new Date(r.end_time).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}` : ''}
                         </td>
+                        <td className="px-4 py-3">
+                          {badge ? <span className={badge.className}>{badge.label}</span> : <span className="text-slate-400">—</span>}
+                        </td>
                         <td className="px-4 py-3 text-right whitespace-nowrap">
                           <button type="button" onClick={() => openReservationCheckin(r)} className="font-medium text-emerald-600 hover:underline">Cho xe vào</button>
                         </td>
                       </tr>
-                    ))
+                      );
+                    })
                   )}
                 </tbody>
               </table>
