@@ -77,6 +77,16 @@ export const updateZone = async (id, data) => {
 
   const newTotalSlots = data.totalSlots ?? zone.total_slots;
   const newCapacity = data.monthlyPassCapacity ?? zone.monthly_pass_capacity;
+
+  const used = await ParkingSlot.count({ where: { zone_id: id } });
+  if (newTotalSlots < used) {
+    throw new AppError(
+      `Không thể đặt total_slots = ${newTotalSlots} khi khu đang có ${used} slot. Xóa slot thừa trước.`,
+      409,
+      'CONFLICT',
+    );
+  }
+
   if (newCapacity > newTotalSlots) {
     throw new AppError(
       'monthlyPassCapacity cannot exceed totalSlots',

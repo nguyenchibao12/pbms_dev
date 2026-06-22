@@ -4,12 +4,6 @@ import { Zone } from '../models/index.js';
 import { AppError } from '../utils/helpers.js';
 import { assertSlotTransition } from '../utils/stateGuards.js';
 
-const syncZoneTotalSlots = async (zoneId, transaction) => {
-  const count = await ParkingSlot.count({ where: { zone_id: zoneId }, transaction });
-  await Zone.update({ total_slots: count }, { where: { zone_id: zoneId }, transaction });
-  return count;
-};
-
 const slotIncludes = [
   {
     association: 'zone',
@@ -55,6 +49,15 @@ export const createParkingSlot = async (data) => {
   const zone = await Zone.findByPk(data.zoneId);
   if (!zone) throw new AppError('Zone not found', 404, 'NOT_FOUND');
 
+  const used = await ParkingSlot.count({ where: { zone_id: data.zoneId } });
+  if (used >= zone.total_slots) {
+    throw new AppError(
+      `Khu ${zone.zone_code} đã đủ ${zone.total_slots} slot. Tăng "Tổng số slot" trước khi thêm.`,
+      409,
+      'CONFLICT',
+    );
+  }
+
   const existing = await ParkingSlot.findOne({
     where: { zone_id: data.zoneId, slot_code: data.slotCode },
   });
@@ -85,6 +88,17 @@ export const updateParkingSlot = async (id, data) => {
   if (data.zoneId) {
     const zone = await Zone.findByPk(data.zoneId);
     if (!zone) throw new AppError('Zone not found', 404, 'NOT_FOUND');
+
+    if (Number(data.zoneId) !== slot.zone_id) {
+      const used = await ParkingSlot.count({ where: { zone_id: data.zoneId } });
+      if (used >= zone.total_slots) {
+        throw new AppError(
+          `Khu đích ${zone.zone_code} đã đủ ${zone.total_slots} slot.`,
+          409,
+          'CONFLICT',
+        );
+      }
+    }
   }
 
   const newZoneId = data.zoneId ?? slot.zone_id;
@@ -145,14 +159,23 @@ export const bulkGenerateSlots = async (zoneId, opts, externalTransaction = null
   });
   const existingCodes = new Set(existingSlots.map((s) => s.slot_code));
 
+  // Cap cứng: chỉ tạo tối đa (total_slots - số slot đang có) slot.
+  const used = existingSlots.length;
+  const remaining = Math.max(zone.total_slots - used, 0);
+
   const toCreate = [];
   let skipped = 0;
+  let cappedOut = 0;
 
   for (let i = 0; i < count; i++) {
     const index = startIndex + i;
     const code = `${codePrefix}${String(index).padStart(padding, '0')}`;
     if (existingCodes.has(code)) {
       skipped += 1;
+      continue;
+    }
+    if (toCreate.length >= remaining) {
+      cappedOut += 1;
       continue;
     }
     existingCodes.add(code);
@@ -185,8 +208,7 @@ export const bulkGenerateSlots = async (zoneId, opts, externalTransaction = null
       await ParkingSlot.bulkCreate(toCreate, { transaction });
       created = toCreate.length;
     }
-    const totalSlots = await syncZoneTotalSlots(zoneId, transaction);
-    return { created, skipped, totalSlots };
+    return { created, skipped, cappedOut, totalSlots: used + created };
   };
 
   if (externalTransaction) return run(externalTransaction);
