@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { sessionsApi } from '../../api/sessions';
+import { staffReservationsApi } from '../../api/staffReservations';
 import { floorsApi, vehicleTypesApi, gatesApi, zonesApi } from '../../api/masterData';
 import { validateCheckinForm } from '../../lib/validate';
 import Card from '../../components/ui/Card';
@@ -11,6 +12,9 @@ import { toast } from '../../components/ui/toast';
 
 // Lấy floor_id của phiên (từ chỗ đỗ, fallback sang cổng vào) — để lọc cổng RA cùng tầng.
 const sessionFloorId = (s) => s?.slot?.zone?.floor?.floor_id ?? s?.gate?.floor_id ?? null;
+
+// Lấy floor_id của đơn đặt chỗ — để lọc cổng VÀO (IN) cùng tầng đã đặt.
+const reservationFloorId = (r) => r?.floor_id ?? r?.floor?.floor_id ?? r?.slot?.zone?.floor?.floor_id ?? null;
 
 const fmtMoney = (v) => `${Number(v || 0).toLocaleString('vi-VN')} ₫`;
 
@@ -25,7 +29,7 @@ const fmtElapsed = (timeIn) => {
 const emptyCheckin = { plateNumber: '', vehicleTypeId: '', floorId: '', gateId: '', zoneId: '' };
 
 export default function StaffOperationsPage() {
-  const [tab, setTab] = useState('checkin'); // 'checkin' | 'active'
+  const [tab, setTab] = useState('checkin'); // 'checkin' | 'active' | 'reservation'
 
   // Dữ liệu danh mục cho dropdown
   const [floors, setFloors] = useState([]);
@@ -55,6 +59,18 @@ export default function StaffOperationsPage() {
   const [coError, setCoError] = useState('');
   const [coSubmitting, setCoSubmitting] = useState(false);
 
+  // Đặt chỗ vào (reservation check-in)
+  const [resQr, setResQr] = useState(''); // mã QR nhập/quét để tra cứu
+  const [resLookupError, setResLookupError] = useState('');
+  const [resLooking, setResLooking] = useState(false);
+  const [upcoming, setUpcoming] = useState([]); // đơn confirmed chờ vào
+  const [loadingUpcoming, setLoadingUpcoming] = useState(true);
+  const [ciRes, setCiRes] = useState(null); // đơn đang cho vào (null = đóng modal)
+  const [ciGates, setCiGates] = useState([]); // cổng IN của tầng đã đặt
+  const [ciGateId, setCiGateId] = useState('');
+  const [ciError, setCiError] = useState('');
+  const [ciSubmitting, setCiSubmitting] = useState(false);
+
   const loadActive = async () => {
     setLoadingActive(true);
     try {
@@ -68,7 +84,19 @@ export default function StaffOperationsPage() {
     }
   };
 
-  // Tải danh mục + danh sách xe đang đỗ khi mở trang.
+  const loadUpcoming = async () => {
+    setLoadingUpcoming(true);
+    try {
+      const { data } = await staffReservationsApi.upcoming();
+      setUpcoming(data.data || []);
+    } catch (err) {
+      toast.error(err.response?.data?.error?.message || 'Không tải được danh sách đặt chỗ');
+    } finally {
+      setLoadingUpcoming(false);
+    }
+  };
+
+  // Tải danh mục + danh sách xe đang đỗ + đặt chỗ sắp tới khi mở trang.
   useEffect(() => {
     (async () => {
       try {
@@ -79,8 +107,67 @@ export default function StaffOperationsPage() {
         toast.error('Không tải được danh mục tầng/loại xe');
       }
       loadActive();
+      loadUpcoming();
     })();
   }, []);
+
+  // Mở modal "Cho xe vào" cho 1 đơn đặt chỗ: nạp cổng VÀO (IN) cùng tầng đã đặt.
+  const openReservationCheckin = async (reservation) => {
+    setCiRes(reservation);
+    setCiGateId('');
+    setCiError('');
+    setCiGates([]);
+    const floorId = reservationFloorId(reservation);
+    if (!floorId) return;
+    try {
+      const gRes = await gatesApi.list(floorId);
+      setCiGates((gRes.data.data || []).filter((g) => g.direction === 'in' && g.is_active));
+    } catch {
+      setCiError('Không tải được cổng vào của tầng đã đặt');
+    }
+  };
+
+  // Tra cứu đơn theo mã QR rồi mở modal cho vào.
+  const handleReservationLookup = async (e) => {
+    e.preventDefault();
+    const token = resQr.trim();
+    if (!token) return;
+    setResLookupError('');
+    setResLooking(true);
+    try {
+      const { data } = await staffReservationsApi.lookup(token);
+      setResQr('');
+      openReservationCheckin(data.data);
+    } catch (err) {
+      setResLookupError(err.response?.data?.error?.message || 'Không tìm thấy đặt chỗ với mã QR này');
+    } finally {
+      setResLooking(false);
+    }
+  };
+
+  const handleReservationCheckin = async (e) => {
+    e.preventDefault();
+    if (!ciGateId) {
+      setCiError('Vui lòng chọn cổng vào');
+      return;
+    }
+    setCiError('');
+    setCiSubmitting(true);
+    try {
+      await staffReservationsApi.checkin({
+        reservationId: ciRes.reservation_id,
+        gateId: Number(ciGateId),
+      });
+      toast.success('Cho xe đặt chỗ vào bãi thành công');
+      setCiRes(null);
+      loadActive();
+      loadUpcoming();
+    } catch (err) {
+      setCiError(err.response?.data?.error?.message || 'Cho xe vào thất bại');
+    } finally {
+      setCiSubmitting(false);
+    }
+  };
 
   // Khi đổi tầng: nạp cổng IN + khu của tầng đó, reset cổng/khu đã chọn.
   const onFloorChange = async (floorId) => {
@@ -209,6 +296,7 @@ export default function StaffOperationsPage() {
         {[
           { id: 'checkin', label: 'Check-in (xe vào)' },
           { id: 'active', label: `Xe đang đỗ${active.length ? ` (${active.length})` : ''}` },
+          { id: 'reservation', label: `Đặt chỗ vào${upcoming.length ? ` (${upcoming.length})` : ''}` },
         ].map((t) => (
           <button
             key={t.id}
@@ -347,6 +435,104 @@ export default function StaffOperationsPage() {
           </div>
         </Card>
       )}
+
+      {/* TAB ĐẶT CHỖ VÀO (RESERVATION CHECK-IN) */}
+      {tab === 'reservation' && (
+        <div className="space-y-6">
+          {/* Tra cứu bằng mã QR */}
+          <Card>
+            <h2 className="mb-1 text-lg font-semibold text-slate-800">Quét / nhập mã QR đặt chỗ</h2>
+            <p className="mb-4 text-sm text-slate-500">Nhập mã QR trên vé của khách để tra cứu và cho xe vào.</p>
+            <ErrorAlert message={resLookupError} className="mb-4" />
+            <form onSubmit={handleReservationLookup} className="flex flex-col gap-3 sm:flex-row">
+              <input
+                className={inputClass}
+                value={resQr}
+                onChange={(e) => setResQr(e.target.value)}
+                placeholder="Dán hoặc quét mã QR..."
+              />
+              <Button type="submit" className="brand-gradient shrink-0 border-0" loading={resLooking}>
+                Tra cứu
+              </Button>
+            </form>
+          </Card>
+
+          {/* Đặt chỗ sắp tới (đã thanh toán, chờ vào) */}
+          <Card padding={false}>
+            <div className="flex items-center justify-between px-5 py-4">
+              <h2 className="text-lg font-semibold text-slate-800">Đặt chỗ chờ vào bãi</h2>
+              <Button variant="secondary" size="sm" onClick={loadUpcoming} loading={loadingUpcoming}>Làm mới</Button>
+            </div>
+            <div className="overflow-x-auto border-t border-slate-200">
+              <table className="min-w-full text-sm">
+                <thead className="bg-slate-50 text-left text-slate-600">
+                  <tr>
+                    <th className="px-4 py-3 font-medium">Biển số</th>
+                    <th className="px-4 py-3 font-medium">Loại xe</th>
+                    <th className="px-4 py-3 font-medium">Tầng · Chỗ</th>
+                    <th className="px-4 py-3 font-medium">Khung giờ</th>
+                    <th className="px-4 py-3 text-right font-medium">Thao tác</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {loadingUpcoming ? (
+                    <tr><td colSpan={5} className="px-4 py-10 text-center text-slate-400">Đang tải...</td></tr>
+                  ) : upcoming.length === 0 ? (
+                    <tr><td colSpan={5} className="px-4 py-10 text-center text-slate-400">Chưa có đặt chỗ nào chờ vào</td></tr>
+                  ) : (
+                    upcoming.map((r) => (
+                      <tr key={r.reservation_id} className="border-t border-slate-100 hover:bg-slate-50/60">
+                        <td className="px-4 py-3 font-mono font-medium text-slate-800">{r.plate_number}</td>
+                        <td className="px-4 py-3">{r.vehicleType?.type_name || '—'}</td>
+                        <td className="px-4 py-3">{r.floor?.floor_code || '—'}{r.slot?.slot_code ? ` · ${r.slot.slot_code}` : ''}</td>
+                        <td className="px-4 py-3 text-slate-600">
+                          {r.start_time ? new Date(r.start_time).toLocaleString('vi-VN') : '—'}
+                          {r.end_time ? ` → ${new Date(r.end_time).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}` : ''}
+                        </td>
+                        <td className="px-4 py-3 text-right whitespace-nowrap">
+                          <button type="button" onClick={() => openReservationCheckin(r)} className="font-medium text-emerald-600 hover:underline">Cho xe vào</button>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </Card>
+        </div>
+      )}
+
+      {/* MODAL CHO XE ĐẶT CHỖ VÀO */}
+      <Modal
+        open={!!ciRes}
+        title={`Cho xe vào — ${ciRes?.plate_number || ''}`}
+        onClose={() => setCiRes(null)}
+      >
+        <ErrorAlert message={ciError} className="mb-4" />
+        <form onSubmit={handleReservationCheckin} className="space-y-4">
+          <div className="rounded-lg bg-slate-50 px-4 py-3 text-sm">
+            <div className="flex justify-between"><span className="text-slate-500">Loại xe</span><span>{ciRes?.vehicleType?.type_name || '—'}</span></div>
+            <div className="flex justify-between"><span className="text-slate-500">Tầng · Chỗ</span><span>{ciRes?.floor?.floor_code || '—'}{ciRes?.slot?.slot_code ? ` · ${ciRes.slot.slot_code}` : ''}</span></div>
+            <div className="flex justify-between"><span className="text-slate-500">Khung giờ</span><span>{ciRes?.start_time ? new Date(ciRes.start_time).toLocaleString('vi-VN') : '—'}</span></div>
+          </div>
+
+          <Field label="Cổng vào (IN)" required hint={ciGates.length ? undefined : 'Tầng đã đặt chưa có cổng vào — Manager cần tạo cổng chiều IN'}>
+            <select className={inputClass} value={ciGateId} onChange={(e) => setCiGateId(e.target.value)} required>
+              <option value="">— Chọn cổng vào —</option>
+              {ciGates.map((g) => (
+                <option key={g.gate_id} value={g.gate_id}>{g.gate_code}</option>
+              ))}
+            </select>
+          </Field>
+
+          <div className="flex justify-end gap-2 pt-2">
+            <Button type="button" variant="secondary" onClick={() => setCiRes(null)}>Hủy</Button>
+            <Button type="submit" className="brand-gradient border-0" loading={ciSubmitting} disabled={!ciGates.length}>
+              Xác nhận cho vào
+            </Button>
+          </div>
+        </form>
+      </Modal>
 
       {/* MODAL XE RA (CHECK-OUT) */}
       <Modal
