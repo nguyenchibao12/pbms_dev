@@ -317,6 +317,11 @@ export const checkout = async (staffUserId, data) => {
   return initiateSessionCheckout(staffUserId, data);
 };
 
+export const cashCheckout = async (staffUserId, data) => {
+  const { settleCashCheckout } = await import('./payment.service.js');
+  return settleCashCheckout(staffUserId, data);
+};
+
 export const previewCheckoutFee = async (data) => {
   let session;
 

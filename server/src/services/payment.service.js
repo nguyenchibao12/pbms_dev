@@ -252,6 +252,56 @@ const buildCheckoutPayload = async (staffUserId, lookup) => {
 export const initiateSessionCheckout = async (staffUserId, lookup) =>
   buildCheckoutPayload(staffUserId, lookup);
 
+/**
+ * Tất toán tiền mặt tại booth: staff thu đủ tiền → mở barie ngay (không qua PayOS).
+ * Ghi Payment method 'cash' rồi completeSessionAfterPayment (giải phóng slot + đóng phiên).
+ * Nếu phiên đã có payment pending (vd khách lỡ bấm PayOS rồi đổi sang tiền mặt) thì
+ * chuyển luôn payment đó sang 'cash' thay vì tạo bản ghi mới.
+ */
+export const settleCashCheckout = async (staffUserId, lookup) => {
+  const preview = await previewCheckoutFee(lookup);
+  const sessionId = preview.session.session_id;
+
+  // Chốt cổng ra (auto-resolve nếu thiếu gateId) + ghi exit_gate_id, kiểm tra đúng tầng.
+  await assertAndRecordExitGate(staffUserId, preview.session, lookup.gateId);
+
+  // preview.fee đã gồm phụ thu mất vé (nếu lookup.lostTicket = true).
+  const fee = Number(preview.fee);
+  if (lookup.lostTicket) {
+    const lostTicketFee = Number(lookup.lostTicketFee ?? getLostTicketFee());
+    await createIncident(staffUserId, {
+      type: 'lost_ticket',
+      description: `Lost ticket at cash checkout — surcharge ${lostTicketFee} VND`,
+      sessionId,
+      userId: preview.session.user_id,
+    });
+  }
+
+  let payment = await Payment.findOne({
+    where: { session_id: sessionId, status: 'pending' },
+  });
+  if (payment) {
+    await payment.update({ method: 'cash', amount: fee });
+  } else {
+    payment = await Payment.create({
+      session_id: sessionId,
+      order_code: generateOrderCode(),
+      amount: fee,
+      status: 'pending',
+      method: 'cash',
+    });
+  }
+
+  const result = await completeSessionAfterPayment(payment, staffUserId);
+  return {
+    ...result,
+    fee,
+    method: 'cash',
+    pricingRule: preview.pricingRule,
+    passCovered: preview.passCovered || false,
+  };
+};
+
 export const markPaymentFailed = async (payment, payload) => {
   await payment.update({
     status: 'failed',
