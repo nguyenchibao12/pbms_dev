@@ -3,13 +3,10 @@ import { gatesApi, floorsApi, vehicleTypesApi } from '../../api/masterData';
 import Modal, { Field, inputClass, ErrorAlert } from '../../components/Modal';
 import { validateGateForm } from '../../lib/validate';
 
-const DIRECTION_LABELS = { in: 'Vào', out: 'Ra' };
-
 const emptyForm = () => ({
   floorId: '',
   gateCode: '',
   label: '',
-  direction: 'in',
   vehicleTypeId: '',
   isActive: true,
 });
@@ -33,7 +30,8 @@ export default function GatesPage() {
         floorsApi.list(),
         vehicleTypesApi.list(),
       ]);
-      setItems(gatesRes.data.data);
+      // Mỗi tầng chỉ quản 1 cổng; cổng chiều ra để ngầm, không hiển thị cho Manager.
+      setItems((gatesRes.data.data || []).filter((g) => g.direction === 'in'));
       setFloors(floorsRes.data.data);
       setVehicleTypes(typesRes.data.data);
     } catch (err) {
@@ -61,7 +59,6 @@ export default function GatesPage() {
       floorId: String(item.floor_id),
       gateCode: item.gate_code,
       label: item.label || '',
-      direction: item.direction,
       vehicleTypeId: item.vehicle_type_id ? String(item.vehicle_type_id) : '',
       isActive: item.is_active,
     });
@@ -80,7 +77,7 @@ export default function GatesPage() {
         floorId: Number(form.floorId),
         gateCode: form.gateCode,
         label: form.label || undefined,
-        direction: form.direction,
+        direction: 'in', // luôn gửi 1 cổng; chiều ra (out) để BE/seed quản ngầm
         vehicleTypeId: form.vehicleTypeId ? Number(form.vehicleTypeId) : null,
         isActive: form.isActive,
       };
@@ -122,21 +119,19 @@ export default function GatesPage() {
               <th className="px-4 py-3">Nhãn hiển thị</th>
               <th className="px-4 py-3">Tầng</th>
               <th className="px-4 py-3">Loại xe</th>
-              <th className="px-4 py-3">Hướng</th>
               <th className="px-4 py-3">Kích hoạt</th>
               <th className="px-4 py-3 text-right">Thao tác</th>
             </tr>
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={7} className="px-4 py-8 text-center text-slate-400">Đang tải...</td></tr>
+              <tr><td colSpan={6} className="px-4 py-8 text-center text-slate-400">Đang tải...</td></tr>
             ) : items.map((item) => (
               <tr key={item.gate_id} className="border-b border-slate-100">
                 <td className="px-4 py-3 font-medium">{item.gate_code}</td>
                 <td className="px-4 py-3">{item.label || '—'}</td>
                 <td className="px-4 py-3">{item.floor?.floor_code || item.floor_id}</td>
                 <td className="px-4 py-3">{item.vehicleType?.type_name || '—'}</td>
-                <td className="px-4 py-3">{DIRECTION_LABELS[item.direction] || item.direction}</td>
                 <td className="px-4 py-3">{item.is_active ? 'Có' : 'Không'}</td>
                 <td className="px-4 py-3 text-right space-x-2">
                   <button type="button" onClick={() => openEdit(item)} className="text-blue-600 hover:underline">Sửa</button>
@@ -170,12 +165,6 @@ export default function GatesPage() {
               ))}
             </select>
             <p className="mt-1 text-xs text-slate-400">Nên chọn loại xe để validate khi check-in.</p>
-          </Field>
-          <Field label="Hướng">
-            <select className={inputClass} value={form.direction} onChange={(e) => setForm({ ...form, direction: e.target.value })}>
-              <option value="in">Vào (IN)</option>
-              <option value="out">Ra (OUT)</option>
-            </select>
           </Field>
           <Field label="Đang hoạt động">
             <input type="checkbox" checked={form.isActive} onChange={(e) => setForm({ ...form, isActive: e.target.checked })} className="h-4 w-4" />
