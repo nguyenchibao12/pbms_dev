@@ -35,7 +35,8 @@ export default function GateKioskPage({ booth = false }) {
     fromUrl && GATES.some((g) => String(g.id) === fromUrl) ? Number(fromUrl) : GATES[0].id,
   );
   const [qr, setQr] = useState('');
-  const [result, setResult] = useState(null); // { kind: 'open' | 'payment' | 'cash' | 'error', ... }
+  // ui = discriminator của FE (đặt tên riêng, KHÔNG trùng field `kind` BE trả về trong data).
+  const [result, setResult] = useState(null); // { ui: 'open' | 'payment' | 'cash' | 'error', ...d }
   const [scanning, setScanning] = useState(false);
   const [lastToken, setLastToken] = useState(''); // token vừa quét — dùng cho tất toán tiền mặt
   const [lostTicket, setLostTicket] = useState(false);
@@ -68,13 +69,13 @@ export default function GateKioskPage({ booth = false }) {
       const { data } = await kioskApi.scan(gateId, token);
       const d = data.data;
       if (d.action === 'PAYMENT_REQUIRED') {
-        setResult({ kind: 'payment', ...d }); // giữ màn hình -> chờ thanh toán
+        setResult({ ...d, ui: 'payment' }); // ...d TRƯỚC, ui SAU -> không bị field `kind` của BE ghi đè
       } else {
-        setResult({ kind: 'open', ...d });
+        setResult({ ...d, ui: 'open' });
         scheduleReset(5000); // mở cổng -> tự reset sẵn sàng xe sau
       }
     } catch (err) {
-      setResult({ kind: 'error', message: err.response?.data?.error?.message || 'Mã không hợp lệ hoặc lỗi hệ thống' });
+      setResult({ ui: 'error', message: err.response?.data?.error?.message || 'Mã không hợp lệ hoặc lỗi hệ thống' });
       scheduleReset(6000);
     } finally {
       setQr(''); // clear ô input sau mỗi lượt
@@ -88,10 +89,10 @@ export default function GateKioskPage({ booth = false }) {
     setCashing(true);
     try {
       const { data } = await sessionsApi.cashCheckout({ qrToken: lastToken, gateId, lostTicket });
-      setResult({ kind: 'cash', ...data.data });
+      setResult({ ...data.data, ui: 'cash' });
       scheduleReset(5000);
     } catch (err) {
-      setResult({ kind: 'error', message: err.response?.data?.error?.message || 'Thu tiền mặt thất bại' });
+      setResult({ ui: 'error', message: err.response?.data?.error?.message || 'Thu tiền mặt thất bại' });
       scheduleReset(6000);
     } finally {
       setCashing(false);
@@ -128,13 +129,13 @@ export default function GateKioskPage({ booth = false }) {
             <div className="text-6xl">⤿</div>
             <p className="mt-4 text-2xl font-medium">Mời áp / nhập mã QR</p>
           </div>
-        ) : result.kind === 'open' ? (
+        ) : result.ui === 'open' ? (
           <div className="w-full rounded-3xl bg-emerald-500 p-10 text-center text-white shadow-2xl">
             <div className="text-7xl">✓</div>
             <p className="mt-4 text-4xl font-bold tracking-wide">BARIE MỞ</p>
             <p className="mt-2 text-xl text-emerald-50">{STAGE_LABEL[result.stage] || result.stage}</p>
           </div>
-        ) : result.kind === 'payment' ? (
+        ) : result.ui === 'payment' ? (
           <div className="w-full rounded-3xl bg-amber-400 p-10 text-center text-amber-950 shadow-2xl">
             <p className="text-3xl font-bold">CẦN THANH TOÁN</p>
             <p className="mt-3 text-5xl font-extrabold">{fmtMoney(result.fee)}</p>
@@ -173,7 +174,7 @@ export default function GateKioskPage({ booth = false }) {
               Quét lại
             </button>
           </div>
-        ) : result.kind === 'cash' ? (
+        ) : result.ui === 'cash' ? (
           <div className="w-full rounded-3xl bg-emerald-500 p-10 text-center text-white shadow-2xl">
             <div className="text-7xl">✓</div>
             <p className="mt-4 text-3xl font-bold tracking-wide">ĐÃ THU TIỀN MẶT — BARIE MỞ</p>
