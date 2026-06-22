@@ -7,6 +7,7 @@ import ManagerLayout from './layouts/ManagerLayout';
 import AdminLayout from './layouts/AdminLayout';
 import StaffLayout from './layouts/StaffLayout';
 import GuestLayout from './layouts/GuestLayout';
+import UserLayout from './layouts/UserLayout';
 import HomePage from './pages/HomePage';
 import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
@@ -26,6 +27,8 @@ import StaffOperationsPage from './pages/staff/StaffOperationsPage';
 import PricingPage from './pages/guest/PricingPage';
 import AvailabilityPage from './pages/guest/AvailabilityPage';
 import InfoPage from './pages/guest/InfoPage';
+import MyReservationsPage from './pages/user/MyReservationsPage';
+import ReservePage from './pages/user/ReservePage';
 
 export default function App() {
   return (
@@ -81,8 +84,12 @@ export default function App() {
               <Route index element={<StaffOperationsPage />} />
             </Route>
           </Route>
+          {/* Khu vực Khách hàng — UserLayout bọc các trang đặt chỗ */}
           <Route element={<ProtectedRoute allowedRoles={['User']} />}>
-            <Route path="/reservations" element={<DashboardPage />} />
+            <Route path="/reservations" element={<UserLayout />}>
+              <Route index element={<MyReservationsPage />} />
+              <Route path="new" element={<ReservePage />} />
+            </Route>
           </Route>
         </Routes>
       </BrowserRouter>
