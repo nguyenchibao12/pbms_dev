@@ -1,0 +1,160 @@
+import { useState, useRef, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
+import { kioskApi } from '../../api/kiosk';
+import { inputClass } from '../../components/ui/Input';
+
+// Màn hình giả lập gắn trên cổng (public, không đăng nhập). Khách áp/nhập mã QR ->
+// cổng tự quyết: mở barie (OPEN) hoặc yêu cầu thanh toán (PAYMENT_REQUIRED).
+
+// Danh sách cổng TĨNH theo seed demo (màn public không gọi GET /gates vì cần auth).
+const GATES = [
+  { id: 1, label: 'BLD-IN — Cổng tòa nhà (vào)' },
+  { id: 2, label: 'BLD-OUT — Cổng tòa nhà (ra)' },
+  { id: 3, label: 'F1-IN — Tầng 1 (vào)' },
+  { id: 4, label: 'F1-OUT — Tầng 1 (ra)' },
+  { id: 5, label: 'F2-IN — Tầng 2 (vào)' },
+  { id: 6, label: 'F2-OUT — Tầng 2 (ra)' },
+];
+
+const STAGE_LABEL = {
+  'building-in': 'Đã vào tòa nhà',
+  'floor-in': 'Đã vào tầng — đã ghi phiên gửi xe',
+  'floor-out': 'Đã rời tầng',
+  'building-out': 'Đã ra tòa nhà',
+};
+
+const fmtMoney = (v) => `${Number(v || 0).toLocaleString('vi-VN')} ₫`;
+
+export default function GateKioskPage() {
+  const [params] = useSearchParams();
+  const fromUrl = params.get('gateId');
+  const [gateId, setGateId] = useState(
+    fromUrl && GATES.some((g) => String(g.id) === fromUrl) ? Number(fromUrl) : GATES[0].id,
+  );
+  const [qr, setQr] = useState('');
+  const [result, setResult] = useState(null); // { kind: 'open' | 'payment' | 'error', ... }
+  const [scanning, setScanning] = useState(false);
+  const inputRef = useRef(null);
+  const resetTimer = useRef(null);
+
+  // Sau mỗi lượt quét: focus lại ô input cho xe tiếp theo.
+  useEffect(() => {
+    inputRef.current?.focus();
+  }, [result]);
+
+  // Dọn timer khi unmount.
+  useEffect(() => () => clearTimeout(resetTimer.current), []);
+
+  const scheduleReset = (ms) => {
+    clearTimeout(resetTimer.current);
+    resetTimer.current = setTimeout(() => setResult(null), ms);
+  };
+
+  const handleScan = async (e) => {
+    e.preventDefault();
+    const token = qr.trim();
+    if (!token || scanning) return;
+    setScanning(true);
+    setResult(null);
+    try {
+      const { data } = await kioskApi.scan(gateId, token);
+      const d = data.data;
+      if (d.action === 'PAYMENT_REQUIRED') {
+        setResult({ kind: 'payment', ...d }); // giữ màn hình -> chờ khách bấm thanh toán
+      } else {
+        setResult({ kind: 'open', ...d });
+        scheduleReset(5000); // mở cổng -> tự reset sẵn sàng xe sau
+      }
+    } catch (err) {
+      setResult({ kind: 'error', message: err.response?.data?.error?.message || 'Mã không hợp lệ hoặc lỗi hệ thống' });
+      scheduleReset(6000);
+    } finally {
+      setQr(''); // clear ô input sau mỗi lượt
+      setScanning(false);
+    }
+  };
+
+  return (
+    <div className="flex min-h-screen flex-col items-center justify-center gap-8 bg-slate-900 p-6 text-white">
+      {/* Chọn cổng kiosk đang gắn */}
+      <div className="flex items-center gap-3 text-sm text-slate-300">
+        <span>Cổng:</span>
+        <select
+          className="rounded-lg border border-slate-600 bg-slate-800 px-3 py-1.5 text-white focus:border-brand focus:outline-none"
+          value={gateId}
+          onChange={(e) => {
+            setGateId(Number(e.target.value));
+            setResult(null);
+          }}
+        >
+          {GATES.map((g) => (
+            <option key={g.id} value={g.id}>{g.label}</option>
+          ))}
+        </select>
+      </div>
+
+      {/* Khu kết quả lớn (nhìn từ xa) */}
+      <div className="flex min-h-64 w-full max-w-xl items-center justify-center">
+        {!result ? (
+          <div className="text-center text-slate-400">
+            <div className="text-6xl">⤿</div>
+            <p className="mt-4 text-2xl font-medium">Mời áp / nhập mã QR</p>
+          </div>
+        ) : result.kind === 'open' ? (
+          <div className="w-full rounded-3xl bg-emerald-500 p-10 text-center text-white shadow-2xl">
+            <div className="text-7xl">✓</div>
+            <p className="mt-4 text-4xl font-bold tracking-wide">BARIE MỞ</p>
+            <p className="mt-2 text-xl text-emerald-50">{STAGE_LABEL[result.stage] || result.stage}</p>
+          </div>
+        ) : result.kind === 'payment' ? (
+          <div className="w-full rounded-3xl bg-amber-400 p-10 text-center text-amber-950 shadow-2xl">
+            <p className="text-3xl font-bold">CẦN THANH TOÁN</p>
+            <p className="mt-3 text-5xl font-extrabold">{fmtMoney(result.fee)}</p>
+            <a
+              href={result.checkoutUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="mt-6 inline-block rounded-xl bg-amber-950 px-8 py-3 text-lg font-semibold text-white hover:bg-amber-900"
+            >
+              Thanh toán
+            </a>
+            <p className="mt-4 text-sm text-amber-900">Sau khi trả xong, quét lại mã ở cổng ra để mở barie.</p>
+            <button
+              type="button"
+              onClick={() => setResult(null)}
+              className="mt-2 text-sm font-medium text-amber-900 underline"
+            >
+              Quét lại
+            </button>
+          </div>
+        ) : (
+          <div className="w-full rounded-3xl bg-red-500 p-10 text-center text-white shadow-2xl">
+            <div className="text-7xl">✕</div>
+            <p className="mt-4 text-2xl font-semibold">{result.message}</p>
+          </div>
+        )}
+      </div>
+
+      {/* Ô quét/nhập mã QR */}
+      <form onSubmit={handleScan} className="flex w-full max-w-xl gap-3">
+        <input
+          ref={inputRef}
+          className={`${inputClass} bg-white text-slate-900`}
+          value={qr}
+          onChange={(e) => setQr(e.target.value)}
+          placeholder="Áp đầu đọc hoặc dán mã QR rồi Enter..."
+          autoFocus
+        />
+        <button
+          type="submit"
+          disabled={scanning || !qr.trim()}
+          className="shrink-0 rounded-lg bg-brand px-6 py-2 font-semibold text-white hover:opacity-90 disabled:opacity-50"
+        >
+          {scanning ? 'Đang quét...' : 'Quét'}
+        </button>
+      </form>
+
+      <p className="text-xs text-slate-500">Kiosk cổng — màn tự phục vụ. Mỗi cổng tự suy hành động theo tòa/tầng × chiều.</p>
+    </div>
+  );
+}
