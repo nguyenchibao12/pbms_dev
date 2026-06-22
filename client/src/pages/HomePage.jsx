@@ -43,6 +43,28 @@ const features = [
   },
 ];
 
+/* Khu công khai cho khách — xem không cần đăng nhập */
+const guestLinks = [
+  {
+    to: '/pricing',
+    title: 'Bảng giá',
+    desc: 'Xem giá đỗ theo loại xe — công khai, không cần đăng nhập.',
+    icon: <><rect x="4" y="3" width="16" height="18" rx="2" /><path d="M8 7h8M8 11h8M8 15h5" /></>,
+  },
+  {
+    to: '/availability',
+    title: 'Chỗ trống',
+    desc: 'Tra cứu số chỗ trống theo tầng và khu vực theo thời gian thực.',
+    icon: <><circle cx="11" cy="11" r="7" /><path d="m21 21-4.3-4.3" /></>,
+  },
+  {
+    to: '/info',
+    title: 'Quy định',
+    desc: 'Giờ mở cửa, loại xe hỗ trợ và nội quy bãi đỗ.',
+    icon: <><circle cx="12" cy="12" r="9" /><path d="M12 8h.01M11 12h1v4h1" /></>,
+  },
+];
+
 const steps = [
   { n: '01', title: 'Đăng ký tài khoản', desc: 'Tạo tài khoản khách hàng miễn phí chỉ trong một phút.' },
   { n: '02', title: 'Tìm & đặt chỗ', desc: 'Chọn bãi đỗ, xem chỗ trống và giữ chỗ theo nhu cầu.' },
@@ -106,6 +128,35 @@ export default function HomePage() {
               </div>
             ))}
           </div>
+        </div>
+      </section>
+
+      {/* QUICK ACCESS — khu công khai cho khách */}
+      <section className="mx-auto max-w-6xl px-4">
+        <div className="mx-auto max-w-2xl text-center">
+          <h2 className="text-3xl font-bold tracking-tight text-slate-900">Xem ngay, không cần đăng nhập</h2>
+          <p className="mt-3 text-slate-500">
+            Tra cứu bảng giá, chỗ trống và quy định bãi đỗ chỉ với một chạm.
+          </p>
+        </div>
+
+        <div className="mt-10 grid gap-6 sm:grid-cols-3">
+          {guestLinks.map((g) => (
+            <Link
+              key={g.to}
+              to={g.to}
+              className="group rounded-2xl border border-slate-200 bg-surface-raised p-6 shadow-(--shadow-card) transition-all hover:-translate-y-1 hover:shadow-(--shadow-soft)"
+            >
+              <div className="brand-gradient flex h-12 w-12 items-center justify-center rounded-xl text-white">
+                <Icon path={g.icon} />
+              </div>
+              <h3 className="mt-4 flex items-center gap-1.5 text-lg font-semibold text-slate-800 group-hover:text-brand">
+                {g.title}
+                <span aria-hidden className="transition-transform group-hover:translate-x-1">→</span>
+              </h3>
+              <p className="mt-2 text-sm leading-relaxed text-slate-500">{g.desc}</p>
+            </Link>
+          ))}
         </div>
       </section>
 
