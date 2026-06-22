@@ -1,6 +1,6 @@
 {
   "building_name": "Bãi đỗ PBMS",
-  "is_24_7": false,
+  "is_24_7": true,
   "open_time": "06:00",
   "close_time": "22:00",
   "address": "FPT University, Hà Nội",
