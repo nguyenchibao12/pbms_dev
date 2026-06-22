@@ -51,6 +51,12 @@ router.post('/checkout',
      #swagger.requestBody = { required: true, content: { 'application/json': { example: { plateNumber: '51F-12345', gateId: 2, lostTicket: false } } } } */
   ...staffOnly, checkoutValidator, validate, sessionController.checkout);
 
+router.post('/cash-checkout',
+  /* #swagger.tags = ['Sessions']
+     #swagger.summary = 'Tất toán tiền mặt tại booth + mở barie (Staff)'
+     #swagger.requestBody = { required: true, content: { 'application/json': { example: { qrToken: 'xxxxxxxxxxxxxxxx', gateId: 2, lostTicket: false } } } } */
+  ...staffOnly, checkoutValidator, validate, sessionController.cashCheckout);
+
 router.post('/preview-fee',
   /* #swagger.tags = ['Sessions']
      #swagger.summary = 'Xem trước phí (Staff)'
