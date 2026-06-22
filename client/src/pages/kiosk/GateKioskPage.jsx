@@ -1,10 +1,13 @@
 import { useState, useRef, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { kioskApi } from '../../api/kiosk';
+import { sessionsApi } from '../../api/sessions';
 import { inputClass } from '../../components/ui/Input';
 
-// Màn hình giả lập gắn trên cổng (public, không đăng nhập). Khách áp/nhập mã QR ->
-// cổng tự quyết: mở barie (OPEN) hoặc yêu cầu thanh toán (PAYMENT_REQUIRED).
+// Màn hình giả lập gắn trên cổng. Khách áp/nhập mã QR -> cổng tự quyết: mở barie
+// (OPEN) hoặc yêu cầu thanh toán (PAYMENT_REQUIRED).
+// - Mặc định (booth=false): kiosk PUBLIC ở cổng (không đăng nhập, dùng kiosk key).
+// - booth=true: màn CHỐT có staff đăng nhập, thêm nút thu TIỀN MẶT mở barie ngay.
 
 // Danh sách cổng TĨNH theo seed demo (màn public không gọi GET /gates vì cần auth).
 const GATES = [
@@ -25,15 +28,18 @@ const STAGE_LABEL = {
 
 const fmtMoney = (v) => `${Number(v || 0).toLocaleString('vi-VN')} ₫`;
 
-export default function GateKioskPage() {
+export default function GateKioskPage({ booth = false }) {
   const [params] = useSearchParams();
   const fromUrl = params.get('gateId');
   const [gateId, setGateId] = useState(
     fromUrl && GATES.some((g) => String(g.id) === fromUrl) ? Number(fromUrl) : GATES[0].id,
   );
   const [qr, setQr] = useState('');
-  const [result, setResult] = useState(null); // { kind: 'open' | 'payment' | 'error', ... }
+  const [result, setResult] = useState(null); // { kind: 'open' | 'payment' | 'cash' | 'error', ... }
   const [scanning, setScanning] = useState(false);
+  const [lastToken, setLastToken] = useState(''); // token vừa quét — dùng cho tất toán tiền mặt
+  const [lostTicket, setLostTicket] = useState(false);
+  const [cashing, setCashing] = useState(false);
   const inputRef = useRef(null);
   const resetTimer = useRef(null);
 
@@ -56,11 +62,13 @@ export default function GateKioskPage() {
     if (!token || scanning) return;
     setScanning(true);
     setResult(null);
+    setLastToken(token);
+    setLostTicket(false);
     try {
       const { data } = await kioskApi.scan(gateId, token);
       const d = data.data;
       if (d.action === 'PAYMENT_REQUIRED') {
-        setResult({ kind: 'payment', ...d }); // giữ màn hình -> chờ khách bấm thanh toán
+        setResult({ kind: 'payment', ...d }); // giữ màn hình -> chờ thanh toán
       } else {
         setResult({ kind: 'open', ...d });
         scheduleReset(5000); // mở cổng -> tự reset sẵn sàng xe sau
@@ -74,8 +82,28 @@ export default function GateKioskPage() {
     }
   };
 
+  // Booth: thu tiền mặt -> BE ghi payment 'cash' + mở barie ngay.
+  const handleCashCheckout = async () => {
+    if (!lastToken || cashing) return;
+    setCashing(true);
+    try {
+      const { data } = await sessionsApi.cashCheckout({ qrToken: lastToken, gateId, lostTicket });
+      setResult({ kind: 'cash', ...data.data });
+      scheduleReset(5000);
+    } catch (err) {
+      setResult({ kind: 'error', message: err.response?.data?.error?.message || 'Thu tiền mặt thất bại' });
+      scheduleReset(6000);
+    } finally {
+      setCashing(false);
+    }
+  };
+
   return (
     <div className="flex min-h-screen flex-col items-center justify-center gap-8 bg-slate-900 p-6 text-white">
+      {booth && (
+        <div className="rounded-full bg-brand px-4 py-1 text-sm font-semibold text-white">Chốt thu phí (booth) — có thể thu tiền mặt</div>
+      )}
+
       {/* Chọn cổng kiosk đang gắn */}
       <div className="flex items-center gap-3 text-sm text-slate-300">
         <span>Cổng:</span>
@@ -110,22 +138,46 @@ export default function GateKioskPage() {
           <div className="w-full rounded-3xl bg-amber-400 p-10 text-center text-amber-950 shadow-2xl">
             <p className="text-3xl font-bold">CẦN THANH TOÁN</p>
             <p className="mt-3 text-5xl font-extrabold">{fmtMoney(result.fee)}</p>
-            <a
-              href={result.checkoutUrl}
-              target="_blank"
-              rel="noreferrer"
-              className="mt-6 inline-block rounded-xl bg-amber-950 px-8 py-3 text-lg font-semibold text-white hover:bg-amber-900"
-            >
-              Thanh toán
-            </a>
-            <p className="mt-4 text-sm text-amber-900">Sau khi trả xong, quét lại mã ở cổng ra để mở barie.</p>
-            <button
-              type="button"
-              onClick={() => setResult(null)}
-              className="mt-2 text-sm font-medium text-amber-900 underline"
-            >
+            <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
+              <a
+                href={result.checkoutUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="rounded-xl bg-amber-950 px-8 py-3 text-lg font-semibold text-white hover:bg-amber-900"
+              >
+                Thanh toán online
+              </a>
+              {booth && (
+                <button
+                  type="button"
+                  onClick={handleCashCheckout}
+                  disabled={cashing}
+                  className="rounded-xl bg-emerald-700 px-8 py-3 text-lg font-semibold text-white hover:bg-emerald-800 disabled:opacity-50"
+                >
+                  {cashing ? 'Đang xử lý...' : 'Đã thu tiền mặt → mở barie'}
+                </button>
+              )}
+            </div>
+            {booth && (
+              <label className="mt-4 flex items-center justify-center gap-2 text-sm text-amber-900">
+                <input type="checkbox" checked={lostTicket} onChange={(e) => setLostTicket(e.target.checked)} />
+                Khách báo mất vé (phụ thu)
+              </label>
+            )}
+            <p className="mt-4 text-sm text-amber-900">
+              {booth
+                ? 'Thu tiền mặt để mở barie ngay, hoặc để khách trả online.'
+                : 'Sau khi trả xong, quét lại mã ở cổng ra để mở barie.'}
+            </p>
+            <button type="button" onClick={() => setResult(null)} className="mt-2 text-sm font-medium text-amber-900 underline">
               Quét lại
             </button>
+          </div>
+        ) : result.kind === 'cash' ? (
+          <div className="w-full rounded-3xl bg-emerald-500 p-10 text-center text-white shadow-2xl">
+            <div className="text-7xl">✓</div>
+            <p className="mt-4 text-3xl font-bold tracking-wide">ĐÃ THU TIỀN MẶT — BARIE MỞ</p>
+            <p className="mt-2 text-xl text-emerald-50">{fmtMoney(result.fee)}</p>
           </div>
         ) : (
           <div className="w-full rounded-3xl bg-red-500 p-10 text-center text-white shadow-2xl">

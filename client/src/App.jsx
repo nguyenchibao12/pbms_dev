@@ -88,6 +88,11 @@ export default function App() {
               <Route index element={<StaffOperationsPage />} />
             </Route>
           </Route>
+          {/* Chốt thu phí (booth) — màn kiosk có staff đăng nhập, thêm thu tiền mặt */}
+          <Route element={<ProtectedRoute allowedRoles={['Staff', 'Manager']} />}>
+            <Route path="/staff/booth" element={<GateKioskPage booth />} />
+          </Route>
+
           {/* Khu vực Khách hàng — UserLayout bọc các trang đặt chỗ */}
           <Route element={<ProtectedRoute allowedRoles={['User']} />}>
             <Route path="/reservations" element={<UserLayout />}>
