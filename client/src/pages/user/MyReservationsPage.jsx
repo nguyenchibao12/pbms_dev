@@ -239,8 +239,14 @@ export default function MyReservationsPage() {
                         Đến muộn quá hạn giữ chỗ có thể bị hủy (no-show)
                       </p>
                     </div>
-                    <div className="rounded-lg border border-slate-200 bg-white p-2">
+                    <div className="flex flex-col items-center gap-1 rounded-lg border border-slate-200 bg-white p-2">
                       <QRCodeSVG value={r.qr_token} size={120} aria-label="Mã QR check-in" />
+                      <span
+                        className="max-w-[120px] cursor-default select-all truncate font-mono text-[10px] text-slate-400"
+                        title={r.qr_token}
+                      >
+                        {r.qr_token}
+                      </span>
                     </div>
                   </div>
                 )}

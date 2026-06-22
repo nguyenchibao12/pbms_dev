@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { QRCodeSVG } from 'qrcode.react';
 import { sessionsApi } from '../../api/sessions';
 import { floorsApi, vehicleTypesApi, gatesApi, zonesApi } from '../../api/masterData';
 import { validateCheckinForm } from '../../lib/validate';
@@ -288,6 +289,18 @@ export default function StaffOperationsPage() {
                   <div className="flex justify-between"><dt className="text-slate-500">Khu / Tầng</dt><dd>{lastCheckin.slot?.zone?.label || '—'}{lastCheckin.slot?.zone?.floor ? ` · ${lastCheckin.slot.zone.floor.floor_code}` : ''}</dd></div>
                   <div className="flex justify-between"><dt className="text-slate-500">Giờ vào</dt><dd>{lastCheckin.time_in ? new Date(lastCheckin.time_in).toLocaleString('vi-VN') : '—'}</dd></div>
                 </dl>
+                {lastCheckin.qr_token && (
+                  <div className="mt-3 flex flex-col items-center gap-2 border-t border-slate-200 pt-3">
+                    <QRCodeSVG value={lastCheckin.qr_token} size={140} aria-label="Mã QR vé ra cổng" />
+                    <span
+                      className="max-w-[140px] cursor-default select-all truncate font-mono text-[10px] text-slate-400"
+                      title={lastCheckin.qr_token}
+                    >
+                      {lastCheckin.qr_token}
+                    </span>
+                    <p className="text-xs text-slate-500">Khách chụp mã này làm vé — xuất trình khi ra cổng</p>
+                  </div>
+                )}
               </Card>
             ) : (
               <Card className="flex h-full items-center justify-center text-center text-sm text-slate-400">
