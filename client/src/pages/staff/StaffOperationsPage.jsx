@@ -309,8 +309,12 @@ export default function StaffOperationsPage() {
       total: zs.reduce((s, z) => s + (z.total || 0), 0),
     };
   };
-  const selectedFloorFree = freeFor(floorMetaFor(form.floorId), form.vehicleTypeId);
+  const selectedFloorMeta = floorMetaFor(form.floorId);
+  const selectedFloorFree = freeFor(selectedFloorMeta, form.vehicleTypeId);
   const selectedVtName = vehicleTypes.find((v) => String(v.vehicle_type_id) === String(form.vehicleTypeId))?.type_name;
+  // Khu của tầng đang chọn, lọc theo loại xe (để staff khỏi chọn nhầm khu khác loại).
+  const visibleZones = zones.filter((z) => !form.vehicleTypeId || String(z.vehicle_type_id) === String(form.vehicleTypeId));
+  const zoneAvailById = (zoneId) => (selectedFloorMeta?.zones || []).find((z) => String(z.zoneId) === String(zoneId)) || null;
 
   return (
     <div>
@@ -355,7 +359,7 @@ export default function StaffOperationsPage() {
                 />
               </Field>
               <Field label="Loại xe" required error={fieldErrors.vehicleTypeId}>
-                <select className={inputClass} value={form.vehicleTypeId} onChange={(e) => setForm({ ...form, vehicleTypeId: e.target.value })} required>
+                <select className={inputClass} value={form.vehicleTypeId} onChange={(e) => setForm({ ...form, vehicleTypeId: e.target.value, zoneId: '' })} required>
                   <option value="">— Chọn loại xe —</option>
                   {vehicleTypes.map((v) => (
                     <option key={v.vehicle_type_id} value={v.vehicle_type_id}>{v.type_name}</option>
@@ -397,9 +401,15 @@ export default function StaffOperationsPage() {
               <Field label="Khu vực (tùy chọn)" hint="Để trống = hệ thống tự chọn chỗ trống">
                 <select className={inputClass} value={form.zoneId} onChange={(e) => setForm({ ...form, zoneId: e.target.value })} disabled={!form.floorId}>
                   <option value="">— Tự động —</option>
-                  {zones.map((z) => (
-                    <option key={z.zone_id} value={z.zone_id}>{z.zone_code} — {z.label}</option>
-                  ))}
+                  {visibleZones.map((z) => {
+                    const za = zoneAvailById(z.zone_id);
+                    const full = za ? za.available === 0 : false;
+                    return (
+                      <option key={z.zone_id} value={z.zone_id} disabled={full}>
+                        {z.zone_code} — {z.label}{za ? ` (${za.available}/${za.total} trống)` : ''}{full ? ' — đầy' : ''}
+                      </option>
+                    );
+                  })}
                 </select>
               </Field>
               {form.floorId && selectedFloorFree && (
