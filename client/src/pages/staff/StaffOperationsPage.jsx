@@ -32,7 +32,7 @@ const fmtElapsed = (timeIn) => {
 const emptyCheckin = { plateNumber: '', vehicleTypeId: '', floorId: '', gateId: '', zoneId: '' };
 
 export default function StaffOperationsPage() {
-  const [tab, setTab] = useState('checkin'); // 'checkin' | 'active' | 'reservation'
+  const [tab, setTab] = useState('checkin'); // 'checkin' | 'active' | 'reservation' | 'booth'
 
   // Dữ liệu danh mục cho dropdown
   const [floors, setFloors] = useState([]);
@@ -74,6 +74,15 @@ export default function StaffOperationsPage() {
   const [ciGateId, setCiGateId] = useState('');
   const [ciError, setCiError] = useState('');
   const [ciSubmitting, setCiSubmitting] = useState(false);
+
+  // Booth thu tiền mặt (xe ra) — tra cứu bằng QR, cố định chốt BLD-OUT (BE tự suy cổng).
+  const [boothQr, setBoothQr] = useState('');
+  const [boothLost, setBoothLost] = useState(false);
+  const [boothLooking, setBoothLooking] = useState(false);
+  const [boothError, setBoothError] = useState('');
+  const [boothPreview, setBoothPreview] = useState(null); // { session, fee } sau khi tra cứu
+  const [boothSubmitting, setBoothSubmitting] = useState(false);
+  const [boothResult, setBoothResult] = useState(null); // kết quả sau khi thu tiền mặt
 
   const loadActive = async () => {
     setLoadingActive(true);
@@ -300,6 +309,53 @@ export default function StaffOperationsPage() {
     }
   };
 
+  // Booth: tra cứu phí xe ra bằng QR (BE tự suy cổng OUT theo phiên). lost = tính phụ thu mất vé.
+  const lookupBoothFee = async (e, lost = boothLost) => {
+    if (e?.preventDefault) e.preventDefault();
+    const token = boothQr.trim();
+    if (!token) return;
+    setBoothError('');
+    setBoothResult(null);
+    setBoothLooking(true);
+    try {
+      const { data } = await sessionsApi.previewFee({ qrToken: token, lostTicket: lost });
+      setBoothPreview(data.data);
+    } catch (err) {
+      setBoothPreview(null);
+      setBoothError(err.response?.data?.error?.message || 'Không tra cứu được — kiểm tra lại mã QR');
+    } finally {
+      setBoothLooking(false);
+    }
+  };
+
+  // Booth: xác nhận đã thu tiền mặt -> BE ghi payment 'cash' + mở barie.
+  const confirmBoothCash = async () => {
+    const token = boothQr.trim();
+    if (!token || boothSubmitting) return;
+    setBoothError('');
+    setBoothSubmitting(true);
+    try {
+      const { data } = await sessionsApi.cashCheckout({ qrToken: token, lostTicket: boothLost });
+      setBoothResult(data.data);
+      setBoothPreview(null);
+      toast.success('Đã thu tiền mặt — barie mở');
+      loadActive();
+      loadAvailability();
+    } catch (err) {
+      setBoothError(err.response?.data?.error?.message || 'Thu tiền mặt thất bại');
+    } finally {
+      setBoothSubmitting(false);
+    }
+  };
+
+  const resetBooth = () => {
+    setBoothQr('');
+    setBoothLost(false);
+    setBoothPreview(null);
+    setBoothResult(null);
+    setBoothError('');
+  };
+
   // Số chỗ trống cho tầng đang chọn (theo loại xe nếu đã chọn) — dùng cho dropdown + panel.
   const floorMetaFor = (floorId) => availability.find((f) => String(f.floorId) === String(floorId)) || null;
   const freeFor = (floorMeta, vehicleTypeId) => {
@@ -331,6 +387,7 @@ export default function StaffOperationsPage() {
           { id: 'checkin', label: 'Check-in (xe vào)' },
           { id: 'active', label: `Xe đang đỗ${active.length ? ` (${active.length})` : ''}` },
           { id: 'reservation', label: `Đặt chỗ vào${upcoming.length ? ` (${upcoming.length})` : ''}` },
+          { id: 'booth', label: 'Thu tiền mặt (ra)' },
         ].map((t) => (
           <button
             key={t.id}
@@ -580,6 +637,67 @@ export default function StaffOperationsPage() {
                 </tbody>
               </table>
             </div>
+          </Card>
+        </div>
+      )}
+
+      {/* TAB BOOTH — THU TIỀN MẶT XE RA (chốt BLD-OUT, tra cứu bằng QR; cổng do BE tự suy) */}
+      {tab === 'booth' && (
+        <div className="max-w-xl">
+          <Card>
+            <h2 className="text-lg font-semibold text-slate-800">Thu tiền mặt xe ra</h2>
+            <p className="mt-1 mb-4 text-sm text-slate-500">
+              Khách đưa mã QR tại chốt ra → tra cứu phí → thu tiền mặt mở barie. (Khách trả online thì tự quét ở kiosk cổng ra.)
+            </p>
+            <ErrorAlert message={boothError} className="mb-4" />
+
+            {boothResult ? (
+              <div className="space-y-3">
+                <div className="rounded-lg bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+                  ✓ Đã thu tiền mặt {fmtMoney(boothResult.fee)} — barie mở.
+                </div>
+                <Button className="brand-gradient w-full border-0" onClick={resetBooth}>Thu xe khác</Button>
+              </div>
+            ) : (
+              <>
+                <form onSubmit={lookupBoothFee} className="flex flex-col gap-3 sm:flex-row">
+                  <input
+                    className={inputClass}
+                    value={boothQr}
+                    onChange={(e) => setBoothQr(e.target.value)}
+                    placeholder="Dán / quét mã QR của khách..."
+                  />
+                  <Button type="submit" variant="secondary" className="shrink-0" loading={boothLooking}>Tra cứu</Button>
+                </form>
+
+                {boothPreview && (
+                  <div className="mt-4 space-y-4">
+                    <div className="rounded-lg bg-slate-50 px-4 py-3 text-sm">
+                      <div className="flex justify-between"><span className="text-slate-500">Biển số</span><span className="font-mono font-medium">{boothPreview.session?.plate_number || '—'}</span></div>
+                      <div className="flex justify-between"><span className="text-slate-500">Giờ vào</span><span>{boothPreview.session?.time_in ? new Date(boothPreview.session.time_in).toLocaleString('vi-VN') : '—'}</span></div>
+                      <div className="flex justify-between"><span className="text-slate-500">Đã đỗ</span><span>{fmtElapsed(boothPreview.session?.time_in)}</span></div>
+                      <div className="mt-1 flex justify-between border-t border-slate-200 pt-1">
+                        <span className="text-slate-500">Phí phải thu</span>
+                        <span className="text-lg font-bold text-brand">{fmtMoney(boothPreview.fee)}</span>
+                      </div>
+                    </div>
+
+                    <label className="flex items-center gap-2 text-sm text-slate-700">
+                      <input
+                        type="checkbox"
+                        checked={boothLost}
+                        onChange={(e) => { setBoothLost(e.target.checked); lookupBoothFee(null, e.target.checked); }}
+                      />
+                      Khách báo mất vé (phụ thu)
+                    </label>
+
+                    <Button className="brand-gradient w-full border-0" loading={boothSubmitting} onClick={confirmBoothCash}>
+                      Đã thu tiền mặt → mở barie
+                    </Button>
+                  </div>
+                )}
+              </>
+            )}
           </Card>
         </div>
       )}
