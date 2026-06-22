@@ -102,12 +102,11 @@ export function validateGateForm(form) {
   );
 }
 
-/** Validate form check-in (Staff): biển số, loại xe, tầng, cổng vào. */
+/** Validate form check-in (Staff): biển số, loại xe, tầng. Cổng do BE tự suy (optional). */
 export function validateCheckinForm(form) {
   return mergeErrors(
     validateRequiredText(form.plateNumber, 'plateNumber', 'biển số xe'),
     validateRequired(form.vehicleTypeId, 'vehicleTypeId', 'loại xe'),
     validateRequired(form.floorId, 'floorId', 'tầng'),
-    validateRequired(form.gateId, 'gateId', 'cổng vào'),
   );
 }
