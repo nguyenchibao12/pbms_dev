@@ -84,6 +84,10 @@ const buildingExit = async (ref, gate) => {
   const result = await initiateSessionCheckout(actorId, {
     sessionId: session.session_id,
     gateId: gate.gate_id,
+    // Kiosk CÔNG KHAI (không đăng nhập) → PayOS hủy/return phải về lại trang kiosk,
+    // KHÔNG về /staff (trang cần login, sẽ bị đá ra /login).
+    returnUrl: `${process.env.CLIENT_URL}/kiosk/gate`,
+    cancelUrl: `${process.env.CLIENT_URL}/kiosk/gate`,
   });
   const fee = Number(result.fee) || 0;
   if (result.checkoutUrl && fee > 0) {

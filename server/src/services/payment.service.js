@@ -165,23 +165,14 @@ const buildCheckoutPayload = async (staffUserId, lookup) => {
     throw new AppError('lostTicketFee must be >= 0', 400, 'VALIDATION_ERROR');
   }
 
+  // Đơn 'pending' cũ cho phiên này: localhost không có webhook nên đơn PayOS đã bị khách
+  // HỦY vẫn nằm 'pending'. Nếu tái dùng checkoutUrl cũ -> PayOS báo "đơn không tồn tại/đã
+  // xử lý" và khách không trả được. -> Đánh dấu đơn cũ 'failed' rồi tạo link MỚI ở dưới.
   const existingPending = await Payment.findOne({
     where: { session_id: sessionId, status: 'pending' },
   });
-
   if (existingPending) {
-    const gateway = existingPending.gateway_response
-      ? JSON.parse(existingPending.gateway_response)
-      : {};
-    return {
-      payment: existingPending,
-      fee: Number(existingPending.amount),
-      session: preview.session,
-      checkoutUrl: gateway.checkoutUrl || null,
-      pricingRule: preview.pricingRule,
-      barrierOpened: false,
-      lostTicketFee: lostTicket ? lostTicketFee : 0,
-    };
+    await existingPending.update({ status: 'failed' });
   }
 
   let fee = Number(preview.fee);
@@ -224,6 +215,10 @@ const buildCheckoutPayload = async (staffUserId, lookup) => {
     orderCode,
     amount: fee,
     description,
+    // Cho phép caller chỉ định nơi PayOS redirect về (vd kiosk công khai → /kiosk/gate).
+    // Bỏ trống -> client tự fallback về /staff (luồng booth nhân viên đã đăng nhập).
+    returnUrl: lookup.returnUrl,
+    cancelUrl: lookup.cancelUrl,
   });
 
   const payment = await Payment.create({
