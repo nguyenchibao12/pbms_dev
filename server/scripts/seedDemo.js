@@ -9,8 +9,9 @@
  *
  * Tạo: 4 user (admin/manager/staff/user), 2 loại xe, 2 tầng, mỗi tầng 1 khu ô tô
  * + 1 khu xe máy (8 chỗ/khu), cổng tòa nhà (IN/OUT) + cổng mỗi tầng (IN/OUT),
- * bảng giá theo loại xe, và 1 đặt chỗ đã xác nhận sẵn (fallback demo reservation
- * không cần đặt + thanh toán trực tiếp).
+ * bảng giá theo loại xe, 1 đặt chỗ đã xác nhận sẵn (fallback demo reservation
+ * không cần đặt + thanh toán trực tiếp), và 1 khách đặt chỗ ĐANG ĐỖ (checked_in
+ * + phiên active) để test luồng check-out.
  */
 import dotenv from 'dotenv';
 import bcrypt from 'bcryptjs';
@@ -25,6 +26,7 @@ import {
   Gate,
   PricingRule,
   Reservation,
+  ParkingSession,
 } from '../src/models/index.js';
 import { ensureRoles } from '../src/utils/ensureRoles.js';
 import { ROLES } from '../src/middleware/rbac.js';
@@ -167,6 +169,45 @@ const run = async () => {
     qr_token: resQr,
   });
 
+  // --- 1 khách ĐẶT CHỖ ĐANG ĐỖ (checked_in + phiên active) — test luồng check-OUT ---
+  const f1InGate = await Gate.findOne({ where: { gate_code: 'F1-IN' } });
+  const occSlot = await ParkingSlot.findOne({
+    where: { zone_id: f1Car.zone_id, status: 'available' },
+    order: [['slot_id', 'ASC']],
+  });
+  await occSlot.update({ status: 'occupied' });
+
+  const inPlate = normalizePlateVN('51F-11111');
+  const inResQr = generateQrToken();
+  const inReservation = await Reservation.create({
+    user_id: users.user.user_id,
+    vehicle_type_id: car.vehicle_type_id,
+    floor_id: f1.floor_id,
+    zone_id: f1Car.zone_id,
+    slot_id: occSlot.slot_id,
+    plate_number: inPlate,
+    start_time: new Date(now.getTime() - 2 * 60 * 60 * 1000), // vào 2h trước
+    end_time: new Date(now.getTime() + 5 * 24 * 60 * 60 * 1000),
+    status: 'checked_in',
+    reservation_type: 'standard',
+    qr_token: inResQr,
+  });
+  const inSessQr = generateQrToken();
+  const inSession = await ParkingSession.create({
+    user_id: users.user.user_id,
+    reservation_id: inReservation.reservation_id,
+    gate_id: f1InGate.gate_id,
+    slot_id: occSlot.slot_id,
+    vehicle_type_id: car.vehicle_type_id,
+    plate_number: inPlate,
+    time_in: new Date(now.getTime() - 2 * 60 * 60 * 1000), // đỗ ~2h → phí ô tô ≈ 30.000đ
+    qr_token: inSessQr,
+    check_in_by: users.staff.user_id,
+    session_type: 'reservation',
+    status: 'active',
+    calculated_fee: null,
+  });
+
   console.log('\n================ SEED DONE ================');
   console.log('Tài khoản (username / password):');
   console.log('  admin   / Admin@123456');
@@ -177,6 +218,10 @@ const run = async () => {
   console.log(`  reservationId = ${reservation.reservation_id}`);
   console.log(`  biển số       = ${resPlate}  (Tầng 1 · khu ô tô · chỗ ${resSlot.slot_code})`);
   console.log(`  qr_token      = ${resQr}`);
+  console.log('\nKhách ĐẶT CHỖ đang đỗ (checked_in + phiên active) — test check-OUT:');
+  console.log(`  sessionId     = ${inSession.session_id}`);
+  console.log(`  biển số       = ${inPlate}  (Tầng 1 · khu ô tô · chỗ ${occSlot.slot_code} · đỗ ~2h ≈ 30.000đ)`);
+  console.log(`  session qr    = ${inSessQr}`);
   console.log('==========================================\n');
   process.exit(0);
 };

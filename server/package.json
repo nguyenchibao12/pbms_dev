@@ -9,7 +9,8 @@
     "dev": "nodemon src/index.js",
     "start": "node src/index.js",
     "create-admin": "node scripts/createAdmin.js",
-    "seed": "node scripts/seedDemo.js"
+    "seed": "node scripts/seedDemo.js",
+    "seed:checkout": "node scripts/seedCheckout.js"
   },
   "dependencies": {
     "@payos/node": "^2.0.5",
