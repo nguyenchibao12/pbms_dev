@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { RefreshCw, LayoutGrid, List, Info, LogIn } from 'lucide-react';
+import { RefreshCw, LayoutGrid, List, Info, LogIn, ArrowLeft } from 'lucide-react';
 import { publicApi } from '../../api/public';
 import { useAuth } from '../../context/AuthContext';
 import { getRoleName, isCustomer, roleLabels } from '../../lib/auth';
@@ -83,6 +83,14 @@ export default function AvailabilityPage() {
 
   return (
     <>
+      <Link
+        to={isAuthenticated && isCustomer(user) ? '/reservations' : '/'}
+        className="mb-3 inline-flex items-center gap-1.5 text-sm text-slate-500 hover:text-brand"
+      >
+        <ArrowLeft className="h-4 w-4" />
+        {isAuthenticated && isCustomer(user) ? 'Đơn của tôi' : 'Trang chủ'}
+      </Link>
+
       <PageHeader
         title="Tra cứu chỗ trống"
         description="Sơ đồ slot theo tầng và khu vực — nhấn slot để xem chi tiết hoặc đặt chỗ"

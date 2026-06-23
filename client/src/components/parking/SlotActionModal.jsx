@@ -33,7 +33,7 @@ export default function SlotActionModal({
     zoneId: String(zone.zoneId),
     zoneCode: zone.zoneCode,
   });
-  const bookingPath = `/reservations?${bookingParams}`;
+  const bookingPath = `/reservations/new?${bookingParams}`;
 
   const handleSwitchToUser = () => {
     logout();
@@ -125,7 +125,7 @@ export default function SlotActionModal({
       <div className="space-y-4">
         <p className="text-sm text-slate-500">
           Slot <strong>{slot.slotCode}</strong> trên sơ đồ chỉ để tham khảo — khi đặt chỗ hệ thống tự gán
-          chỗ trống phù hợp (giống app đặt bãi xe).
+          chỗ trống phù hợp.
         </p>
 
         <div className="flex flex-wrap items-center gap-2">
