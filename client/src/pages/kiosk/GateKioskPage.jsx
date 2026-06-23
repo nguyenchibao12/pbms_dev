@@ -1,7 +1,9 @@
 import { useState, useRef, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import { Camera } from 'lucide-react';
 import { kioskApi } from '../../api/kiosk';
 import { inputClass } from '../../components/ui/Input';
+import QrScanner from '../../components/QrScanner';
 
 // Màn kiosk PUBLIC gắn trên cổng (không đăng nhập, xác thực bằng kiosk key).
 // Khách áp/nhập mã QR -> cổng tự quyết: mở barie (OPEN) hoặc yêu cầu thanh toán online
@@ -36,6 +38,7 @@ export default function GateKioskPage() {
   // ui = discriminator của FE (đặt tên riêng, KHÔNG trùng field `kind` BE trả về trong data).
   const [result, setResult] = useState(null); // { ui: 'open' | 'payment' | 'error', ...d }
   const [scanning, setScanning] = useState(false);
+  const [camOpen, setCamOpen] = useState(false); // overlay quét camera đang mở?
   const inputRef = useRef(null);
   const resetTimer = useRef(null);
 
@@ -52,9 +55,9 @@ export default function GateKioskPage() {
     resetTimer.current = setTimeout(() => setResult(null), ms);
   };
 
-  const handleScan = async (e) => {
-    e.preventDefault();
-    const token = qr.trim();
+  // Xử lý 1 mã QR (từ ô nhập tay HOẶC từ camera) — cổng tự quyết mở / yêu cầu thanh toán.
+  const runScan = async (raw) => {
+    const token = String(raw || '').trim();
     if (!token || scanning) return;
     setScanning(true);
     setResult(null);
@@ -74,6 +77,11 @@ export default function GateKioskPage() {
       setQr(''); // clear ô input sau mỗi lượt
       setScanning(false);
     }
+  };
+
+  const handleScan = (e) => {
+    e.preventDefault();
+    runScan(qr);
   };
 
   return (
@@ -148,9 +156,26 @@ export default function GateKioskPage() {
         >
           {scanning ? 'Đang quét...' : 'Quét'}
         </button>
+        <button
+          type="button"
+          onClick={() => setCamOpen(true)}
+          disabled={scanning}
+          className="flex shrink-0 items-center gap-2 rounded-lg border border-slate-600 px-4 py-2 font-semibold text-slate-200 hover:bg-slate-800 disabled:opacity-50"
+          title="Quét QR bằng camera"
+        >
+          <Camera className="h-5 w-5" />
+          <span className="hidden sm:inline">Camera</span>
+        </button>
       </form>
 
       <p className="text-xs text-slate-500">Kiosk cổng — màn tự phục vụ. Mỗi cổng tự suy hành động theo tòa/tầng × chiều.</p>
+
+      {camOpen && (
+        <QrScanner
+          onClose={() => setCamOpen(false)}
+          onScan={(token) => { setCamOpen(false); runScan(token); }}
+        />
+      )}
     </div>
   );
 }
