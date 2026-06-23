@@ -114,8 +114,6 @@ export default function GateKioskPage() {
             <p className="mt-3 text-5xl font-extrabold">{fmtMoney(result.fee)}</p>
             <a
               href={result.checkoutUrl}
-              target="_blank"
-              rel="noreferrer"
               className="mt-6 inline-block rounded-xl bg-amber-950 px-8 py-3 text-lg font-semibold text-white hover:bg-amber-900"
             >
               Thanh toán online
