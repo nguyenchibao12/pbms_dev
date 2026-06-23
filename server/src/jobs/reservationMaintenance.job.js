@@ -17,12 +17,19 @@ import {
 const INTERVAL_MS = 60 * 1000;
 let timer = null;
 
-/** Ca A: pending quá hạn chưa thanh toán -> hủy + nhả slot. */
+/** Ca A: pending quá TTL chưa thanh toán HOẶC đã quá khung giờ (end_time) -> hủy + nhả slot. */
 const expireStalePending = async () => {
   const ttlMinutes = getBookingPendingTtlMinutes();
-  const cutoff = new Date(Date.now() - ttlMinutes * 60 * 1000);
+  const ttlCutoff = new Date(Date.now() - ttlMinutes * 60 * 1000);
+  const now = new Date();
   const stale = await Reservation.findAll({
-    where: { status: 'pending', created_at: { [Op.lt]: cutoff } },
+    where: {
+      status: 'pending',
+      [Op.or]: [
+        { created_at: { [Op.lt]: ttlCutoff } }, // quá TTL từ lúc tạo mà chưa trả tiền
+        { end_time: { [Op.lt]: now } },          // khung giờ đã kết thúc → pending vô nghĩa, nhả ngay
+      ],
+    },
     attributes: ['reservation_id'],
   });
 
