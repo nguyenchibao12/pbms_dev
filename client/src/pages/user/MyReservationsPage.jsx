@@ -39,17 +39,6 @@ const formatLocation = (r) => {
   return parts.length ? parts.join(' · ') : 'Hệ thống sẽ gán chỗ trống tốt nhất';
 };
 
-// Link thanh toán PayOS còn dang dở của đơn (từ payment pending).
-const pendingCheckoutUrl = (r) => {
-  const payment = r.payments?.find((p) => p.status === 'pending');
-  if (!payment?.gateway_response) return null;
-  try {
-    return JSON.parse(payment.gateway_response).checkoutUrl || null;
-  } catch {
-    return null;
-  }
-};
-
 const isCancellable = (status) => status === 'pending' || status === 'confirmed';
 
 export default function MyReservationsPage() {
@@ -172,7 +161,6 @@ export default function MyReservationsPage() {
       ) : (
         <div className="space-y-3">
           {items.map((r) => {
-            const checkoutUrl = pendingCheckoutUrl(r);
             const showQr =
               r.status === 'confirmed' &&
               r.qr_token &&
@@ -196,11 +184,6 @@ export default function MyReservationsPage() {
                   </div>
 
                   <div className="flex shrink-0 flex-wrap gap-2 sm:flex-col sm:items-end">
-                    {r.status === 'pending' && checkoutUrl && (
-                      <Button size="sm" onClick={() => window.location.assign(checkoutUrl)}>
-                        Thanh toán {fmtMoney(r.payments?.[0]?.amount)}
-                      </Button>
-                    )}
                     {isCancellable(r.status) && (
                       <Button
                         size="sm"
