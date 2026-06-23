@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
+import { Camera } from 'lucide-react';
 import { sessionsApi } from '../../api/sessions';
 import { staffReservationsApi } from '../../api/staffReservations';
 import { floorsApi, vehicleTypesApi, gatesApi, zonesApi } from '../../api/masterData';
@@ -12,6 +13,7 @@ import Field, { ErrorAlert } from '../../components/ui/Field';
 import { inputClass } from '../../components/ui/Input';
 import Button from '../../components/ui/Button';
 import { toast } from '../../components/ui/toast';
+import QrScanner from '../../components/QrScanner';
 
 // Lấy floor_id của phiên (từ chỗ đỗ, fallback sang cổng vào) — để lọc cổng RA cùng tầng.
 const sessionFloorId = (s) => s?.slot?.zone?.floor?.floor_id ?? s?.gate?.floor_id ?? null;
@@ -84,6 +86,9 @@ export default function StaffOperationsPage() {
   const [boothSubmitting, setBoothSubmitting] = useState(false);
   const [boothResult, setBoothResult] = useState(null); // kết quả sau khi thu tiền mặt
 
+  // Quét QR bằng camera dùng chung cho 2 tab: 'reservation' (đặt chỗ vào) | 'booth' (thu tiền mặt) | null.
+  const [scanTarget, setScanTarget] = useState(null);
+
   const loadActive = async () => {
     setLoadingActive(true);
     try {
@@ -153,10 +158,9 @@ export default function StaffOperationsPage() {
     }
   };
 
-  // Tra cứu đơn theo mã QR rồi mở modal cho vào.
-  const handleReservationLookup = async (e) => {
-    e.preventDefault();
-    const token = resQr.trim();
+  // Tra cứu đơn theo mã QR (từ ô nhập tay HOẶC camera) rồi mở modal cho vào.
+  const runReservationLookup = async (raw) => {
+    const token = String(raw || '').trim();
     if (!token) return;
     setResLookupError('');
     setResLooking(true);
@@ -169,6 +173,11 @@ export default function StaffOperationsPage() {
     } finally {
       setResLooking(false);
     }
+  };
+
+  const handleReservationLookup = (e) => {
+    e.preventDefault();
+    runReservationLookup(resQr);
   };
 
   const handleReservationCheckin = async (e) => {
@@ -310,9 +319,9 @@ export default function StaffOperationsPage() {
   };
 
   // Booth: tra cứu phí xe ra bằng QR (BE tự suy cổng OUT theo phiên). lost = tính phụ thu mất vé.
-  const lookupBoothFee = async (e, lost = boothLost) => {
-    if (e?.preventDefault) e.preventDefault();
-    const token = boothQr.trim();
+  // Nhận token trực tiếp để dùng chung cho ô nhập tay (boothQr) lẫn camera.
+  const runBoothLookup = async (raw, lost = boothLost) => {
+    const token = String(raw || '').trim();
     if (!token) return;
     setBoothError('');
     setBoothResult(null);
@@ -326,6 +335,11 @@ export default function StaffOperationsPage() {
     } finally {
       setBoothLooking(false);
     }
+  };
+
+  const lookupBoothFee = (e, lost = boothLost) => {
+    if (e?.preventDefault) e.preventDefault();
+    runBoothLookup(boothQr, lost);
   };
 
   // Booth: xác nhận đã thu tiền mặt -> BE ghi payment 'cash' + mở barie.
@@ -586,6 +600,9 @@ export default function StaffOperationsPage() {
               <Button type="submit" className="brand-gradient shrink-0 border-0" loading={resLooking}>
                 Tra cứu
               </Button>
+              <Button type="button" variant="secondary" className="shrink-0" onClick={() => setScanTarget('reservation')}>
+                <Camera className="h-4 w-4" /> Quét camera
+              </Button>
             </form>
           </Card>
 
@@ -668,6 +685,9 @@ export default function StaffOperationsPage() {
                     placeholder="Dán / quét mã QR của khách..."
                   />
                   <Button type="submit" variant="secondary" className="shrink-0" loading={boothLooking}>Tra cứu</Button>
+                  <Button type="button" variant="secondary" className="shrink-0" onClick={() => setScanTarget('booth')}>
+                    <Camera className="h-4 w-4" /> Quét camera
+                  </Button>
                 </form>
 
                 {boothPreview && (
@@ -807,6 +827,24 @@ export default function StaffOperationsPage() {
           </form>
         )}
       </Modal>
+
+      {/* Overlay quét QR bằng camera — dùng chung cho tab Đặt chỗ vào & Thu tiền mặt */}
+      {scanTarget && (
+        <QrScanner
+          onClose={() => setScanTarget(null)}
+          onScan={(token) => {
+            const target = scanTarget;
+            setScanTarget(null);
+            if (target === 'reservation') {
+              setResQr(token);
+              runReservationLookup(token);
+            } else if (target === 'booth') {
+              setBoothQr(token);
+              runBoothLookup(token);
+            }
+          }}
+        />
+      )}
     </div>
   );
 }
