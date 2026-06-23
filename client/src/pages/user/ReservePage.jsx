@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { CalendarPlus, ArrowLeft } from 'lucide-react';
 import { reservationsApi } from '../../api/reservations';
 import { floorsApi, vehicleTypesApi } from '../../api/masterData';
@@ -22,6 +22,7 @@ const todayStr = () => {
 const emptyForm = { plateNumber: '', vehicleTypeId: '', floorId: '', arrivalDate: todayStr(), shiftId: '' };
 
 export default function ReservePage() {
+  const [searchParams] = useSearchParams();
   const [floors, setFloors] = useState([]);
   const [vehicleTypes, setVehicleTypes] = useState([]);
   const [metaLoading, setMetaLoading] = useState(true);
@@ -56,6 +57,30 @@ export default function ReservePage() {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     loadMeta();
   }, [loadMeta]);
+
+  // Điền sẵn Tầng + Loại xe khi vào từ sơ đồ chỗ trống (query param ưu tiên, fallback sessionStorage).
+  useEffect(() => {
+    let pre = null;
+    const qFloor = searchParams.get('floorId');
+    if (qFloor) {
+      pre = { floorId: qFloor, vehicleTypeId: searchParams.get('vehicleTypeId') || '' };
+    } else {
+      try {
+        pre = JSON.parse(sessionStorage.getItem('pbms_booking_prefill') || 'null');
+      } catch {
+        // prefill hỏng JSON — giữ pre = null
+      }
+    }
+    sessionStorage.removeItem('pbms_booking_prefill');
+    if (pre?.floorId) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      patchForm({
+        floorId: String(pre.floorId),
+        ...(pre.vehicleTypeId ? { vehicleTypeId: String(pre.vehicleTypeId) } : {}),
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const complete = Boolean(form.floorId && form.vehicleTypeId && form.arrivalDate && form.shiftId);
 
