@@ -12,6 +12,7 @@ export default function ZonesPage() {
   const [fieldErrors, setFieldErrors] = useState({});
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState(null);
+  const [floorCapacity, setFloorCapacity] = useState(null); // capacity tầng đang chọn trong form
   const [form, setForm] = useState({
     floorId: '',
     vehicleTypeId: '',
@@ -20,6 +21,10 @@ export default function ZonesPage() {
     totalSlots: '0',
     monthlyPassCapacity: '',
   });
+
+  // Tầng single tự quản 1 khu mặc định → không cho tạo khu thủ công.
+  const zonedFloors = floors.filter((f) => f.layout_mode !== 'single');
+  const noZonedFloor = !loading && zonedFloors.length === 0;
 
   const load = async () => {
     setLoading(true);
@@ -39,12 +44,28 @@ export default function ZonesPage() {
     }
   };
 
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { load(); }, []);
+
+  // Lấy diện tích còn trống của tầng đang chọn để gợi ý số slot tối đa.
+  useEffect(() => {
+    let active = true;
+    if (!modalOpen || !form.floorId) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setFloorCapacity(null);
+      return undefined;
+    }
+    floorsApi
+      .get(form.floorId)
+      .then((res) => { if (active) setFloorCapacity(res.data.data.capacity || null); })
+      .catch(() => { if (active) setFloorCapacity(null); });
+    return () => { active = false; };
+  }, [modalOpen, form.floorId]);
 
   const openCreate = () => {
     setEditing(null);
     setForm({
-      floorId: floors[0]?.floor_id ? String(floors[0].floor_id) : '',
+      floorId: zonedFloors[0]?.floor_id ? String(zonedFloors[0].floor_id) : '',
       vehicleTypeId: vehicleTypes[0]?.vehicle_type_id ? String(vehicleTypes[0].vehicle_type_id) : '',
       zoneCode: '',
       label: '',
@@ -93,6 +114,7 @@ export default function ZonesPage() {
       setModalOpen(false);
       load();
     } catch (err) {
+      // Hiển thị nguyên message BE: khóa khu trên tầng single / vượt diện tích tầng…
       setError(err.response?.data?.error?.message || 'Lưu thất bại');
     }
   };
@@ -107,6 +129,14 @@ export default function ZonesPage() {
     }
   };
 
+  // Số slot loại đang chọn còn vừa được vào diện tích trống của tầng.
+  const selectedVehicleType = vehicleTypes.find((t) => String(t.vehicle_type_id) === String(form.vehicleTypeId));
+  const slotArea = selectedVehicleType ? Number(selectedVehicleType.slot_area_m2) : 0;
+  const freeSlotHint =
+    floorCapacity && floorCapacity.areaFreeM2 != null && slotArea > 0
+      ? Math.floor(floorCapacity.areaFreeM2 / slotArea)
+      : null;
+
   return (
     <div>
       <div className="mb-6 flex items-center justify-between">
@@ -114,8 +144,20 @@ export default function ZonesPage() {
           <h1 className="text-2xl font-bold text-slate-800">Khu vực</h1>
           <p className="mt-1 text-sm text-slate-500">Phân vùng theo tầng và loại xe</p>
         </div>
-        <button onClick={openCreate} className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700">+ Thêm khu</button>
+        <button
+          onClick={openCreate}
+          disabled={noZonedFloor}
+          title={noZonedFloor ? 'Chưa có tầng phân khu (zoned) nào để thêm khu' : undefined}
+          className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          + Thêm khu
+        </button>
       </div>
+      {noZonedFloor && (
+        <p className="mb-4 rounded-lg bg-amber-50 px-4 py-3 text-sm text-amber-700">
+          Tất cả tầng đang ở chế độ "1 loại xe" (single) — các tầng này tự quản 1 khu mặc định nên không thể thêm khu thủ công. Tạo tầng "Phân khu" (zoned) để thêm khu.
+        </p>
+      )}
       <div className="overflow-hidden rounded-xl bg-white shadow-sm">
         <table className="min-w-full text-sm">
           <thead className="border-b border-slate-200 bg-slate-50 text-left text-slate-600">
@@ -157,7 +199,7 @@ export default function ZonesPage() {
           <Field label="Tầng" error={fieldErrors.floorId}>
             <select className={inputClass} value={form.floorId} onChange={(e) => setForm({ ...form, floorId: e.target.value })} required>
               <option value="">— Chọn tầng —</option>
-              {floors.map((f) => <option key={f.floor_id} value={f.floor_id}>{f.floor_code} — {f.label}</option>)}
+              {zonedFloors.map((f) => <option key={f.floor_id} value={f.floor_id}>{f.floor_code} — {f.label}</option>)}
             </select>
           </Field>
           <Field label="Loại xe" error={fieldErrors.vehicleTypeId}>
@@ -168,7 +210,17 @@ export default function ZonesPage() {
           </Field>
           <Field label="Mã khu" error={fieldErrors.zoneCode}><input className={inputClass} value={form.zoneCode} onChange={(e) => setForm({ ...form, zoneCode: e.target.value })} required /></Field>
           <Field label="Tên hiển thị" error={fieldErrors.label}><input className={inputClass} value={form.label} onChange={(e) => setForm({ ...form, label: e.target.value })} required /></Field>
-          <Field label="Tổng số slot" error={fieldErrors.totalSlots}><input type="number" min="0" className={inputClass} value={form.totalSlots} onChange={(e) => setForm({ ...form, totalSlots: e.target.value })} required /></Field>
+          <Field
+            label="Tổng số slot"
+            error={fieldErrors.totalSlots}
+            hint={
+              freeSlotHint != null
+                ? `Diện tích tầng còn trống ~${floorCapacity.areaFreeM2} m² → tối đa ${freeSlotHint} slot loại này`
+                : undefined
+            }
+          >
+            <input type="number" min="0" className={inputClass} value={form.totalSlots} onChange={(e) => setForm({ ...form, totalSlots: e.target.value })} required />
+          </Field>
           <Field label="Capacity vé tháng (OR-03)" hint="Để trống = không giới hạn riêng" error={fieldErrors.monthlyPassCapacity}>
             <input type="number" min="0" className={inputClass} value={form.monthlyPassCapacity} onChange={(e) => setForm({ ...form, monthlyPassCapacity: e.target.value })} />
           </Field>
