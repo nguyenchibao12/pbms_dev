@@ -50,10 +50,10 @@ const run = async () => {
 
   // --- Users ---------------------------------------------------------------
   const accounts = [
-    ['admin', 'Admin@123456', 'System Administrator', ROLES.ADMIN, 'admin@pbms.local'],
-    ['manager', 'Manager@123456', 'Quản lý bãi', ROLES.MANAGER, 'manager@pbms.local'],
-    ['staff', 'Staff@123456', 'Nhân viên trực cổng', ROLES.STAFF, 'staff@pbms.local'],
-    ['user', 'User@123456', 'Khách đặt chỗ', ROLES.USER, 'user@pbms.local'],
+    ['admin', '123456', 'System Administrator', ROLES.ADMIN, 'admin@pbms.local'],
+    ['manager', '123456', 'Quản lý bãi', ROLES.MANAGER, 'manager@pbms.local'],
+    ['staff', '123456', 'Nhân viên trực cổng', ROLES.STAFF, 'staff@pbms.local'],
+    ['user', '123456', 'Khách đặt chỗ', ROLES.USER, 'user@pbms.local'],
   ];
   const users = {};
   for (const [username, pw, fullName, roleName, email] of accounts) {
@@ -69,9 +69,10 @@ const run = async () => {
   }
   console.log(`• Users: ${accounts.map((a) => a[0]).join(', ')}`);
 
-  // --- Vehicle types -------------------------------------------------------
-  const car = await VehicleType.create({ type_name: 'Ô tô', type_code: 'CAR' });
-  const bike = await VehicleType.create({ type_name: 'Xe máy', type_code: 'BIKE' });
+  // --- Vehicle types (slot_area_m2 = diện tích hiệu dụng 1 slot, đã gộp lối đi) ---
+  const car = await VehicleType.create({ type_name: 'Ô tô (≤5 chỗ)', type_code: 'CAR', slot_area_m2: 25 });
+  const bike = await VehicleType.create({ type_name: 'Xe máy', type_code: 'BIKE', slot_area_m2: 1.8 });
+  const car7 = await VehicleType.create({ type_name: 'Ô tô 6-7 chỗ/SUV', type_code: 'CAR7', slot_area_m2: 30 });
 
   // --- Pricing rules (đang hiệu lực) --------------------------------------
   const effectiveFrom = new Date('2026-01-01T00:00:00Z');
@@ -89,6 +90,13 @@ const run = async () => {
     effective_from: effectiveFrom,
     effective_to: null,
   });
+  await PricingRule.create({
+    vehicle_type_id: car7.vehicle_type_id,
+    unit: 60,
+    base_rate: 20000,
+    effective_from: effectiveFrom,
+    effective_to: null,
+  });
 
   // --- Cổng cấp tòa nhà (floor_id = NULL) ----------------------------------
   await Gate.create({
@@ -103,10 +111,14 @@ const run = async () => {
   // --- Tầng + khu + chỗ + cổng tầng ---------------------------------------
   const floors = [];
   for (const level of [1, 2]) {
+    // Lv2 — tầng phân khu (zoned): khu ô tô + khu xe máy. area_m2 đủ chứa cả 2 khu.
     const floor = await Floor.create({
       floor_code: `F${level}`,
       floor_level: level,
       label: `Tầng ${level}`,
+      layout_mode: 'zoned',
+      vehicle_type_id: null,
+      area_m2: 300, // car 8×25 + bike 8×1.8 = 214.4 m² < 300
     });
 
     await Gate.create({
@@ -142,7 +154,39 @@ const run = async () => {
 
     floors.push({ floor, carZone, bikeZone });
   }
-  console.log(`• ${floors.length} tầng, mỗi tầng 2 khu × ${SLOTS_PER_ZONE} chỗ, cổng tòa + cổng tầng`);
+  console.log(`• ${floors.length} tầng (zoned), mỗi tầng 2 khu × ${SLOTS_PER_ZONE} chỗ, cổng tòa + cổng tầng`);
+
+  // --- Tầng SINGLE (Lv1: cả tầng 1 loại xe — xe máy) ----------------------
+  // Khu mặc định total_slots = floor(area / slot_area) = floor(120 / 1.8) = 66.
+  const F3_AREA = 120;
+  const f3 = await Floor.create({
+    floor_code: 'F3',
+    floor_level: 3,
+    label: 'Tầng 3 (riêng xe máy)',
+    layout_mode: 'single',
+    vehicle_type_id: bike.vehicle_type_id,
+    area_m2: F3_AREA,
+  });
+  await Gate.create({
+    floor_id: f3.floor_id, gate_code: 'F3-IN', direction: 'in',
+    vehicle_type_id: bike.vehicle_type_id, label: 'Tầng 3 - Cổng vào', is_active: true,
+  });
+  await Gate.create({
+    floor_id: f3.floor_id, gate_code: 'F3-OUT', direction: 'out',
+    vehicle_type_id: bike.vehicle_type_id, label: 'Tầng 3 - Cổng ra', is_active: true,
+  });
+  const f3Zone = await Zone.create({
+    floor_id: f3.floor_id, vehicle_type_id: bike.vehicle_type_id,
+    zone_code: 'A', label: 'Tầng 3 - Xe máy',
+    total_slots: Math.floor(F3_AREA / 1.8), monthly_pass_capacity: 0,
+  });
+  for (let i = 1; i <= 10; i++) {
+    await ParkingSlot.create({
+      zone_id: f3Zone.zone_id, slot_code: `A${pad2(i)}`, status: 'available',
+      distance_to_gate: i * 2, distance_to_elevator: i * 1.5,
+    });
+  }
+  console.log(`• Tầng 3 (single/xe máy) — sức chứa ${f3Zone.total_slots} slot (area ${F3_AREA} m²), tạo sẵn 10 chỗ`);
 
   // --- 1 đặt chỗ đã CONFIRMED sẵn (fallback demo, không cần đặt + trả tiền) -
   const { floor: f1, carZone: f1Car } = floors[0];

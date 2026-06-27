@@ -18,6 +18,14 @@ const VehicleType = sequelize.define(
       allowNull: false,
       unique: true,
     },
+    slot_area_m2: {
+      type: DataTypes.DECIMAL(8, 2),
+      allowNull: false,
+      defaultValue: 0,
+      comment:
+        'Diện tích hiệu dụng 1 slot của loại xe (m², đã gộp lối đi). 0 = chưa cấu hình. ' +
+        'Dùng để tính sức chứa tầng theo diện tích.',
+    },
   },
   { tableName: 'vehicle_type', timestamps: true }
 );

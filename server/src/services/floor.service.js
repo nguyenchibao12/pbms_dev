@@ -2,6 +2,13 @@ import sequelize from '../config/db.js';
 import { Floor, Zone, Gate, ParkingSlot, VehicleType } from '../models/index.js';
 import { AppError } from '../utils/helpers.js';
 import { bulkGenerateSlots } from './parkingSlot.service.js';
+import {
+  maxSlotsForArea,
+  assertZoneFitsFloorArea,
+  computeFloorAreaUsed,
+  getVehicleTypeOrThrow,
+  slotAreaOf,
+} from '../utils/floorCapacity.js';
 
 export const listFloors = async () =>
   Floor.findAll({ order: [['floor_level', 'ASC']] });
@@ -9,21 +16,85 @@ export const listFloors = async () =>
 export const getFloor = async (id) => {
   const floor = await Floor.findByPk(id, {
     include: [
+      { association: 'vehicleType' },
       { association: 'zones', include: [{ association: 'vehicleType' }] },
       { association: 'gates' },
     ],
   });
   if (!floor) throw new AppError('Floor not found', 404, 'NOT_FOUND');
-  return floor;
+
+  const areaUsed = await computeFloorAreaUsed(floor.floor_id, {});
+  const result = floor.toJSON();
+  result.capacity = {
+    areaM2: floor.area_m2 != null ? Number(floor.area_m2) : null,
+    areaUsedM2: Number(areaUsed.toFixed(2)),
+    areaFreeM2:
+      floor.area_m2 != null ? Number((Number(floor.area_m2) - areaUsed).toFixed(2)) : null,
+  };
+  return result;
 };
 
 export const createFloor = async (data) => {
   const existing = await Floor.findOne({ where: { floor_code: data.floorCode } });
   if (existing) throw new AppError('Floor code already exists', 409, 'CONFLICT');
-  return Floor.create({
-    floor_code: data.floorCode,
-    floor_level: data.floorLevel,
-    label: data.label,
+
+  const layoutMode = data.layoutMode === 'single' ? 'single' : 'zoned';
+  const areaM2 = data.areaM2 != null ? Number(data.areaM2) : null;
+
+  // Lv2 — tầng phân khu: chỉ tạo tầng, khu thêm sau (createZone).
+  if (layoutMode === 'zoned') {
+    return Floor.create({
+      floor_code: data.floorCode,
+      floor_level: data.floorLevel,
+      label: data.label,
+      layout_mode: 'zoned',
+      vehicle_type_id: null,
+      area_m2: areaM2,
+    });
+  }
+
+  // Lv1 — tầng 1 loại xe: bắt buộc loại xe + diện tích, tự tạo 1 khu mặc định (khóa tạo khu).
+  if (!data.vehicleTypeId) {
+    throw new AppError('Tầng 1 loại xe (single) cần chọn loại xe (vehicleTypeId)', 400, 'VALIDATION_ERROR');
+  }
+  if (areaM2 == null || areaM2 <= 0) {
+    throw new AppError('Tầng 1 loại xe (single) cần nhập diện tích tầng (areaM2 > 0)', 400, 'VALIDATION_ERROR');
+  }
+  const vt = await getVehicleTypeOrThrow(data.vehicleTypeId);
+  const maxSlots = maxSlotsForArea(areaM2, slotAreaOf(vt));
+  if (maxSlots < 1) {
+    throw new AppError(
+      `Diện tích ${areaM2} m² không đủ cho 1 slot loại "${vt.type_name}" (${slotAreaOf(vt)} m²/slot)`,
+      400,
+      'VALIDATION_ERROR',
+    );
+  }
+
+  return sequelize.transaction(async (transaction) => {
+    const floor = await Floor.create(
+      {
+        floor_code: data.floorCode,
+        floor_level: data.floorLevel,
+        label: data.label,
+        layout_mode: 'single',
+        vehicle_type_id: vt.vehicle_type_id,
+        area_m2: areaM2,
+      },
+      { transaction },
+    );
+    // Khu mặc định: slot vẫn treo vào zone (giữ FK), sức chứa = maxSlots theo diện tích.
+    await Zone.create(
+      {
+        floor_id: floor.floor_id,
+        vehicle_type_id: vt.vehicle_type_id,
+        zone_code: 'A',
+        label: `${data.label} - ${vt.type_name}`,
+        total_slots: maxSlots,
+        monthly_pass_capacity: 0,
+      },
+      { transaction },
+    );
+    return floor;
   });
 };
 
@@ -36,11 +107,55 @@ export const updateFloor = async (id, data) => {
     if (existing) throw new AppError('Floor code already exists', 409, 'CONFLICT');
   }
 
+  // Đổi chế độ tầng đang có dữ liệu rất rủi ro → chặn, yêu cầu tạo tầng mới.
+  if (data.layoutMode && data.layoutMode !== floor.layout_mode) {
+    throw new AppError(
+      'Không thể đổi layout_mode của tầng đã tạo. Tạo tầng mới với chế độ mong muốn.',
+      409,
+      'CONFLICT',
+    );
+  }
+
+  let newArea = floor.area_m2 == null ? null : Number(floor.area_m2);
+  if (data.areaM2 !== undefined) {
+    newArea = data.areaM2 == null ? null : Number(data.areaM2);
+    if (newArea == null && floor.layout_mode === 'single') {
+      throw new AppError('Tầng 1 loại xe cần diện tích (areaM2), không thể bỏ trống', 400, 'VALIDATION_ERROR');
+    }
+    if (newArea != null) {
+      if (newArea <= 0) throw new AppError('areaM2 phải > 0', 400, 'VALIDATION_ERROR');
+      const used = await computeFloorAreaUsed(floor.floor_id, {});
+      if (newArea + 1e-6 < used) {
+        throw new AppError(
+          `Diện tích mới ${newArea} m² nhỏ hơn diện tích đang dùng ${used.toFixed(1)} m². Giảm số slot/khu trước.`,
+          409,
+          'CONFLICT',
+        );
+      }
+    }
+  }
+
   await floor.update({
     floor_code: data.floorCode ?? floor.floor_code,
     floor_level: data.floorLevel ?? floor.floor_level,
     label: data.label ?? floor.label,
+    area_m2: newArea,
   });
+
+  // Single: diện tích đổi → đồng bộ sức chứa khu mặc định (không hạ dưới số slot đang có).
+  if (floor.layout_mode === 'single' && data.areaM2 !== undefined && newArea != null) {
+    const vt = await VehicleType.findByPk(floor.vehicle_type_id);
+    const defaultZone = await Zone.findOne({
+      where: { floor_id: floor.floor_id },
+      order: [['zone_id', 'ASC']],
+    });
+    if (vt && defaultZone) {
+      const maxSlots = maxSlotsForArea(newArea, slotAreaOf(vt));
+      const usedSlots = await ParkingSlot.count({ where: { zone_id: defaultZone.zone_id } });
+      await defaultZone.update({ total_slots: Math.max(maxSlots, usedSlots) });
+    }
+  }
+
   return floor;
 };
 
@@ -70,17 +185,22 @@ export const quickSetupFloor = async (payload) => {
     });
     if (existing) throw new AppError('Floor code already exists', 409, 'CONFLICT');
 
+    const floorArea = floorData.areaM2 != null ? Number(floorData.areaM2) : null;
     const floor = await Floor.create(
       {
         floor_code: floorData.floorCode,
         floor_level: floorData.floorLevel,
         label: floorData.label,
+        layout_mode: 'zoned',
+        vehicle_type_id: null,
+        area_m2: floorArea,
       },
       { transaction },
     );
 
     const vehicleTypeIds = new Set();
     const createdZones = [];
+    let areaUsed = 0; // m² đã phân bổ cho các khu — chặn vượt diện tích tầng
 
     for (const zc of zoneConfigs) {
       const zoneDup = await Zone.findOne({
@@ -93,6 +213,25 @@ export const quickSetupFloor = async (payload) => {
 
       const vt = await VehicleType.findByPk(zc.vehicleTypeId, { transaction });
       if (!vt) throw new AppError('Vehicle type not found', 404, 'NOT_FOUND');
+
+      if (floorArea != null) {
+        const slotArea = slotAreaOf(vt);
+        if (slotArea <= 0) {
+          throw new AppError(
+            `Loại xe "${vt.type_name}" chưa cấu hình diện tích slot (slot_area_m2).`,
+            400,
+            'VALIDATION_ERROR',
+          );
+        }
+        areaUsed += zc.slotCount * slotArea;
+        if (areaUsed > floorArea + 1e-6) {
+          throw new AppError(
+            `Vượt diện tích tầng: các khu cần ${areaUsed.toFixed(1)} m² nhưng tầng chỉ có ${floorArea.toFixed(1)} m².`,
+            409,
+            'CONFLICT',
+          );
+        }
+      }
 
       if ((zc.monthlyPassCapacity ?? 0) > zc.slotCount) {
         throw new AppError(
