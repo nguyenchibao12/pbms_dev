@@ -54,6 +54,13 @@ const ParkingSession = sequelize.define(
       type: DataTypes.DATE,
       allowNull: true,
     },
+    left_floor_at: {
+      type: DataTypes.DATE,
+      allowNull: true,
+      comment:
+        'Mốc xe RỜI TẦNG (quét cổng tầng OUT). Dùng làm mốc CHỐT phí — phí tính ' +
+        'từ time_in tới mốc này, không tính thời gian đi từ tầng ra cổng tòa.',
+    },
     qr_token: {
       type: DataTypes.STRING(64),
       allowNull: false,

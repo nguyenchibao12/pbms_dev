@@ -30,49 +30,76 @@ const findActiveSession = async (ref) => {
   });
 };
 
-// CỔNG IN TÒA: chỉ kiểm tra QR hợp lệ rồi mở — chưa tạo phiên.
-const validateBuildingEntry = (ref) => {
-  if (ref.kind === 'reservation') {
-    const r = ref.reservation;
-    if (r.status === 'cancelled') throw new AppError('Đặt chỗ đã bị hủy', 409, 'CONFLICT');
-    if (r.status === 'pending') throw new AppError('Đặt chỗ chưa thanh toán', 409, 'CONFLICT');
-    return open('building-in', { kind: 'reservation', reservationId: r.reservation_id });
+// CỔNG IN TÒA: TẠO PHIÊN + chiếm slot NGAY tại cổng vào tòa (yêu cầu nghiệp vụ).
+// Khách đặt chỗ: check-in thật ở đây (chiếm slot đã đặt). Walk-in: phiên đã do staff
+// tạo sẵn nên chỉ mở. Phiên đã active rồi -> idempotent, chỉ mở.
+const buildingEntry = async (ref) => {
+  if (ref.kind !== 'reservation') {
+    return open('building-in', { kind: 'session', sessionId: ref.session.session_id });
   }
-  return open('building-in', { kind: 'session', sessionId: ref.session.session_id });
+
+  const r = ref.reservation;
+  if (r.status === 'cancelled') throw new AppError('Đặt chỗ đã bị hủy', 409, 'CONFLICT');
+  if (r.status === 'pending') throw new AppError('Đặt chỗ chưa thanh toán', 409, 'CONFLICT');
+
+  const existing = await ParkingSession.findOne({
+    where: { reservation_id: r.reservation_id, status: 'active' },
+  });
+  if (existing) {
+    return open('building-in', {
+      kind: 'reservation',
+      sessionId: existing.session_id,
+      alreadyIn: true,
+    });
+  }
+
+  // checkinReservation không nhận gateId -> tự suy cổng tầng IN đúng tầng đã đặt
+  // (không truyền cổng TÒA vì nó sẽ bị coi là "sai tầng").
+  const result = await checkinReservation(r.user_id, { reservationId: r.reservation_id });
+  return open('building-in', {
+    kind: 'reservation',
+    sessionId: result.session.session_id,
+    slotId: result.session.slot_id,
+    info: result,
+  });
 };
 
-// CỔNG IN TẦNG: check-in thật (tạo phiên, chiếm slot) — tái dùng service sẵn có.
-const floorCheckin = async (ref, gate) => {
-  if (ref.kind === 'reservation') {
-    const result = await checkinReservation(ref.reservation.user_id, {
-      gateId: gate.gate_id,
-      qrToken: ref.reservation.qr_token,
-    });
-    return open('floor-in', { kind: 'reservation', info: result });
+// CỔNG IN TẦNG: phiên đã tạo ở cổng tòa → chỉ xác nhận slot đúng tầng rồi mở (idempotent).
+const floorEntry = async (ref, gate) => {
+  const ses = await findActiveSession(ref);
+  if (!ses) {
+    throw new AppError('Chưa có phiên đang gửi — vui lòng quét ở CỔNG VÀO TÒA trước.', 409, 'CONFLICT');
   }
-  // QR phiên walk-in đã active → cổng IN phải đúng tầng của slot đã gán mới mở (idempotent).
-  const session = await ParkingSession.findByPk(ref.session.session_id, {
+  const session = await ParkingSession.findByPk(ses.session_id, {
     include: [{ association: 'slot', include: [{ association: 'zone' }] }],
   });
   const sessionFloorId = session?.slot?.zone?.floor_id ?? null;
   if (sessionFloorId && gate.floor_id != null && gate.floor_id !== sessionFloorId) {
     await recordIncident({
       type: 'wrong_floor',
-      description: `Walk-in QR sai tầng tại cổng vào: cổng tầng ${gate.floor_id}, slot ở tầng ${sessionFloorId}`,
+      description: `QR sai tầng tại cổng vào tầng: cổng tầng ${gate.floor_id}, slot ở tầng ${sessionFloorId}`,
       sessionId: session.session_id,
       slotId: session.slot_id,
       userId: session.user_id,
     });
     throw new AppError('Sai tầng — mã không thuộc tầng của cổng này. Barrier không mở.', 403, 'WRONG_FLOOR');
   }
-  return open('floor-in', { kind: 'session', sessionId: session.session_id, alreadyIn: true });
+  return open('floor-in', { sessionId: session.session_id, alreadyIn: true });
 };
 
-// CỔNG OUT TẦNG: chỉ xác nhận có phiên + mở (xe rời tầng). Không đổi trạng thái.
-// Giải phóng slot + đóng phiên dồn về cổng OUT tòa (1 điểm chốt) để tránh kẽ hở.
+// CỔNG OUT TẦNG: xe rời tầng → CHỐT mốc tính phí (left_floor_at) rồi mở.
+// Phí sẽ tính từ time_in tới mốc này; phần đi từ tầng ra cổng tòa không tính tiền.
+// Giải phóng slot + đóng phiên vẫn dồn về cổng OUT tòa (1 điểm chốt).
 const floorExit = async (ref) => {
   const session = await findActiveSession(ref);
   if (!session) throw new AppError('Không có phiên đang gửi cho mã QR này', 404, 'NOT_FOUND');
+  // Ghi mốc rời tầng 1 lần duy nhất (idempotent qua điều kiện left_floor_at: null).
+  if (!session.left_floor_at) {
+    await ParkingSession.update(
+      { left_floor_at: new Date() },
+      { where: { session_id: session.session_id, left_floor_at: null } },
+    );
+  }
   return open('floor-out', { sessionId: session.session_id });
 };
 
@@ -115,7 +142,7 @@ export const scanGate = async ({ qrToken, gateId }) => {
   const ref = await resolveQr(qrToken);
 
   if (gate.direction === 'in') {
-    return isBuilding ? validateBuildingEntry(ref) : floorCheckin(ref, gate);
+    return isBuilding ? buildingEntry(ref) : floorEntry(ref, gate);
   }
   return isBuilding ? buildingExit(ref, gate) : floorExit(ref);
 };

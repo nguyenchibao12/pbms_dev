@@ -349,10 +349,13 @@ export const previewCheckoutFee = async (data) => {
   }
 
   const now = new Date();
+  // Mốc CHỐT phí: nếu xe đã rời tầng (quét cổng tầng OUT) thì tính phí tới mốc đó,
+  // không tính thời gian đi từ tầng ra cổng tòa. Chưa rời tầng → tính tới hiện tại.
+  const feeEnd = session.left_floor_at ? new Date(session.left_floor_at) : now;
 
   if (session.pass_id && session.session_type === 'monthly_pass') {
     const pass = await MonthlyPass.findByPk(session.pass_id);
-    if (pass && isSessionFreeUnderPass(pass, session.time_in, now)) {
+    if (pass && isSessionFreeUnderPass(pass, session.time_in, feeEnd)) {
       const fullSession = await getSession(session.session_id);
       return {
         session: fullSession,
@@ -363,8 +366,8 @@ export const previewCheckoutFee = async (data) => {
     }
   }
 
-  const pricingRule = await getEffectivePricingRule(session.vehicle_type_id, now);
-  let fee = calculateParkingFee(session.time_in, now, pricingRule);
+  const pricingRule = await getEffectivePricingRule(session.vehicle_type_id, feeEnd);
+  let fee = calculateParkingFee(session.time_in, feeEnd, pricingRule);
 
   const lostTicket = Boolean(data.lostTicket);
   const lostTicketFee = lostTicket
@@ -376,7 +379,7 @@ export const previewCheckoutFee = async (data) => {
   const maxHours = getMaxParkingHours();
   const overstay =
     maxHours != null &&
-    (now.getTime() - new Date(session.time_in).getTime()) / (1000 * 60 * 60) > maxHours;
+    (feeEnd.getTime() - new Date(session.time_in).getTime()) / (1000 * 60 * 60) > maxHours;
 
   return {
     session: fullSession,
