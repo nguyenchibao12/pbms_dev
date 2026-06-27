@@ -58,7 +58,8 @@ export const completeSessionAfterPayment = async (payment, staffUserId = null) =
   if (!session) throw new AppError('Session not found', 404, 'NOT_FOUND');
   assertSessionActive(session);
 
-  const timeOut = new Date();
+  // time_out chốt theo mốc rời tầng (cổng tầng OUT) nếu có — khớp với phí đã tính.
+  const timeOut = session.left_floor_at ? new Date(session.left_floor_at) : new Date();
   assertSessionCheckoutTime(session.time_in, timeOut);
   const fee = Number(payment.amount);
 

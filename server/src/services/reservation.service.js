@@ -74,6 +74,29 @@ const resolveBookingWindow = (data) => {
   };
 };
 
+/**
+ * Kiểm tra khung giờ đặt chỗ hợp lệ.
+ * Với CA cố định: cho phép đặt CA ĐANG DIỄN RA (hiện tại) — chỉ chặn ca đã kết thúc,
+ * vì start của ca hiện tại luôn ở quá khứ (vd 14h chọn ca chiều 12–18h).
+ * Với start/end tự do: vẫn yêu cầu start ở tương lai.
+ */
+const assertBookableWindow = (startTime, endTime, shiftId) => {
+  if (Number.isNaN(startTime.getTime()) || Number.isNaN(endTime.getTime())) {
+    throw new AppError('Invalid start or end time', 400, 'VALIDATION_ERROR');
+  }
+  if (endTime <= startTime) {
+    throw new AppError('endTime must be after startTime', 400, 'VALIDATION_ERROR');
+  }
+  const now = new Date();
+  if (shiftId) {
+    if (endTime <= now) {
+      throw new AppError('Ca đã kết thúc, vui lòng chọn ca khác', 400, 'VALIDATION_ERROR');
+    }
+  } else if (startTime < now) {
+    throw new AppError('startTime must be in the future', 400, 'VALIDATION_ERROR');
+  }
+};
+
 export const getReservation = async (id) => {
   const reservation = await Reservation.findByPk(id, { include: reservationIncludes });
   if (!reservation) throw new AppError('Reservation not found', 404, 'NOT_FOUND');
@@ -92,17 +115,9 @@ export const listUserReservations = async (userId) =>
  * Chỉ đọc — không tạo reservation, không giữ slot.
  */
 export const getWindowAvailability = async (data) => {
-  const { startTime, endTime } = resolveBookingWindow(data);
+  const { startTime, endTime, shiftId } = resolveBookingWindow(data);
 
-  if (Number.isNaN(startTime.getTime()) || Number.isNaN(endTime.getTime())) {
-    throw new AppError('Invalid start or end time', 400, 'VALIDATION_ERROR');
-  }
-  if (endTime <= startTime) {
-    throw new AppError('endTime must be after startTime', 400, 'VALIDATION_ERROR');
-  }
-  if (startTime < new Date()) {
-    throw new AppError('startTime must be in the future', 400, 'VALIDATION_ERROR');
-  }
+  assertBookableWindow(startTime, endTime, shiftId);
 
   const floor = await Floor.findByPk(data.floorId);
   if (!floor) throw new AppError('Floor not found', 404, 'NOT_FOUND');
@@ -238,15 +253,7 @@ export const createReservation = async (userId, data) => {
   const plateNumber = normalizePlate(data.plateNumber);
   const { startTime, endTime, shiftId } = resolveBookingWindow(data);
 
-  if (Number.isNaN(startTime.getTime()) || Number.isNaN(endTime.getTime())) {
-    throw new AppError('Invalid start or end time', 400, 'VALIDATION_ERROR');
-  }
-  if (endTime <= startTime) {
-    throw new AppError('endTime must be after startTime', 400, 'VALIDATION_ERROR');
-  }
-  if (startTime < new Date()) {
-    throw new AppError('startTime must be in the future', 400, 'VALIDATION_ERROR');
-  }
+  assertBookableWindow(startTime, endTime, shiftId);
 
   const floor = await Floor.findByPk(data.floorId);
   if (!floor) throw new AppError('Floor not found', 404, 'NOT_FOUND');
