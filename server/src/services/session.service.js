@@ -329,6 +329,15 @@ export const previewCheckoutFee = async (data) => {
     session = await ParkingSession.findByPk(data.sessionId);
   } else if (data.qrToken) {
     session = await ParkingSession.findOne({ where: { qr_token: data.qrToken } });
+    // Khách đặt chỗ cầm QR ĐẶT CHỖ (không phải QR phiên) — map sang phiên active của đơn.
+    if (!session) {
+      const resv = await Reservation.findOne({ where: { qr_token: data.qrToken } });
+      if (resv) {
+        session = await ParkingSession.findOne({
+          where: { reservation_id: resv.reservation_id, status: 'active' },
+        });
+      }
+    }
   } else if (data.plateNumber) {
     session = await findActiveByPlate(data.plateNumber);
   } else {
