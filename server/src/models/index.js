@@ -21,6 +21,10 @@ UserAccount.belongsTo(Role, { foreignKey: 'role_id', as: 'role' });
 Floor.hasMany(Zone, { foreignKey: 'floor_id', as: 'zones' });
 Zone.belongsTo(Floor, { foreignKey: 'floor_id', as: 'floor' });
 
+// layout_mode = single: tầng dành riêng 1 loại xe (Lv1).
+VehicleType.hasMany(Floor, { foreignKey: 'vehicle_type_id', as: 'floors' });
+Floor.belongsTo(VehicleType, { foreignKey: 'vehicle_type_id', as: 'vehicleType' });
+
 Floor.hasMany(Gate, { foreignKey: 'floor_id', as: 'gates' });
 Gate.belongsTo(Floor, { foreignKey: 'floor_id', as: 'floor' });
 

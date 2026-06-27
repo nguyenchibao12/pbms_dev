@@ -19,6 +19,7 @@ export const createVehicleType = async (data) => {
   return VehicleType.create({
     type_name: data.typeName,
     type_code: data.typeCode,
+    slot_area_m2: data.slotAreaM2 ?? 0,
   });
 };
 
@@ -34,6 +35,7 @@ export const updateVehicleType = async (id, data) => {
   await type.update({
     type_name: data.typeName ?? type.type_name,
     type_code: data.typeCode ?? type.type_code,
+    slot_area_m2: data.slotAreaM2 ?? type.slot_area_m2,
   });
   return type;
 };

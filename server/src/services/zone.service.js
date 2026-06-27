@@ -1,5 +1,6 @@
 import { Zone, ParkingSlot, Floor, VehicleType } from '../models/index.js';
 import { AppError } from '../utils/helpers.js';
+import { assertZoneFitsFloorArea } from '../utils/floorCapacity.js';
 
 const zoneIncludes = [
   { association: 'floor', attributes: ['floor_id', 'floor_code', 'label'] },
@@ -23,6 +24,15 @@ export const createZone = async (data) => {
   const floor = await Floor.findByPk(data.floorId);
   if (!floor) throw new AppError('Floor not found', 404, 'NOT_FOUND');
 
+  // Tầng 1 loại xe (single) tự quản 1 khu mặc định → khóa tạo khu thủ công.
+  if (floor.layout_mode === 'single') {
+    throw new AppError(
+      'Tầng dành riêng 1 loại xe (single) không cho tạo khu. Dùng tầng phân khu (zoned) để thêm khu.',
+      409,
+      'CONFLICT',
+    );
+  }
+
   const vehicleType = await VehicleType.findByPk(data.vehicleTypeId);
   if (!vehicleType) throw new AppError('Vehicle type not found', 404, 'NOT_FOUND');
 
@@ -40,6 +50,9 @@ export const createZone = async (data) => {
       'VALIDATION_ERROR',
     );
   }
+
+  // Ràng buộc diện tích: Σ(slot × diện tích/slot) ≤ diện tích tầng.
+  await assertZoneFitsFloorArea(floor, vehicleType, totalSlots, {});
 
   return Zone.create({
     floor_id: data.floorId,
@@ -94,6 +107,19 @@ export const updateZone = async (id, data) => {
       'VALIDATION_ERROR',
     );
   }
+
+  const targetFloor = await Floor.findByPk(newFloorId);
+  if (targetFloor?.layout_mode === 'single') {
+    throw new AppError(
+      'Không thể sửa/di chuyển khu vào tầng 1 loại xe (single). Chỉnh diện tích tầng thay thế.',
+      409,
+      'CONFLICT',
+    );
+  }
+  const newVehicleType = await VehicleType.findByPk(data.vehicleTypeId ?? zone.vehicle_type_id);
+  await assertZoneFitsFloorArea(targetFloor, newVehicleType, newTotalSlots, {
+    excludeZoneId: zone.zone_id,
+  });
 
   await zone.update({
     floor_id: newFloorId,

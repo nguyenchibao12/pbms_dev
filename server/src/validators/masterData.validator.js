@@ -25,6 +25,17 @@ export const floorValidators = {
       .notEmpty().withMessage('Tên tầng không được để trống')
       .bail()
       .isLength({ max: 100 }).withMessage('Tên tầng tối đa 100 ký tự'),
+    body('layoutMode')
+      .optional()
+      .isIn(['single', 'zoned']).withMessage('layoutMode chỉ nhận: single (1 loại xe) hoặc zoned (phân khu)'),
+    body('vehicleTypeId')
+      .optional({ values: 'null' })
+      .isInt({ min: 1 }).withMessage('vehicleTypeId không hợp lệ (bắt buộc khi layoutMode = single)')
+      .toInt(),
+    body('areaM2')
+      .optional({ values: 'null' })
+      .isFloat({ gt: 0 }).withMessage('Diện tích tầng (areaM2) phải > 0')
+      .toFloat(),
   ],
   update: [
     ...idParam,
@@ -44,6 +55,10 @@ export const floorValidators = {
       .notEmpty().withMessage('Tên tầng không được để trống')
       .bail()
       .isLength({ max: 100 }).withMessage('Tên tầng tối đa 100 ký tự'),
+    body('areaM2')
+      .optional({ values: 'null' })
+      .isFloat({ gt: 0 }).withMessage('Diện tích tầng (areaM2) phải > 0')
+      .toFloat(),
   ],
   quickSetup: [
     body('floor.floorCode')
@@ -59,6 +74,10 @@ export const floorValidators = {
       .notEmpty().withMessage('Tên tầng không được để trống')
       .bail()
       .isLength({ max: 100 }).withMessage('Tên tầng tối đa 100 ký tự'),
+    body('floor.areaM2')
+      .optional({ values: 'null' })
+      .isFloat({ gt: 0 }).withMessage('Diện tích tầng (areaM2) phải > 0')
+      .toFloat(),
     body('zones').isArray({ min: 1 }).withMessage('zones must be a non-empty array'),
     body('zones.*.vehicleTypeId').isInt({ min: 1 }),
     body('zones.*.zoneCode').trim().notEmpty(),
@@ -238,6 +257,10 @@ export const vehicleTypeValidators = {
       .notEmpty().withMessage('Mã loại xe không được để trống')
       .bail()
       .isLength({ max: 20 }).withMessage('Mã loại xe tối đa 20 ký tự'),
+    body('slotAreaM2')
+      .optional()
+      .isFloat({ min: 0 }).withMessage('Diện tích 1 slot (m²) phải là số ≥ 0')
+      .toFloat(),
   ],
   update: [
     ...idParam,
@@ -253,6 +276,10 @@ export const vehicleTypeValidators = {
       .notEmpty().withMessage('Mã loại xe không được để trống')
       .bail()
       .isLength({ max: 20 }).withMessage('Mã loại xe tối đa 20 ký tự'),
+    body('slotAreaM2')
+      .optional()
+      .isFloat({ min: 0 }).withMessage('Diện tích 1 slot (m²) phải là số ≥ 0')
+      .toFloat(),
   ],
 };
 
