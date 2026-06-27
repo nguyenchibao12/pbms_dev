@@ -29,7 +29,10 @@ export function validateNonNegativeNumber(value, field, { required = true } = {}
   return {};
 }
 
-/** Validate form tầng: bắt buộc mã tầng, tên hiển thị, cấp tầng. */
+/**
+ * Validate form tầng: bắt buộc mã tầng, tên hiển thị, cấp tầng.
+ * Chế độ single (1 loại xe cho cả tầng) bắt buộc thêm loại xe + diện tích tầng > 0.
+ */
 export function validateFloorForm(form) {
   const errors = mergeErrors(
     validateRequiredText(form.floorCode, 'floorCode', 'mã tầng'),
@@ -37,6 +40,15 @@ export function validateFloorForm(form) {
   );
   if (form.floorLevel === '' || form.floorLevel == null) {
     errors.floorLevel = 'Vui lòng nhập cấp tầng';
+  }
+  if (form.layoutMode === 'single') {
+    if (!form.vehicleTypeId) {
+      errors.vehicleTypeId = 'Tầng 1 loại xe cần chọn loại xe';
+    }
+    const area = Number(form.areaM2);
+    if (form.areaM2 === '' || form.areaM2 == null || Number.isNaN(area) || area <= 0) {
+      errors.areaM2 = 'Tầng 1 loại xe cần diện tích tầng (m²) > 0';
+    }
   }
   return errors;
 }
@@ -55,11 +67,12 @@ export function validatePricingRuleForm(form) {
   return errors;
 }
 
-/** Validate form loại xe: bắt buộc tên + mã. */
+/** Validate form loại xe: bắt buộc tên + mã, diện tích 1 chỗ (m²) số ≥ 0 tùy chọn. */
 export function validateVehicleTypeForm(form) {
   return mergeErrors(
     validateRequiredText(form.typeName, 'typeName', 'tên loại xe'),
     validateRequiredText(form.typeCode, 'typeCode', 'mã loại xe'),
+    validateNonNegativeNumber(form.slotAreaM2, 'slotAreaM2', { required: false }),
   );
 }
 
