@@ -8,4 +8,7 @@ export const kioskApi = {
   // gateId = cổng vật lý kiosk đang gắn; qrToken = mã QR trên vé khách.
   scan: (gateId, qrToken) =>
     api.post('/gates/scan', { gateId, qrToken }, { headers: { 'X-Kiosk-Key': KIOSK_KEY } }),
+  // Poll trạng thái ra của phiên (sau khi PAYMENT_REQUIRED) → completed thì kiosk tự mở barie.
+  exitStatus: (sessionId) =>
+    api.get('/gates/exit-status', { params: { sessionId }, headers: { 'X-Kiosk-Key': KIOSK_KEY } }),
 };

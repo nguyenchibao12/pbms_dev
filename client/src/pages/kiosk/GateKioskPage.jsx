@@ -64,6 +64,26 @@ export default function GateKioskPage() {
     resetTimer.current = setTimeout(() => setResult(null), ms);
   };
 
+  // Đang ở màn "chờ thanh toán" (PAYMENT_REQUIRED) → poll trạng thái phiên theo sessionId.
+  // Staff thu tiền mặt HOẶC khách trả PayOS → phiên 'completed' → kiosk TỰ MỞ BARIE.
+  useEffect(() => {
+    if (result?.ui !== 'payment' || !result.sessionId) return undefined;
+    const sid = result.sessionId;
+    const timer = setInterval(async () => {
+      try {
+        const { data } = await kioskApi.exitStatus(sid);
+        if (data.data?.paid) {
+          clearInterval(timer);
+          setResult({ ui: 'open', stage: 'building-out', fee: data.data.fee, sessionId: sid });
+          scheduleReset(6000);
+        }
+      } catch {
+        // lỗi 1 nhịp poll không sao — nhịp sau thử lại
+      }
+    }, 2000);
+    return () => clearInterval(timer);
+  }, [result]);
+
   // Xử lý 1 mã QR (từ ô nhập tay HOẶC từ camera) — cổng tự quyết mở / yêu cầu thanh toán.
   const runScan = async (raw) => {
     const token = String(raw || '').trim();

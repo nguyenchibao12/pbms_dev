@@ -14,6 +14,13 @@ router.post('/scan',
      #swagger.requestBody = { required: true, content: { 'application/json': { example: { gateId: 1, qrToken: 'xxxxxxxxxxxxxxxx' } } } } */
   kioskAuth, gateScanValidator, validate, gateController.scan);
 
+router.get('/exit-status',
+  /* #swagger.tags = ['Gates']
+     #swagger.summary = 'Kiosk poll trạng thái ra của phiên (header X-Kiosk-Key, không cần đăng nhập)'
+     #swagger.security = []
+     #swagger.parameters['sessionId'] = { in: 'query', required: true, schema: { type: 'integer' } } */
+  kioskAuth, gateController.exitStatus);
+
 router.get('/',
   /* #swagger.tags = ['Gates']
      #swagger.summary = 'Danh sách cổng'
