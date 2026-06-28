@@ -17,6 +17,7 @@ import DashboardPage from './pages/DashboardPage';
 import AdminHomePage from './pages/admin/AdminHomePage';
 import UserManagementPage from './pages/admin/UserManagementPage';
 import AuditLogsPage from './pages/admin/AuditLogsPage';
+import IncidentsPage from './pages/admin/IncidentsPage';
 import FloorsPage from './pages/manager/FloorsPage';
 import VehicleTypesPage from './pages/manager/VehicleTypesPage';
 import PricingRulesPage from './pages/manager/PricingRulesPage';
@@ -70,6 +71,7 @@ export default function App() {
               <Route index element={<AdminHomePage />} />
               <Route path="users" element={<UserManagementPage />} />
               <Route path="audit-logs" element={<AuditLogsPage />} />
+              <Route path="incidents" element={<IncidentsPage />} />
             </Route>
           </Route>
           {/* Khu vực Quản lý — ManagerLayout (header + tab nav) bọc các trang con */}

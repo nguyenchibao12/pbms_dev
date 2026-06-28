@@ -7,6 +7,7 @@ import { getRoleName, roleLabels } from '../lib/auth';
 const tabs = [
   { to: '/admin', label: 'Tổng quan', end: true },
   { to: '/admin/users', label: 'Người dùng' },
+  { to: '/admin/incidents', label: 'Sự cố' },
   { to: '/admin/audit-logs', label: 'Nhật ký' },
 ];
 
