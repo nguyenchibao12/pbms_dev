@@ -97,6 +97,10 @@ export default function FloorsPage() {
         if (form.layoutMode === 'single' || form.areaM2 !== '') {
           payload.areaM2 = form.areaM2 === '' ? null : Number(form.areaM2);
         }
+        // Tầng single: cho đổi loại xe ở đây (BE phải cascade sang khu mặc định — xem handoff).
+        if (form.layoutMode === 'single' && form.vehicleTypeId) {
+          payload.vehicleTypeId = Number(form.vehicleTypeId);
+        }
         await floorsApi.update(editing.floor_id, payload);
       } else {
         const payload = {
@@ -260,14 +264,18 @@ export default function FloorsPage() {
             </Field>
           )}
 
-          {/* Single: bắt buộc loại xe + diện tích. Loại xe khóa khi sửa (BE không đổi). */}
+          {/* Single: bắt buộc loại xe + diện tích. Đổi loại xe ở đây là nơi duy nhất (khu khóa loại xe). */}
           {isSingle && (
-            <Field label="Loại xe" required={!editing} error={fieldErrors.vehicleTypeId}>
+            <Field
+              label="Loại xe"
+              required
+              error={fieldErrors.vehicleTypeId}
+              hint={editing ? 'Đổi loại xe sẽ tính lại sức chứa tầng theo diện tích slot mới' : undefined}
+            >
               <select
                 className={inputClass}
                 value={form.vehicleTypeId}
                 onChange={(e) => setForm({ ...form, vehicleTypeId: e.target.value })}
-                disabled={Boolean(editing)}
               >
                 <option value="">— Chọn loại xe —</option>
                 {vehicleTypes.map((t) => (
