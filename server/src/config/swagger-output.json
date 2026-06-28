@@ -63,6 +63,10 @@
     {
       "name": "Reports",
       "description": "Báo cáo — doanh thu, lấp đầy, giờ cao điểm (Manager)"
+    },
+    {
+      "name": "Incidents",
+      "description": "Sự cố — Staff báo, Manager/Admin xử lý"
     }
   ],
   "paths": {
@@ -949,6 +953,31 @@
         }
       }
     },
+    "/api/gates/exit-status": {
+      "get": {
+        "tags": [
+          "Gates"
+        ],
+        "summary": "Kiosk poll trạng thái ra của phiên (header X-Kiosk-Key, không cần đăng nhập)",
+        "description": "",
+        "parameters": [
+          {
+            "name": "sessionId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        },
+        "security": []
+      }
+    },
     "/api/gates/": {
       "get": {
         "tags": [
@@ -1530,6 +1559,32 @@
             "application/json": {
               "example": {
                 "plateNumber": "51F-12345",
+                "gateId": 2,
+                "lostTicket": false
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/sessions/cash-checkout": {
+      "post": {
+        "tags": [
+          "Sessions"
+        ],
+        "summary": "Tất toán tiền mặt tại booth + mở barie (Staff)",
+        "description": "",
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "example": {
+                "qrToken": "xxxxxxxxxxxxxxxx",
                 "gateId": 2,
                 "lostTicket": false
               }
@@ -2137,6 +2192,119 @@
         "responses": {
           "default": {
             "description": ""
+          }
+        }
+      }
+    },
+    "/api/incidents/": {
+      "get": {
+        "tags": [
+          "Incidents"
+        ],
+        "summary": "Danh sách sự cố — Staff chỉ thấy của mình, Manager/Admin thấy tất cả",
+        "description": "",
+        "parameters": [
+          {
+            "name": "category",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "description": "open | investigating | resolved",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "type",
+            "in": "query",
+            "description": "Lọc theo loại sự cố",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "description": "Trang (mặc định 1)",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Số dòng/trang (tối đa 200)",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Incidents"
+        ],
+        "summary": "Tạo sự cố (Staff)",
+        "description": "",
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "example": {
+                "type": "wrong_info",
+                "description": "Khách báo sai biển số",
+                "sessionId": 1
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/incidents/{id}/status": {
+      "patch": {
+        "tags": [
+          "Incidents"
+        ],
+        "summary": "Cập nhật trạng thái sự cố (Manager/Admin)",
+        "description": "",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": ""
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "example": {
+                "status": "resolved"
+              }
+            }
           }
         }
       }

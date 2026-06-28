@@ -19,6 +19,7 @@ import reservationRoutes from './routes/reservation.routes.js';
 import monthlyPassRoutes from './routes/monthlyPass.routes.js';
 import paymentRoutes from './routes/payment.routes.js';
 import reportRoutes from './routes/report.routes.js';
+import incidentRoutes from './routes/incident.routes.js';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler.js';
 import { securityHeaders, jsonParserLimit, getCorsOrigin } from './middleware/security.js';
 
@@ -63,6 +64,7 @@ app.use('/api/reservations', reservationRoutes);
 app.use('/api/monthly-passes', monthlyPassRoutes);
 app.use('/api/payments', paymentRoutes);
 app.use('/api/reports', reportRoutes);
+app.use('/api/incidents', incidentRoutes);
 
 // Swagger UI — tài liệu + test API trực tiếp tại /api/docs (spec JSON: /api/docs.json)
 app.get('/api/docs.json', (_req, res) => {
