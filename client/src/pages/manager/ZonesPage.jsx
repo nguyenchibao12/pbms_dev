@@ -137,6 +137,11 @@ export default function ZonesPage() {
       ? Math.floor(floorCapacity.areaFreeM2 / slotArea)
       : null;
 
+  // Khu mặc định của tầng single: khóa Tầng + Loại xe, chỉ cho sửa slot & vé tháng.
+  // Đổi loại xe phải làm ở trang Tầng (BE quản loại xe theo tầng).
+  const editingFloor = editing ? floors.find((f) => String(f.floor_id) === String(editing.floor_id)) : null;
+  const editingSingle = editingFloor?.layout_mode === 'single';
+
   return (
     <div>
       <div className="mb-6 flex items-center justify-between">
@@ -196,18 +201,41 @@ export default function ZonesPage() {
       <Modal open={modalOpen} title={editing ? 'Sửa khu vực' : 'Thêm khu vực'} onClose={() => setModalOpen(false)}>
         <ErrorAlert message={error} />
         <form onSubmit={handleSubmit} className="space-y-4">
-          <Field label="Tầng" error={fieldErrors.floorId}>
-            <select className={inputClass} value={form.floorId} onChange={(e) => setForm({ ...form, floorId: e.target.value })} required>
-              <option value="">— Chọn tầng —</option>
-              {zonedFloors.map((f) => <option key={f.floor_id} value={f.floor_id}>{f.floor_code} — {f.label}</option>)}
-            </select>
-          </Field>
-          <Field label="Loại xe" error={fieldErrors.vehicleTypeId}>
-            <select className={inputClass} value={form.vehicleTypeId} onChange={(e) => setForm({ ...form, vehicleTypeId: e.target.value })} required>
-              <option value="">— Chọn loại xe —</option>
-              {vehicleTypes.map((t) => <option key={t.vehicle_type_id} value={t.vehicle_type_id}>{t.type_name}</option>)}
-            </select>
-          </Field>
+          {editingSingle ? (
+            <>
+              <Field label="Tầng" hint="Tầng 1 loại xe — chỉ sửa được số slot & vé tháng. Đổi loại xe: vào trang Tầng.">
+                <input
+                  className={`${inputClass} cursor-not-allowed bg-slate-50 text-slate-500`}
+                  value={editingFloor ? `${editingFloor.floor_code} — ${editingFloor.label}` : ''}
+                  disabled
+                  readOnly
+                />
+              </Field>
+              <Field label="Loại xe">
+                <input
+                  className={`${inputClass} cursor-not-allowed bg-slate-50 text-slate-500`}
+                  value={selectedVehicleType?.type_name || ''}
+                  disabled
+                  readOnly
+                />
+              </Field>
+            </>
+          ) : (
+            <>
+              <Field label="Tầng" error={fieldErrors.floorId}>
+                <select className={inputClass} value={form.floorId} onChange={(e) => setForm({ ...form, floorId: e.target.value })} required>
+                  <option value="">— Chọn tầng —</option>
+                  {zonedFloors.map((f) => <option key={f.floor_id} value={f.floor_id}>{f.floor_code} — {f.label}</option>)}
+                </select>
+              </Field>
+              <Field label="Loại xe" error={fieldErrors.vehicleTypeId}>
+                <select className={inputClass} value={form.vehicleTypeId} onChange={(e) => setForm({ ...form, vehicleTypeId: e.target.value })} required>
+                  <option value="">— Chọn loại xe —</option>
+                  {vehicleTypes.map((t) => <option key={t.vehicle_type_id} value={t.vehicle_type_id}>{t.type_name}</option>)}
+                </select>
+              </Field>
+            </>
+          )}
           <Field label="Mã khu" error={fieldErrors.zoneCode}><input className={inputClass} value={form.zoneCode} onChange={(e) => setForm({ ...form, zoneCode: e.target.value })} required /></Field>
           <Field label="Tên hiển thị" error={fieldErrors.label}><input className={inputClass} value={form.label} onChange={(e) => setForm({ ...form, label: e.target.value })} required /></Field>
           <Field
