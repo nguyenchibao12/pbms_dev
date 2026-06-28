@@ -252,6 +252,38 @@ const run = async () => {
     calculated_fee: null,
   });
 
+  // --- 1 SLOT — NHIỀU KHUNG GIỜ khác nhau (cùng 1 chỗ, các đơn confirmed KHÔNG trùng giờ) ---
+  const atHour = (base, h) => { const d = new Date(base); d.setHours(h, 0, 0, 0); return d; };
+  const d1 = new Date(now.getTime() + 24 * 60 * 60 * 1000); // ngày mai
+  const d2 = new Date(now.getTime() + 48 * 60 * 60 * 1000); // ngày kia
+  const windows = [
+    { plate: '51F-30001', start: atHour(d1, 6), end: atHour(d1, 12), shift: 'morning' },
+    { plate: '51F-30002', start: atHour(d1, 18), end: atHour(d1, 22), shift: 'evening' },
+    { plate: '51F-30003', start: atHour(d2, 6), end: atHour(d2, 12), shift: 'morning' },
+  ];
+  const multiSlot = await ParkingSlot.findOne({
+    where: { zone_id: f1Car.zone_id, status: 'available' },
+    order: [['slot_id', 'ASC']],
+  });
+  await multiSlot.update({ status: 'reserved' });
+  const multiReservations = [];
+  for (const w of windows) {
+    const r = await Reservation.create({
+      user_id: users.user.user_id,
+      vehicle_type_id: car.vehicle_type_id,
+      floor_id: f1.floor_id,
+      zone_id: f1Car.zone_id,
+      slot_id: multiSlot.slot_id,
+      plate_number: normalizePlateVN(w.plate),
+      start_time: w.start,
+      end_time: w.end,
+      status: 'confirmed',
+      reservation_type: w.shift,
+      qr_token: generateQrToken(),
+    });
+    multiReservations.push({ r, w });
+  }
+
   console.log('\n================ SEED DONE ================');
   console.log('Tài khoản (username / password):');
   console.log('  admin   / Admin@123456');
@@ -266,6 +298,10 @@ const run = async () => {
   console.log(`  sessionId     = ${inSession.session_id}`);
   console.log(`  biển số       = ${inPlate}  (Tầng 1 · khu ô tô · chỗ ${occSlot.slot_code} · đỗ ~2h ≈ 30.000đ)`);
   console.log(`  session qr    = ${inSessQr}`);
+  console.log(`\n1 SLOT — NHIỀU KHUNG GIỜ (cùng chỗ ${multiSlot.slot_code}, ${multiReservations.length} đơn confirmed KHÔNG trùng giờ):`);
+  for (const { r, w } of multiReservations) {
+    console.log(`  resId=${r.reservation_id} | ${w.plate} | ${w.start.toLocaleString('vi-VN')} → ${w.end.toLocaleString('vi-VN')} (${w.shift})`);
+  }
   console.log('==========================================\n');
   process.exit(0);
 };
