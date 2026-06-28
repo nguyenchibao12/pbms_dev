@@ -77,8 +77,9 @@ export default function StaffOperationsPage() {
   const [ciError, setCiError] = useState('');
   const [ciSubmitting, setCiSubmitting] = useState(false);
 
-  // Booth thu tiền mặt (xe ra) — tra cứu bằng QR, cố định chốt BLD-OUT (BE tự suy cổng).
+  // Booth thu tiền mặt (xe ra) — tra cứu bằng QR HOẶC biển số (khi khách mất vé). BE tự suy cổng.
   const [boothQr, setBoothQr] = useState('');
+  const [boothPlate, setBoothPlate] = useState(''); // tra theo biển số khi khách MẤT VÉ (không có QR)
   const [boothLost, setBoothLost] = useState(false);
   const [boothLooking, setBoothLooking] = useState(false);
   const [boothError, setBoothError] = useState('');
@@ -318,38 +319,53 @@ export default function StaffOperationsPage() {
     }
   };
 
-  // Booth: tra cứu phí xe ra bằng QR (BE tự suy cổng OUT theo phiên). lost = tính phụ thu mất vé.
-  // Nhận token trực tiếp để dùng chung cho ô nhập tay (boothQr) lẫn camera.
-  const runBoothLookup = async (raw, lost = boothLost) => {
-    const token = String(raw || '').trim();
-    if (!token) return;
+  // Booth: tra cứu phí xe ra. Hỗ trợ QR (thường) HOẶC biển số (khi khách MẤT VÉ).
+  // lookup = { qrToken } | { plateNumber } | { sessionId }. lost = tính phụ thu mất vé.
+  const lookupBooth = async (lookup, lost = boothLost) => {
+    const key = (lookup.qrToken ?? lookup.plateNumber ?? lookup.sessionId ?? '').toString().trim();
+    if (!key) return;
     setBoothError('');
     setBoothResult(null);
     setBoothLooking(true);
     try {
-      const { data } = await sessionsApi.previewFee({ qrToken: token, lostTicket: lost });
+      const { data } = await sessionsApi.previewFee({ ...lookup, lostTicket: lost });
       setBoothPreview(data.data);
     } catch (err) {
       setBoothPreview(null);
-      setBoothError(err.response?.data?.error?.message || 'Không tra cứu được — kiểm tra lại mã QR');
+      setBoothError(err.response?.data?.error?.message || 'Không tra cứu được — kiểm tra lại mã QR / biển số');
     } finally {
       setBoothLooking(false);
     }
   };
 
-  const lookupBoothFee = (e, lost = boothLost) => {
+  const lookupBoothByQr = (e) => {
     if (e?.preventDefault) e.preventDefault();
-    runBoothLookup(boothQr, lost);
+    lookupBooth({ qrToken: boothQr.trim() });
+  };
+
+  // Mất vé: khách không có QR → tra theo biển số.
+  const lookupBoothByPlate = (e) => {
+    if (e?.preventDefault) e.preventDefault();
+    lookupBooth({ plateNumber: boothPlate.trim().toUpperCase() });
+  };
+
+  // Toggle "mất vé": tra lại phí theo CHÍNH phiên đang xem (sessionId) — không phụ thuộc cách tra.
+  const toggleBoothLost = (checked) => {
+    setBoothLost(checked);
+    if (boothPreview?.session?.session_id) {
+      lookupBooth({ sessionId: boothPreview.session.session_id }, checked);
+    }
   };
 
   // Booth: xác nhận đã thu tiền mặt -> BE ghi payment 'cash' + mở barie.
+  // Dùng sessionId của phiên đã tra cứu → chạy đúng dù tra bằng QR hay biển số.
   const confirmBoothCash = async () => {
-    const token = boothQr.trim();
-    if (!token || boothSubmitting) return;
+    const sessionId = boothPreview?.session?.session_id;
+    if (!sessionId || boothSubmitting) return;
     setBoothError('');
     setBoothSubmitting(true);
     try {
-      const { data } = await sessionsApi.cashCheckout({ qrToken: token, lostTicket: boothLost });
+      const { data } = await sessionsApi.cashCheckout({ sessionId, lostTicket: boothLost });
       setBoothResult(data.data);
       setBoothPreview(null);
       toast.success('Đã thu tiền mặt — barie mở');
@@ -364,6 +380,7 @@ export default function StaffOperationsPage() {
 
   const resetBooth = () => {
     setBoothQr('');
+    setBoothPlate('');
     setBoothLost(false);
     setBoothPreview(null);
     setBoothResult(null);
@@ -677,7 +694,7 @@ export default function StaffOperationsPage() {
               </div>
             ) : (
               <>
-                <form onSubmit={lookupBoothFee} className="flex flex-col gap-3 sm:flex-row">
+                <form onSubmit={lookupBoothByQr} className="flex flex-col gap-3 sm:flex-row">
                   <input
                     className={inputClass}
                     value={boothQr}
@@ -688,6 +705,20 @@ export default function StaffOperationsPage() {
                   <Button type="button" variant="secondary" className="shrink-0" onClick={() => setScanTarget('booth')}>
                     <Camera className="h-4 w-4" /> Quét camera
                   </Button>
+                </form>
+
+                {/* Mất vé: khách không có QR → tra theo BIỂN SỐ */}
+                <div className="my-3 flex items-center gap-3 text-xs text-slate-400">
+                  <span className="h-px flex-1 bg-slate-200" /> hoặc khách MẤT VÉ <span className="h-px flex-1 bg-slate-200" />
+                </div>
+                <form onSubmit={lookupBoothByPlate} className="flex flex-col gap-3 sm:flex-row">
+                  <input
+                    className={inputClass}
+                    value={boothPlate}
+                    onChange={(e) => setBoothPlate(e.target.value.toUpperCase())}
+                    placeholder="Tra theo biển số xe (vd 51F-12345)..."
+                  />
+                  <Button type="submit" variant="secondary" className="shrink-0" loading={boothLooking}>Tra biển số</Button>
                 </form>
 
                 {boothPreview && (
@@ -706,7 +737,7 @@ export default function StaffOperationsPage() {
                       <input
                         type="checkbox"
                         checked={boothLost}
-                        onChange={(e) => { setBoothLost(e.target.checked); lookupBoothFee(null, e.target.checked); }}
+                        onChange={(e) => toggleBoothLost(e.target.checked)}
                       />
                       Khách báo mất vé (phụ thu)
                     </label>
@@ -840,7 +871,7 @@ export default function StaffOperationsPage() {
               runReservationLookup(token);
             } else if (target === 'booth') {
               setBoothQr(token);
-              runBoothLookup(token);
+              lookupBooth({ qrToken: token });
             }
           }}
         />
