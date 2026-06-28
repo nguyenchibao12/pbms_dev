@@ -28,6 +28,15 @@ const STAGE_LABEL = {
 
 const fmtMoney = (v) => `${Number(v || 0).toLocaleString('vi-VN')} ₫`;
 
+// Vị trí đỗ chỉ có khi khách ĐẶT CHỖ vừa được check-in ngay tại CỔNG VÀO TÒA
+// (BE trả info.session.slot). Walk-in / các chặng khác không có -> trả null.
+const parkingSpot = (r) => {
+  const slot = r?.info?.session?.slot;
+  if (!slot?.slot_code) return null;
+  const floor = slot.zone?.floor;
+  return { floor: floor?.label || floor?.floor_code || '', slotCode: slot.slot_code };
+};
+
 export default function GateKioskPage() {
   const [params] = useSearchParams();
   const fromUrl = params.get('gateId');
@@ -68,7 +77,8 @@ export default function GateKioskPage() {
         setResult({ ...d, ui: 'payment' }); // ...d TRƯỚC, ui SAU -> không bị field `kind` của BE ghi đè
       } else {
         setResult({ ...d, ui: 'open' });
-        scheduleReset(5000); // mở cổng -> tự reset sẵn sàng xe sau
+        // Có vị trí đỗ (đặt chỗ vừa check-in ở cổng tòa) -> để lâu hơn cho khách đọc chỗ.
+        scheduleReset(d.slotId ? 9000 : 5000);
       }
     } catch (err) {
       setResult({ ui: 'error', message: err.response?.data?.error?.message || 'Mã không hợp lệ hoặc lỗi hệ thống' });
@@ -83,6 +93,8 @@ export default function GateKioskPage() {
     e.preventDefault();
     runScan(qr);
   };
+
+  const spot = result?.ui === 'open' ? parkingSpot(result) : null;
 
   return (
     <div className="flex min-h-screen flex-col items-center justify-center gap-8 bg-slate-900 p-6 text-white">
@@ -115,6 +127,14 @@ export default function GateKioskPage() {
             <div className="text-7xl">✓</div>
             <p className="mt-4 text-4xl font-bold tracking-wide">BARIE MỞ</p>
             <p className="mt-2 text-xl text-emerald-50">{STAGE_LABEL[result.stage] || result.stage}</p>
+            {spot && (
+              <div className="mx-auto mt-5 max-w-sm rounded-2xl bg-white/15 px-6 py-4">
+                <p className="text-base text-emerald-50">Mời tới chỗ đỗ đã giữ</p>
+                <p className="mt-1 text-3xl font-extrabold tracking-wide">
+                  {spot.floor ? `Tầng ${spot.floor} · ` : ''}Chỗ {spot.slotCode}
+                </p>
+              </div>
+            )}
           </div>
         ) : result.ui === 'payment' ? (
           <div className="w-full rounded-3xl bg-amber-400 p-10 text-center text-amber-950 shadow-2xl">
