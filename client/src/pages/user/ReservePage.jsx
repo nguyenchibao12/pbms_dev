@@ -136,11 +136,11 @@ export default function ReservePage() {
     );
     if (!form.arrivalDate) errors.arrivalDate = 'Vui lòng chọn ngày đến';
 
-    // Ca đã bắt đầu (so với hiện tại) thì không cho đặt.
+    // Chỉ chặn ca ĐÃ KẾT THÚC; ca đang diễn ra (hiện tại) vẫn cho đặt — khớp BE.
     if (!errors.shiftId && !errors.arrivalDate) {
       const win = resolveShiftWindow(form.arrivalDate, form.shiftId);
-      if (win && win.start < new Date()) {
-        errors.shiftId = 'Ca đã bắt đầu — chọn ca sau hoặc ngày khác';
+      if (win && win.end <= new Date()) {
+        errors.shiftId = 'Ca đã kết thúc — chọn ca sau hoặc ngày khác';
       }
     }
 
