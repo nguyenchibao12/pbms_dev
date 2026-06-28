@@ -14,6 +14,7 @@ import { inputClass } from '../../components/ui/Input';
 import Button from '../../components/ui/Button';
 import { toast } from '../../components/ui/toast';
 import QrScanner from '../../components/QrScanner';
+import { incidentsApi } from '../../api/incidents';
 
 // Lấy floor_id của phiên (từ chỗ đỗ, fallback sang cổng vào) — để lọc cổng RA cùng tầng.
 const sessionFloorId = (s) => s?.slot?.zone?.floor?.floor_id ?? s?.gate?.floor_id ?? null;
@@ -33,8 +34,23 @@ const fmtElapsed = (timeIn) => {
 
 const emptyCheckin = { plateNumber: '', vehicleTypeId: '', floorId: '', gateId: '', zoneId: '' };
 
+// 5 loại sự cố Staff được phép báo (mirror server STAFF_CREATABLE_INCIDENT_TYPES + nhãn VN).
+// needLink: BE bắt buộc gắn 1 thực thể (vd phiên xe) cho các loại này.
+const STAFF_INCIDENT_TYPES = [
+  { value: 'lost_ticket', label: 'Mất thẻ', needLink: true },
+  { value: 'wrong_info', label: 'Sai thông tin xe', needLink: true },
+  { value: 'overstay', label: 'Quá hạn gửi', needLink: true },
+  { value: 'wrong_zone', label: 'Sai khu vực', needLink: true },
+  { value: 'other', label: 'Khác', needLink: false },
+];
+const INCIDENT_STATUS_BADGE = {
+  open: 'bg-amber-50 text-amber-700',
+  investigating: 'bg-blue-50 text-blue-700',
+  resolved: 'bg-emerald-50 text-emerald-700',
+};
+
 export default function StaffOperationsPage() {
-  const [tab, setTab] = useState('checkin'); // 'checkin' | 'active' | 'reservation' | 'booth'
+  const [tab, setTab] = useState('checkin'); // 'checkin' | 'active' | 'reservation' | 'booth' | 'incident'
 
   // Dữ liệu danh mục cho dropdown
   const [floors, setFloors] = useState([]);
@@ -90,6 +106,14 @@ export default function StaffOperationsPage() {
   // Quét QR bằng camera dùng chung cho 2 tab: 'reservation' (đặt chỗ vào) | 'booth' (thu tiền mặt) | null.
   const [scanTarget, setScanTarget] = useState(null);
 
+  // Sự cố (incident) — Staff báo + xem sự cố của mình.
+  const [incidents, setIncidents] = useState([]);
+  const [loadingIncidents, setLoadingIncidents] = useState(false);
+  const [incForm, setIncForm] = useState({ type: '', description: '', sessionId: '' });
+  const [incFieldErrors, setIncFieldErrors] = useState({});
+  const [incError, setIncError] = useState('');
+  const [incSubmitting, setIncSubmitting] = useState(false);
+
   const loadActive = async () => {
     setLoadingActive(true);
     try {
@@ -125,6 +149,48 @@ export default function StaffOperationsPage() {
     }
   };
 
+  // Sự cố do chính staff này báo (BE lọc theo reporter khi role = Staff).
+  const loadIncidents = async () => {
+    setLoadingIncidents(true);
+    try {
+      const { data } = await incidentsApi.list({ limit: 50 });
+      setIncidents(data.data?.items || []);
+    } catch (err) {
+      toast.error(err.response?.data?.error?.message || 'Không tải được danh sách sự cố');
+    } finally {
+      setLoadingIncidents(false);
+    }
+  };
+
+  // Gửi báo sự cố. Loại lost_ticket/wrong_info/overstay/wrong_zone BE bắt buộc gắn 1 phiên.
+  const submitIncident = async (e) => {
+    e.preventDefault();
+    const errs = {};
+    if (!incForm.type) errs.type = 'Chọn loại sự cố';
+    if (!incForm.description.trim()) errs.description = 'Nhập mô tả';
+    const typeMeta = STAFF_INCIDENT_TYPES.find((t) => t.value === incForm.type);
+    if (typeMeta?.needLink && !incForm.sessionId) errs.sessionId = 'Loại này cần gắn 1 xe đang đỗ';
+    setIncFieldErrors(errs);
+    if (Object.keys(errs).length) return;
+    setIncError('');
+    setIncSubmitting(true);
+    try {
+      await incidentsApi.create({
+        type: incForm.type,
+        description: incForm.description.trim(),
+        ...(incForm.sessionId ? { sessionId: Number(incForm.sessionId) } : {}),
+      });
+      toast.success('Đã báo sự cố');
+      setIncForm({ type: '', description: '', sessionId: '' });
+      setIncFieldErrors({});
+      loadIncidents();
+    } catch (err) {
+      setIncError(err.response?.data?.error?.message || 'Báo sự cố thất bại');
+    } finally {
+      setIncSubmitting(false);
+    }
+  };
+
   // Tải danh mục + danh sách xe đang đỗ + đặt chỗ sắp tới + số chỗ trống khi mở trang.
   useEffect(() => {
     (async () => {
@@ -138,6 +204,7 @@ export default function StaffOperationsPage() {
       loadActive();
       loadUpcoming();
       loadAvailability();
+      loadIncidents();
     })();
   }, []);
 
@@ -419,6 +486,7 @@ export default function StaffOperationsPage() {
           { id: 'active', label: `Xe đang đỗ${active.length ? ` (${active.length})` : ''}` },
           { id: 'reservation', label: `Đặt chỗ vào${upcoming.length ? ` (${upcoming.length})` : ''}` },
           { id: 'booth', label: 'Thu tiền mặt (ra)' },
+          { id: 'incident', label: `Sự cố${incidents.length ? ` (${incidents.length})` : ''}` },
         ].map((t) => (
           <button
             key={t.id}
@@ -749,6 +817,93 @@ export default function StaffOperationsPage() {
                 )}
               </>
             )}
+          </Card>
+        </div>
+      )}
+
+      {/* TAB SỰ CỐ — Staff báo sự cố + xem sự cố của mình */}
+      {tab === 'incident' && (
+        <div className="grid gap-6 lg:grid-cols-2">
+          {/* Báo sự cố mới */}
+          <Card>
+            <h2 className="mb-1 text-lg font-semibold text-slate-800">Báo sự cố</h2>
+            <p className="mb-4 text-sm text-slate-500">Ghi nhận sự cố tại bãi để Quản lý xem &amp; xử lý.</p>
+            <ErrorAlert message={incError} className="mb-4" />
+            <form onSubmit={submitIncident} className="space-y-4">
+              <Field label="Loại sự cố" required error={incFieldErrors.type}>
+                <select className={inputClass} value={incForm.type} onChange={(e) => setIncForm({ ...incForm, type: e.target.value })} required>
+                  <option value="">— Chọn loại —</option>
+                  {STAFF_INCIDENT_TYPES.map((t) => (
+                    <option key={t.value} value={t.value}>{t.label}</option>
+                  ))}
+                </select>
+              </Field>
+              <Field
+                label="Xe liên quan"
+                error={incFieldErrors.sessionId}
+                hint="Chọn xe đang đỗ — bắt buộc với mất thẻ / sai thông tin / quá hạn / sai khu"
+              >
+                <select className={inputClass} value={incForm.sessionId} onChange={(e) => setIncForm({ ...incForm, sessionId: e.target.value })}>
+                  <option value="">— Không gắn xe —</option>
+                  {active.map((s) => (
+                    <option key={s.session_id} value={s.session_id}>
+                      {s.plate_number}{s.slot?.slot_code ? ` · ${s.slot.slot_code}` : ''}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+              <Field label="Mô tả" required error={incFieldErrors.description}>
+                <textarea
+                  className={`${inputClass} min-h-24`}
+                  value={incForm.description}
+                  onChange={(e) => setIncForm({ ...incForm, description: e.target.value })}
+                  placeholder="Mô tả chi tiết sự cố..."
+                  required
+                />
+              </Field>
+              <Button type="submit" className="brand-gradient w-full border-0" loading={incSubmitting}>Gửi báo cáo</Button>
+            </form>
+          </Card>
+
+          {/* Sự cố tôi đã báo */}
+          <Card padding={false}>
+            <div className="flex items-center justify-between px-5 py-4">
+              <h2 className="text-lg font-semibold text-slate-800">Sự cố tôi đã báo</h2>
+              <Button variant="secondary" size="sm" onClick={loadIncidents} loading={loadingIncidents}>Làm mới</Button>
+            </div>
+            <div className="overflow-x-auto border-t border-slate-200">
+              <table className="min-w-full text-sm">
+                <thead className="bg-slate-50 text-left text-slate-600">
+                  <tr>
+                    <th className="px-4 py-3 font-medium whitespace-nowrap">Thời gian</th>
+                    <th className="px-4 py-3 font-medium">Loại</th>
+                    <th className="px-4 py-3 font-medium">Mô tả</th>
+                    <th className="px-4 py-3 font-medium">Trạng thái</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {loadingIncidents ? (
+                    <tr><td colSpan={4} className="px-4 py-10 text-center text-slate-400">Đang tải...</td></tr>
+                  ) : incidents.length === 0 ? (
+                    <tr><td colSpan={4} className="px-4 py-10 text-center text-slate-400">Chưa báo sự cố nào</td></tr>
+                  ) : (
+                    incidents.map((inc) => (
+                      <tr key={inc.incident_id} className="border-t border-slate-100 hover:bg-slate-50/60">
+                        <td className="px-4 py-3 whitespace-nowrap text-slate-600">{inc.created_at ? new Date(inc.created_at).toLocaleString('vi-VN') : '—'}</td>
+                        <td className="px-4 py-3">
+                          {inc.typeLabel}
+                          {inc.session?.plate_number && <span className="ml-1 font-mono text-xs text-slate-400">{inc.session.plate_number}</span>}
+                        </td>
+                        <td className="px-4 py-3 text-slate-600"><span className="block max-w-xs truncate" title={inc.description}>{inc.description}</span></td>
+                        <td className="px-4 py-3">
+                          <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${INCIDENT_STATUS_BADGE[inc.status] || 'bg-slate-100 text-slate-600'}`}>{inc.statusLabel}</span>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
           </Card>
         </div>
       )}
