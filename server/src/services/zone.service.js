@@ -109,9 +109,29 @@ export const updateZone = async (id, data) => {
   }
 
   const targetFloor = await Floor.findByPk(newFloorId);
-  if (targetFloor?.layout_mode === 'single') {
+  const isMovingFloor = data.floorId != null && Number(data.floorId) !== zone.floor_id;
+  const currentFloor = isMovingFloor ? await Floor.findByPk(zone.floor_id) : targetFloor;
+
+  // Chỉ chặn DI CHUYỂN khu vào/ra tầng single (tầng single gắn cứng 1 khu mặc định).
+  // Sửa TẠI CHỖ khu mặc định (total_slots / vé tháng) vẫn cho phép.
+  if (
+    isMovingFloor &&
+    (targetFloor?.layout_mode === 'single' || currentFloor?.layout_mode === 'single')
+  ) {
     throw new AppError(
-      'Không thể sửa/di chuyển khu vào tầng 1 loại xe (single). Chỉnh diện tích tầng thay thế.',
+      'Không thể di chuyển khu vào/ra tầng 1 loại xe (single).',
+      409,
+      'CONFLICT',
+    );
+  }
+  // Khu thuộc tầng single: loại xe do tầng quản → đổi ở form sửa Tầng, không sửa tại khu.
+  if (
+    currentFloor?.layout_mode === 'single' &&
+    data.vehicleTypeId != null &&
+    Number(data.vehicleTypeId) !== zone.vehicle_type_id
+  ) {
+    throw new AppError(
+      'Loại xe của tầng 1 loại xe được đổi ở form sửa Tầng, không sửa tại khu.',
       409,
       'CONFLICT',
     );

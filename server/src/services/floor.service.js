@@ -116,6 +116,29 @@ export const updateFloor = async (id, data) => {
     );
   }
 
+  // Đổi loại xe của tầng (chỉ áp cho tầng single — cả tầng 1 loại, không qua khu).
+  let newVehicleTypeId = floor.vehicle_type_id;
+  let changingVehicleType = false;
+  if (data.vehicleTypeId != null && Number(data.vehicleTypeId) !== floor.vehicle_type_id) {
+    if (floor.layout_mode !== 'single') {
+      throw new AppError(
+        'Chỉ tầng 1 loại xe (single) mới đặt loại xe ở cấp tầng. Tầng phân khu đổi loại xe tại từng khu.',
+        400,
+        'VALIDATION_ERROR',
+      );
+    }
+    const vt = await getVehicleTypeOrThrow(data.vehicleTypeId);
+    if (slotAreaOf(vt) <= 0) {
+      throw new AppError(
+        `Loại xe "${vt.type_name}" chưa cấu hình diện tích slot (slot_area_m2).`,
+        400,
+        'VALIDATION_ERROR',
+      );
+    }
+    newVehicleTypeId = vt.vehicle_type_id;
+    changingVehicleType = true;
+  }
+
   let newArea = floor.area_m2 == null ? null : Number(floor.area_m2);
   if (data.areaM2 !== undefined) {
     newArea = data.areaM2 == null ? null : Number(data.areaM2);
@@ -140,11 +163,14 @@ export const updateFloor = async (id, data) => {
     floor_level: data.floorLevel ?? floor.floor_level,
     label: data.label ?? floor.label,
     area_m2: newArea,
+    vehicle_type_id: newVehicleTypeId,
   });
 
-  // Single: diện tích đổi → đồng bộ sức chứa khu mặc định (không hạ dưới số slot đang có).
-  if (floor.layout_mode === 'single' && data.areaM2 !== undefined && newArea != null) {
-    const vt = await VehicleType.findByPk(floor.vehicle_type_id);
+  // Single: đổi diện tích HOẶC loại xe → đồng bộ khu mặc định (loại xe + sức chứa).
+  // total_slots tính lại theo diện tích/slot của loại xe mới, không hạ dưới số slot đang có.
+  const areaChanged = data.areaM2 !== undefined && newArea != null;
+  if (floor.layout_mode === 'single' && (changingVehicleType || areaChanged) && newArea != null) {
+    const vt = await VehicleType.findByPk(newVehicleTypeId);
     const defaultZone = await Zone.findOne({
       where: { floor_id: floor.floor_id },
       order: [['zone_id', 'ASC']],
@@ -152,7 +178,10 @@ export const updateFloor = async (id, data) => {
     if (vt && defaultZone) {
       const maxSlots = maxSlotsForArea(newArea, slotAreaOf(vt));
       const usedSlots = await ParkingSlot.count({ where: { zone_id: defaultZone.zone_id } });
-      await defaultZone.update({ total_slots: Math.max(maxSlots, usedSlots) });
+      await defaultZone.update({
+        vehicle_type_id: newVehicleTypeId,
+        total_slots: Math.max(maxSlots, usedSlots),
+      });
     }
   }
 
