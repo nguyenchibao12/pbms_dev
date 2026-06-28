@@ -15,7 +15,7 @@ export default function VehicleTypesPage() {
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState(null);
   const [submitting, setSubmitting] = useState(false);
-  const [form, setForm] = useState({ typeName: '', typeCode: '' });
+  const [form, setForm] = useState({ typeName: '', typeCode: '', slotAreaM2: '' });
 
   // Tải danh sách loại xe từ backend.
   const load = async () => {
@@ -38,7 +38,7 @@ export default function VehicleTypesPage() {
 
   const openCreate = () => {
     setEditing(null);
-    setForm({ typeName: '', typeCode: '' });
+    setForm({ typeName: '', typeCode: '', slotAreaM2: '' });
     setFieldErrors({});
     setError('');
     setModalOpen(true);
@@ -46,7 +46,11 @@ export default function VehicleTypesPage() {
 
   const openEdit = (item) => {
     setEditing(item);
-    setForm({ typeName: item.type_name, typeCode: item.type_code });
+    setForm({
+      typeName: item.type_name,
+      typeCode: item.type_code,
+      slotAreaM2: item.slot_area_m2 != null ? String(item.slot_area_m2) : '',
+    });
     setFieldErrors({});
     setError('');
     setModalOpen(true);
@@ -60,7 +64,11 @@ export default function VehicleTypesPage() {
     setError('');
     setSubmitting(true);
     try {
-      const payload = { typeName: form.typeName.trim(), typeCode: form.typeCode.trim().toUpperCase() };
+      const payload = {
+        typeName: form.typeName.trim(),
+        typeCode: form.typeCode.trim().toUpperCase(),
+        slotAreaM2: form.slotAreaM2 === '' ? 0 : Number(form.slotAreaM2),
+      };
       if (editing) await vehicleTypesApi.update(editing.vehicle_type_id, payload);
       else await vehicleTypesApi.create(payload);
       toast.success(editing ? 'Đã cập nhật loại xe' : 'Đã thêm loại xe');
@@ -104,14 +112,15 @@ export default function VehicleTypesPage() {
             <tr>
               <th className="px-4 py-3 font-medium">Tên loại xe</th>
               <th className="px-4 py-3 font-medium">Mã</th>
+              <th className="px-4 py-3 font-medium">Diện tích 1 chỗ (m²)</th>
               <th className="px-4 py-3 text-right font-medium">Thao tác</th>
             </tr>
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={3} className="px-4 py-10 text-center text-slate-400">Đang tải...</td></tr>
+              <tr><td colSpan={4} className="px-4 py-10 text-center text-slate-400">Đang tải...</td></tr>
             ) : items.length === 0 ? (
-              <tr><td colSpan={3} className="px-4 py-10 text-center text-slate-400">Chưa có loại xe nào</td></tr>
+              <tr><td colSpan={4} className="px-4 py-10 text-center text-slate-400">Chưa có loại xe nào</td></tr>
             ) : (
               items.map((item) => (
                 <tr key={item.vehicle_type_id} className="border-b border-slate-100 last:border-0 hover:bg-slate-50/60">
@@ -120,6 +129,11 @@ export default function VehicleTypesPage() {
                     <span className="rounded-md bg-brand-light px-2 py-0.5 font-mono text-xs text-brand">
                       {item.type_code}
                     </span>
+                  </td>
+                  <td className="px-4 py-3 text-slate-600">
+                    {item.slot_area_m2 != null && Number(item.slot_area_m2) > 0
+                      ? Number(item.slot_area_m2)
+                      : <span className="text-slate-400">—</span>}
                   </td>
                   <td className="space-x-3 px-4 py-3 text-right">
                     <button type="button" onClick={() => openEdit(item)} className="font-medium text-brand hover:underline">
@@ -159,6 +173,21 @@ export default function VehicleTypesPage() {
               onChange={(e) => setForm({ ...form, typeCode: e.target.value.toUpperCase() })}
               placeholder="CAR"
               required
+            />
+          </Field>
+          <Field
+            label="Diện tích 1 chỗ (m²)"
+            error={fieldErrors.slotAreaM2}
+            hint="Diện tích hiệu dụng mỗi chỗ đỗ (đã gộp lối đi). Dùng để tính sức chứa tầng theo diện tích."
+          >
+            <input
+              type="number"
+              min="0"
+              step="0.01"
+              className={inputClass}
+              value={form.slotAreaM2}
+              onChange={(e) => setForm({ ...form, slotAreaM2: e.target.value })}
+              placeholder="12.5"
             />
           </Field>
           <div className="flex justify-end gap-2 pt-2">
