@@ -135,6 +135,17 @@ export const releaseSlot = async (slotId, transaction) => {
   await slot.update({ status: 'available' }, { transaction });
 };
 
+// Nhả slot CHỈ KHI đang 'occupied' (idempotent) — dùng cho điểm nhả ở cổng OUT tầng,
+// nơi có thể bị quét lại hoặc slot đã được nhả trước đó. Không 'occupied' -> bỏ qua.
+export const releaseSlotIfOccupied = async (slotId, transaction) => {
+  const slot = await ParkingSlot.findByPk(slotId, { transaction, lock: true });
+  if (!slot) throw new AppError('Parking slot not found', 404, 'NOT_FOUND');
+  if (slot.status !== 'occupied') return false;
+  assertSlotTransition(slot.status, 'available');
+  await slot.update({ status: 'available' }, { transaction });
+  return true;
+};
+
 export const lockSlotReserved = async (slotId, transaction) => {
   const slot = await ParkingSlot.findByPk(slotId, { transaction, lock: true });
   if (!slot) throw new AppError('Parking slot not found', 404, 'NOT_FOUND');

@@ -64,7 +64,12 @@ export const completeSessionAfterPayment = async (payment, staffUserId = null) =
   const fee = Number(payment.amount);
 
   await sequelize.transaction(async (transaction) => {
-    await releaseSlot(session.slot_id, transaction);
+    // Slot đã được nhả NGAY tại cổng OUT tầng (khi left_floor_at được ghi). Chỉ nhả ở đây
+    // cho luồng checkout THẲNG không qua OUT tầng (vd staff thu tiền mặt) — slot còn 'occupied'.
+    // Nếu đã qua OUT tầng thì bỏ qua, tránh nhả nhầm slot có thể đã được xe khác chiếm.
+    if (!session.left_floor_at) {
+      await releaseSlot(session.slot_id, transaction);
+    }
     await session.update(
       {
         time_out: timeOut,
