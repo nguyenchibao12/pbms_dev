@@ -21,6 +21,12 @@ router.get('/exit-status',
      #swagger.parameters['sessionId'] = { in: 'query', required: true, schema: { type: 'integer' } } */
   kioskAuth, gateController.exitStatus);
 
+router.get('/kiosk-list',
+  /* #swagger.tags = ['Gates']
+     #swagger.summary = 'Kiosk — danh sách cổng (header X-Kiosk-Key, không cần đăng nhập)'
+     #swagger.security = [] */
+  kioskAuth, gateController.kioskList);
+
 router.get('/',
   /* #swagger.tags = ['Gates']
      #swagger.summary = 'Danh sách cổng'
