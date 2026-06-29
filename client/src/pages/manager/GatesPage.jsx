@@ -48,18 +48,25 @@ export default function GatesPage() {
 
   const openCreate = () => {
     setEditing(null);
+    const first = floors[0];
     setForm({
       ...emptyForm(),
-      floorId: floors[0]?.floor_id ? String(floors[0].floor_id) : '',
+      floorId: first?.floor_id ? String(first.floor_id) : '',
+      // Tầng single: cổng phải gắn đúng loại xe của tầng (khóa, không cho chỉnh).
+      vehicleTypeId: first?.layout_mode === 'single' && first.vehicle_type_id
+        ? String(first.vehicle_type_id)
+        : '',
     });
     setError('');
+    setFieldErrors({});
     setModalOpen(true);
   };
 
   const openEdit = (item) => {
     setEditing(item);
     setForm({
-      floorId: String(item.floor_id),
+      // floor_id = null nghĩa là cổng cấp tòa nhà → sentinel 'building'.
+      floorId: item.floor_id == null ? 'building' : String(item.floor_id),
       gateCode: item.gate_code,
       label: item.label || '',
       direction: item.direction,
@@ -67,7 +74,20 @@ export default function GatesPage() {
       isActive: item.is_active,
     });
     setError('');
+    setFieldErrors({});
     setModalOpen(true);
+  };
+
+  // Đổi phạm vi (tầng / tòa nhà): tầng single ép loại xe theo tầng, còn lại reset "Không giới hạn".
+  const onFloorChange = (value) => {
+    const f = floors.find((x) => String(x.floor_id) === String(value));
+    setForm((prev) => ({
+      ...prev,
+      floorId: value,
+      vehicleTypeId: f?.layout_mode === 'single' && f.vehicle_type_id
+        ? String(f.vehicle_type_id)
+        : '',
+    }));
   };
 
   const handleSubmit = async (e) => {
@@ -78,7 +98,8 @@ export default function GatesPage() {
     setError('');
     try {
       const payload = {
-        floorId: Number(form.floorId),
+        // 'building' → null (cổng cấp tòa nhà), còn lại là id tầng cụ thể.
+        floorId: form.floorId === 'building' ? null : Number(form.floorId),
         gateCode: form.gateCode,
         label: form.label || undefined,
         direction: form.direction,
@@ -103,6 +124,11 @@ export default function GatesPage() {
       alert(err.response?.data?.error?.message || 'Delete failed');
     }
   };
+
+  const selectedFloor = form.floorId && form.floorId !== 'building'
+    ? floors.find((f) => String(f.floor_id) === String(form.floorId))
+    : null;
+  const floorIsSingle = selectedFloor?.layout_mode === 'single';
 
   return (
     <div>
@@ -151,10 +177,11 @@ export default function GatesPage() {
       <Modal open={modalOpen} title={editing ? 'Sửa cổng' : 'Thêm cổng'} onClose={() => setModalOpen(false)}>
         <ErrorAlert message={error} />
         <form onSubmit={handleSubmit} className="space-y-4">
-          <Field label="Tầng" error={fieldErrors.floorId}>
-            <select className={inputClass} value={form.floorId} onChange={(e) => setForm({ ...form, floorId: e.target.value })} required>
-              <option value="">Chọn tầng</option>
-              {floors.map((f) => <option key={f.floor_id} value={f.floor_id}>{f.floor_code}</option>)}
+          <Field label="Phạm vi" error={fieldErrors.floorId}>
+            <select className={inputClass} value={form.floorId} onChange={(e) => onFloorChange(e.target.value)} required>
+              <option value="">Chọn phạm vi</option>
+              <option value="building">— Cổng tòa nhà (không thuộc tầng) —</option>
+              {floors.map((f) => <option key={f.floor_id} value={f.floor_id}>{f.floor_code} — {f.label}</option>)}
             </select>
           </Field>
           <Field label="Mã cổng (gate code)" error={fieldErrors.gateCode}>
@@ -163,15 +190,26 @@ export default function GatesPage() {
           <Field label="Nhãn hiển thị (staff)">
             <input className={inputClass} value={form.label} onChange={(e) => setForm({ ...form, label: e.target.value })} placeholder="Cổng vào ô tô B1" />
           </Field>
-          <Field label="Loại xe">
-            <select className={inputClass} value={form.vehicleTypeId} onChange={(e) => setForm({ ...form, vehicleTypeId: e.target.value })}>
-              <option value="">Không giới hạn</option>
-              {vehicleTypes.map((t) => (
-                <option key={t.vehicle_type_id} value={t.vehicle_type_id}>{t.type_name}</option>
-              ))}
-            </select>
-            <p className="mt-1 text-xs text-slate-400">Nên chọn loại xe để validate khi check-in.</p>
-          </Field>
+          {floorIsSingle ? (
+            <Field label="Loại xe" hint="Tầng 1 loại xe — cổng tự gắn theo loại xe của tầng, không chỉnh ở đây.">
+              <input
+                className={`${inputClass} cursor-not-allowed bg-slate-50 text-slate-500`}
+                value={vehicleTypes.find((t) => String(t.vehicle_type_id) === String(form.vehicleTypeId))?.type_name || '—'}
+                disabled
+                readOnly
+              />
+            </Field>
+          ) : (
+            <Field label="Loại xe">
+              <select className={inputClass} value={form.vehicleTypeId} onChange={(e) => setForm({ ...form, vehicleTypeId: e.target.value })}>
+                <option value="">Không giới hạn</option>
+                {vehicleTypes.map((t) => (
+                  <option key={t.vehicle_type_id} value={t.vehicle_type_id}>{t.type_name}</option>
+                ))}
+              </select>
+              <p className="mt-1 text-xs text-slate-400">Nên chọn loại xe để validate khi check-in.</p>
+            </Field>
+          )}
           <Field label="Hướng">
             <select className={inputClass} value={form.direction} onChange={(e) => setForm({ ...form, direction: e.target.value })}>
               <option value="in">Vào (IN)</option>
