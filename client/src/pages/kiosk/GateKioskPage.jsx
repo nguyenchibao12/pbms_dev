@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, useNavigate } from 'react-router-dom';
 import { Camera } from 'lucide-react';
 import { kioskApi } from '../../api/kiosk';
 import { inputClass } from '../../components/ui/Input';
@@ -8,16 +8,6 @@ import QrScanner from '../../components/QrScanner';
 // Màn kiosk PUBLIC gắn trên cổng (không đăng nhập, xác thực bằng kiosk key).
 // Khách áp/nhập mã QR -> cổng tự quyết: mở barie (OPEN) hoặc yêu cầu thanh toán online
 // (PAYMENT_REQUIRED). Thu TIỀN MẶT là việc của chốt staff (tab "Thu tiền mặt" trang /staff).
-
-// Danh sách cổng TĨNH theo seed demo (màn public không gọi GET /gates vì cần auth).
-const GATES = [
-  { id: 1, label: 'BLD-IN — Cổng tòa nhà (vào)' },
-  { id: 2, label: 'BLD-OUT — Cổng tòa nhà (ra)' },
-  { id: 3, label: 'F1-IN — Tầng 1 (vào)' },
-  { id: 4, label: 'F1-OUT — Tầng 1 (ra)' },
-  { id: 5, label: 'F2-IN — Tầng 2 (vào)' },
-  { id: 6, label: 'F2-OUT — Tầng 2 (ra)' },
-];
 
 const STAGE_LABEL = {
   'building-in': 'Đã vào tòa nhà',
@@ -39,10 +29,13 @@ const parkingSpot = (r) => {
 
 export default function GateKioskPage() {
   const [params] = useSearchParams();
+  const navigate = useNavigate();
   const fromUrl = params.get('gateId');
-  const [gateId, setGateId] = useState(
-    fromUrl && GATES.some((g) => String(g.id) === fromUrl) ? Number(fromUrl) : GATES[0].id,
-  );
+  const orderCode = params.get('orderCode'); // PayOS redirect về kèm ?orderCode=...
+  const [gates, setGates] = useState([]); // cổng tải động từ BE (kiosk-list) — thay hardcode
+  const [gatesError, setGatesError] = useState('');
+  const [gateId, setGateId] = useState(fromUrl ? Number(fromUrl) : null);
+  const [verifying, setVerifying] = useState(Boolean(orderCode)); // đang chốt phiên PayOS?
   const [qr, setQr] = useState('');
   // ui = discriminator của FE (đặt tên riêng, KHÔNG trùng field `kind` BE trả về trong data).
   const [result, setResult] = useState(null); // { ui: 'open' | 'payment' | 'error', ...d }
@@ -63,6 +56,67 @@ export default function GateKioskPage() {
     clearTimeout(resetTimer.current);
     resetTimer.current = setTimeout(() => setResult(null), ms);
   };
+
+  // Tải danh sách cổng động (BE /gates/kiosk-list, xác thực bằng kiosk key) — bỏ hardcode.
+  // Mặc định chọn cổng theo ?gateId trên URL nếu hợp lệ, không thì cổng đầu danh sách.
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const { data } = await kioskApi.listGates();
+        const list = data.data || [];
+        if (!alive) return;
+        setGates(list);
+        setGateId((cur) => (list.some((g) => g.gate_id === cur) ? cur : list[0]?.gate_id ?? null));
+      } catch {
+        if (alive) setGatesError('Không tải được danh sách cổng. Kiểm tra kết nối rồi tải lại trang.');
+      }
+    })();
+    return () => { alive = false; };
+  }, []);
+
+  // PayOS redirect về /kiosk/gate?orderCode=... → CHỐT phiên đã trả online (BE verify thật,
+  // idempotent). Poll tới khi paid → hiện BARIE MỞ; nếu huỷ/hết hạn/timeout → mời quét lại.
+  // Xoá orderCode khỏi URL khi xong để refresh không gọi lại.
+  useEffect(() => {
+    if (!orderCode) return undefined;
+    let stop = false;
+    let tries = 0;
+    const finish = (res) => {
+      if (stop) return;
+      setResult(res);
+      setVerifying(false);
+      scheduleReset(6000);
+      navigate('/kiosk/gate', { replace: true });
+    };
+    const tick = async () => {
+      tries += 1;
+      try {
+        const { data } = await kioskApi.paymentStatus(orderCode);
+        const d = data.data;
+        if (d?.paid) {
+          const s = d.session;
+          finish({ ui: 'open', stage: 'building-out', fee: s?.calculated_fee, sessionId: s?.session_id });
+          return;
+        }
+        if (d?.status === 'CANCELLED' || d?.status === 'EXPIRED') {
+          finish({ ui: 'error', message: 'Chưa thanh toán — vui lòng quét lại mã ở cổng ra.' });
+          return;
+        }
+      } catch {
+        // lỗi 1 nhịp poll — thử lại nhịp sau
+      }
+      if (stop) return;
+      if (tries >= 30) {
+        finish({ ui: 'error', message: 'Chưa xác nhận được thanh toán — vui lòng quét lại mã ở cổng ra.' });
+        return;
+      }
+      setTimeout(tick, 2000);
+    };
+    tick();
+    return () => { stop = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Đang ở màn "chờ thanh toán" (PAYMENT_REQUIRED) → poll trạng thái phiên theo sessionId.
   // Staff thu tiền mặt HOẶC khách trả PayOS → phiên 'completed' → kiosk TỰ MỞ BARIE.
@@ -87,7 +141,7 @@ export default function GateKioskPage() {
   // Xử lý 1 mã QR (từ ô nhập tay HOẶC từ camera) — cổng tự quyết mở / yêu cầu thanh toán.
   const runScan = async (raw) => {
     const token = String(raw || '').trim();
-    if (!token || scanning) return;
+    if (!token || scanning || !gateId) return;
     setScanning(true);
     setResult(null);
     try {
@@ -122,22 +176,36 @@ export default function GateKioskPage() {
       <div className="flex items-center gap-3 text-sm text-slate-300">
         <span>Cổng:</span>
         <select
-          className="rounded-lg border border-slate-600 bg-slate-800 px-3 py-1.5 text-white focus:border-brand focus:outline-none"
-          value={gateId}
+          className="rounded-lg border border-slate-600 bg-slate-800 px-3 py-1.5 text-white focus:border-brand focus:outline-none disabled:opacity-50"
+          value={gateId ?? ''}
+          disabled={gates.length === 0}
           onChange={(e) => {
             setGateId(Number(e.target.value));
             setResult(null);
           }}
         >
-          {GATES.map((g) => (
-            <option key={g.id} value={g.id}>{g.label}</option>
-          ))}
+          {gates.length === 0 ? (
+            <option value="">{gatesError ? 'Lỗi tải cổng' : 'Đang tải cổng…'}</option>
+          ) : (
+            gates.map((g) => (
+              <option key={g.gate_id} value={g.gate_id}>
+                {g.label ? `${g.gate_code} — ${g.label}` : g.gate_code}
+              </option>
+            ))
+          )}
         </select>
+        {gatesError && <span className="text-red-400">{gatesError}</span>}
       </div>
 
       {/* Khu kết quả lớn (nhìn từ xa) */}
       <div className="flex min-h-64 w-full max-w-xl items-center justify-center">
-        {!result ? (
+        {verifying && !result ? (
+          <div className="text-center text-amber-300">
+            <div className="animate-pulse text-6xl">⏳</div>
+            <p className="mt-4 text-2xl font-medium">Đang xác nhận thanh toán…</p>
+            <p className="mt-2 text-sm text-slate-400">Vui lòng đợi, đừng rời màn hình.</p>
+          </div>
+        ) : !result ? (
           <div className="text-center text-slate-400">
             <div className="text-6xl">⤿</div>
             <p className="mt-4 text-2xl font-medium">Mời áp / nhập mã QR</p>
@@ -191,7 +259,7 @@ export default function GateKioskPage() {
         />
         <button
           type="submit"
-          disabled={scanning || !qr.trim()}
+          disabled={scanning || verifying || !gateId || !qr.trim()}
           className="shrink-0 rounded-lg bg-brand px-6 py-2 font-semibold text-white hover:opacity-90 disabled:opacity-50"
         >
           {scanning ? 'Đang quét...' : 'Quét'}
@@ -199,7 +267,7 @@ export default function GateKioskPage() {
         <button
           type="button"
           onClick={() => setCamOpen(true)}
-          disabled={scanning}
+          disabled={scanning || verifying || !gateId}
           className="flex shrink-0 items-center gap-2 rounded-lg border border-slate-600 px-4 py-2 font-semibold text-slate-200 hover:bg-slate-800 disabled:opacity-50"
           title="Quét QR bằng camera"
         >
