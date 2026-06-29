@@ -27,6 +27,13 @@ router.get('/kiosk-list',
      #swagger.security = [] */
   kioskAuth, gateController.kioskList);
 
+router.get('/payment-status',
+  /* #swagger.tags = ['Gates']
+     #swagger.summary = 'Kiosk — chốt phiên sau khi trả PayOS online (header X-Kiosk-Key)'
+     #swagger.security = []
+     #swagger.parameters['orderCode'] = { in: 'query', required: true, description: 'Mã đơn PayOS', schema: { type: 'integer' } } */
+  kioskAuth, gateController.kioskPaymentStatus);
+
 router.get('/',
   /* #swagger.tags = ['Gates']
      #swagger.summary = 'Danh sách cổng'

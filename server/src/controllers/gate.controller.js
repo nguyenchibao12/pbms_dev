@@ -1,6 +1,7 @@
 import * as gateService from '../services/gate.service.js';
 import { scanGate, getExitStatus } from '../services/gateScan.service.js';
-import { asyncHandler, successResponse } from '../utils/helpers.js';
+import { verifyPaymentReturn } from '../services/payment.service.js';
+import { asyncHandler, successResponse, AppError } from '../utils/helpers.js';
 
 // Kiosk cổng: quét QR → mở/đóng cổng (không cần đăng nhập staff).
 export const scan = asyncHandler(async (req, res) => {
@@ -29,6 +30,17 @@ export const kioskList = asyncHandler(async (_req, res) => {
     };
   });
   successResponse(res, data);
+});
+
+// Kiosk cổng RA: PayOS redirect về /kiosk/gate?orderCode=... → kiosk gọi endpoint này để
+// CHỐT phiên (verify trạng thái thật với PayOS rồi hoàn tất + ghi time_out). Idempotent.
+export const kioskPaymentStatus = asyncHandler(async (req, res) => {
+  const orderCode = req.query.orderCode;
+  if (!orderCode) {
+    throw new AppError('orderCode is required', 400, 'VALIDATION_ERROR');
+  }
+  const result = await verifyPaymentReturn(orderCode, { kiosk: true });
+  successResponse(res, result, result.paid ? 'Payment verified' : 'Payment not completed');
 });
 
 export const list = asyncHandler(async (req, res) => {
