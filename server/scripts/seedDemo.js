@@ -245,6 +245,7 @@ const run = async () => {
     vehicle_type_id: car.vehicle_type_id,
     plate_number: inPlate,
     time_in: new Date(now.getTime() - 2 * 60 * 60 * 1000), // đỗ ~2h → phí ô tô ≈ 30.000đ
+    gate_stage: 'on_floor', // xe đang đỗ trên tầng → sẵn sàng quét cổng tầng RA để test check-OUT
     qr_token: inSessQr,
     check_in_by: users.staff.user_id,
     session_type: 'reservation',
