@@ -12,6 +12,13 @@ router.get('/',
      #swagger.parameters['floorId'] = { in: 'query', description: 'Lọc theo tầng', schema: { type: 'integer' } } */
   ...authenticated, zoneValidators.list, validate, zoneController.list);
 
+router.get('/next-code',
+  /* #swagger.tags = ['Zones']
+     #swagger.summary = 'Xem trước mã khu sẽ sinh (theo tầng + loại xe)'
+     #swagger.parameters['floorId'] = { in: 'query', required: true, schema: { type: 'integer' } }
+     #swagger.parameters['vehicleTypeId'] = { in: 'query', required: true, schema: { type: 'integer' } } */
+  ...authenticated, zoneValidators.nextCode, validate, zoneController.nextCode);
+
 router.get('/:id',
   /* #swagger.tags = ['Zones']
      #swagger.summary = 'Chi tiết khu' */
@@ -30,8 +37,8 @@ router.post(
 
 router.post('/',
   /* #swagger.tags = ['Zones']
-     #swagger.summary = 'Thêm khu (Manager)'
-     #swagger.requestBody = { required: true, content: { 'application/json': { example: { floorId: 1, vehicleTypeId: 1, zoneCode: 'B1-A', label: 'Khu A', totalSlots: 0, monthlyPassCapacity: 5 } } } } */
+     #swagger.summary = 'Thêm khu (Manager) — mã khu tự sinh theo <TẦNG>-<LOẠI XE>-<NN>'
+     #swagger.requestBody = { required: true, content: { 'application/json': { example: { floorId: 1, vehicleTypeId: 1, label: 'Khu A', totalSlots: 0, monthlyPassCapacity: 5 } } } } */
   ...managerWrite, zoneValidators.create, validate, zoneController.create);
 
 router.put('/:id',
