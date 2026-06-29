@@ -74,6 +74,7 @@ export const completeSessionAfterPayment = async (payment, staffUserId = null) =
       {
         time_out: timeOut,
         status: 'completed',
+        gate_stage: 'exited', // ra cổng tòa + checkout xong -> trạng thái cuối (hết kẹt 'left_floor')
         calculated_fee: fee,
         check_out_by: staffUserId ?? session.check_out_by,
         qr_token: buildRevokedQrToken('session', session.session_id),

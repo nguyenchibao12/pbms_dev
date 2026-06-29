@@ -6,7 +6,7 @@
 --   mysql -h <host> -P <port> -u <user> -p <database> < server/db/migrations/004_session_gate_stage.sql
 
 ALTER TABLE `parking_session`
-  ADD COLUMN `gate_stage` ENUM('checked_in','in_building','on_floor','left_floor')
+  ADD COLUMN `gate_stage` ENUM('checked_in','in_building','on_floor','left_floor','exited')
     NOT NULL DEFAULT 'checked_in'
-    COMMENT 'Tiến trình qua cổng: checked_in→in_building→on_floor→left_floor'
+    COMMENT 'Tiến trình qua cổng: checked_in→in_building→on_floor→left_floor→exited'
     AFTER `time_in`;

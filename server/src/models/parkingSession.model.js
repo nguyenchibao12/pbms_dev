@@ -51,12 +51,13 @@ const ParkingSession = sequelize.define(
       allowNull: false,
     },
     gate_stage: {
-      type: DataTypes.ENUM('checked_in', 'in_building', 'on_floor', 'left_floor'),
+      type: DataTypes.ENUM('checked_in', 'in_building', 'on_floor', 'left_floor', 'exited'),
       allowNull: false,
       defaultValue: 'checked_in',
       comment:
-        'Tiến trình qua cổng (máy trạng thái): checked_in → in_building → on_floor → left_floor. ' +
-        'Một field lo CẢ: ép đúng thứ tự cổng (không ra tầng khi chưa vào) + chặn vào lại.',
+        'Tiến trình qua cổng (máy trạng thái): checked_in → in_building → on_floor → left_floor → exited. ' +
+        'Một field lo CẢ: ép đúng thứ tự cổng (không ra tầng khi chưa vào) + chặn vào lại. ' +
+        '"exited" = đã ra cổng tòa + checkout xong (trạng thái cuối).',
     },
     time_out: {
       type: DataTypes.DATE,
