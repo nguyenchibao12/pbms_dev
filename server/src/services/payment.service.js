@@ -386,12 +386,16 @@ const STAFF_ROLES = ['Staff', 'Manager', 'Admin'];
  * Khi PayOS redirect về (return URL), client gửi orderCode lên đây.
  * Server hỏi PayOS trạng thái thật (không tin query param của client), nếu PAID thì
  * xác nhận đặt chỗ / kích hoạt vé tháng / hoàn tất phiên (idempotent) và trả QR.
+ *
+ * requester.kiosk = true: gọi từ màn kiosk cổng (public, X-Kiosk-Key). Kiosk ở cổng RA
+ * được phép chốt phiên đã trả online — trạng thái PAID vẫn được verify thật với PayOS ở
+ * dưới, hoàn tất là idempotent → không có rủi ro "trả hộ" như user thường.
  */
 export const verifyPaymentReturn = async (orderCode, requester = {}) => {
   const payment = await getPaymentByOrderCode(orderCode);
 
-  const isStaff = STAFF_ROLES.includes(requester.roleName);
-  if (!isStaff) {
+  const trusted = STAFF_ROLES.includes(requester.roleName) || requester.kiosk === true;
+  if (!trusted) {
     const ownerId = payment.reservation?.user_id ?? payment.monthlyPass?.user_id ?? null;
     const isPureSessionCheckout =
       payment.session_id && !payment.reservation_id && !payment.pass_id;
