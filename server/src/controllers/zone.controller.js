@@ -12,6 +12,11 @@ export const get = asyncHandler(async (req, res) => {
   successResponse(res, zone);
 });
 
+export const nextCode = asyncHandler(async (req, res) => {
+  const result = await zoneService.previewNextZoneCode(req.query.floorId, req.query.vehicleTypeId);
+  successResponse(res, result);
+});
+
 export const create = asyncHandler(async (req, res) => {
   const zone = await zoneService.createZone(req.body);
   successResponse(res, zone, 'Zone created', 201);

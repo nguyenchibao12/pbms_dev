@@ -80,7 +80,8 @@ export const floorValidators = {
       .toFloat(),
     body('zones').isArray({ min: 1 }).withMessage('zones must be a non-empty array'),
     body('zones.*.vehicleTypeId').isInt({ min: 1 }),
-    body('zones.*.zoneCode').trim().notEmpty(),
+    // zoneCode bỏ qua nếu gửi lên — mã khu do hệ thống tự sinh (<TẦNG>-<LOẠI XE>-<NN>).
+    body('zones.*.zoneCode').optional().trim(),
     body('zones.*.label').trim().notEmpty(),
     body('zones.*.slotCount').isInt({ min: 1, max: 500 }),
     body('zones.*.codePrefix').trim().notEmpty(),
@@ -113,6 +114,10 @@ export const zoneValidators = {
   list: [
     query('floorId').optional().isInt({ min: 1 }).withMessage('floorId phải là số nguyên dương').toInt(),
   ],
+  nextCode: [
+    query('floorId').isInt({ min: 1 }).withMessage('floorId không hợp lệ (số nguyên dương)').toInt(),
+    query('vehicleTypeId').isInt({ min: 1 }).withMessage('vehicleTypeId không hợp lệ (số nguyên dương)').toInt(),
+  ],
   bulkSlots: [
     ...idParam,
     body('count')
@@ -134,11 +139,8 @@ export const zoneValidators = {
   create: [
     body('floorId').isInt({ min: 1 }).withMessage('floorId không hợp lệ (số nguyên dương)').toInt(),
     body('vehicleTypeId').isInt({ min: 1 }).withMessage('vehicleTypeId không hợp lệ (số nguyên dương)').toInt(),
-    body('zoneCode')
-      .trim()
-      .notEmpty().withMessage('Mã khu không được để trống')
-      .bail()
-      .isLength({ max: 20 }).withMessage('Mã khu tối đa 20 ký tự'),
+    // Mã khu do hệ thống tự sinh theo quy ước <TẦNG>-<LOẠI XE>-<NN>; bỏ qua nếu client gửi lên.
+    body('zoneCode').optional().trim(),
     body('label')
       .trim()
       .notEmpty().withMessage('Tên khu không được để trống')

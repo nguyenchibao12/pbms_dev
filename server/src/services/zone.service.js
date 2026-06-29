@@ -1,6 +1,7 @@
 import { Zone, ParkingSlot, Floor, VehicleType } from '../models/index.js';
 import { AppError } from '../utils/helpers.js';
 import { assertZoneFitsFloorArea } from '../utils/floorCapacity.js';
+import { buildZoneCode } from '../utils/zoneCode.js';
 
 const zoneIncludes = [
   { association: 'floor', attributes: ['floor_id', 'floor_code', 'label'] },
@@ -20,6 +21,16 @@ export const getZone = async (id) => {
   return zone;
 };
 
+// Xem trước mã khu sẽ sinh (cho FE hiển thị ô "Mã khu" chỉ đọc trước khi lưu).
+export const previewNextZoneCode = async (floorId, vehicleTypeId) => {
+  const floor = await Floor.findByPk(floorId);
+  if (!floor) throw new AppError('Floor not found', 404, 'NOT_FOUND');
+  const vehicleType = await VehicleType.findByPk(vehicleTypeId);
+  if (!vehicleType) throw new AppError('Vehicle type not found', 404, 'NOT_FOUND');
+  const zoneCode = await buildZoneCode(floor, vehicleType);
+  return { zoneCode };
+};
+
 export const createZone = async (data) => {
   const floor = await Floor.findByPk(data.floorId);
   if (!floor) throw new AppError('Floor not found', 404, 'NOT_FOUND');
@@ -36,10 +47,8 @@ export const createZone = async (data) => {
   const vehicleType = await VehicleType.findByPk(data.vehicleTypeId);
   if (!vehicleType) throw new AppError('Vehicle type not found', 404, 'NOT_FOUND');
 
-  const existing = await Zone.findOne({
-    where: { floor_id: data.floorId, zone_code: data.zoneCode },
-  });
-  if (existing) throw new AppError('Zone code already exists on this floor', 409, 'CONFLICT');
+  // Mã khu sinh tự động theo quy ước <TẦNG>-<LOẠI XE>-<NN> (không nhận nhập tự do).
+  const zoneCode = await buildZoneCode(floor, vehicleType);
 
   const totalSlots = data.totalSlots ?? 0;
   const monthlyPassCapacity = data.monthlyPassCapacity ?? 0;
@@ -57,7 +66,7 @@ export const createZone = async (data) => {
   return Zone.create({
     floor_id: data.floorId,
     vehicle_type_id: data.vehicleTypeId,
-    zone_code: data.zoneCode,
+    zone_code: zoneCode,
     label: data.label,
     total_slots: totalSlots,
     monthly_pass_capacity: monthlyPassCapacity,
@@ -78,16 +87,6 @@ export const updateZone = async (id, data) => {
   }
 
   const newFloorId = data.floorId ?? zone.floor_id;
-  const newZoneCode = data.zoneCode ?? zone.zone_code;
-  if (newZoneCode !== zone.zone_code || newFloorId !== zone.floor_id) {
-    const existing = await Zone.findOne({
-      where: { floor_id: newFloorId, zone_code: newZoneCode },
-    });
-    if (existing && existing.zone_id !== zone.zone_id) {
-      throw new AppError('Zone code already exists on this floor', 409, 'CONFLICT');
-    }
-  }
-
   const newTotalSlots = data.totalSlots ?? zone.total_slots;
   const newCapacity = data.monthlyPassCapacity ?? zone.monthly_pass_capacity;
 
@@ -136,14 +135,23 @@ export const updateZone = async (id, data) => {
       'CONFLICT',
     );
   }
-  const newVehicleType = await VehicleType.findByPk(data.vehicleTypeId ?? zone.vehicle_type_id);
+  const newVehicleTypeId = data.vehicleTypeId ?? zone.vehicle_type_id;
+  const newVehicleType = await VehicleType.findByPk(newVehicleTypeId);
   await assertZoneFitsFloorArea(targetFloor, newVehicleType, newTotalSlots, {
     excludeZoneId: zone.zone_id,
   });
 
+  // Mã khu là tự sinh theo (tầng, loại xe) → khi đổi tầng/loại xe thì sinh lại cho khớp
+  // quy ước; không cho sửa tay (bỏ qua data.zoneCode nếu có gửi lên).
+  const codeNeedsRegen =
+    newFloorId !== zone.floor_id || Number(newVehicleTypeId) !== zone.vehicle_type_id;
+  const newZoneCode = codeNeedsRegen
+    ? await buildZoneCode(targetFloor, newVehicleType, { excludeZoneId: zone.zone_id })
+    : zone.zone_code;
+
   await zone.update({
     floor_id: newFloorId,
-    vehicle_type_id: data.vehicleTypeId ?? zone.vehicle_type_id,
+    vehicle_type_id: newVehicleTypeId,
     zone_code: newZoneCode,
     label: data.label ?? zone.label,
     total_slots: newTotalSlots,

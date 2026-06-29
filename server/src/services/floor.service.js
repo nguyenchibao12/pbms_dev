@@ -9,6 +9,7 @@ import {
   getVehicleTypeOrThrow,
   slotAreaOf,
 } from '../utils/floorCapacity.js';
+import { buildZoneCode } from '../utils/zoneCode.js';
 
 export const listFloors = async () =>
   Floor.findAll({ order: [['floor_level', 'ASC']] });
@@ -87,7 +88,7 @@ export const createFloor = async (data) => {
       {
         floor_id: floor.floor_id,
         vehicle_type_id: vt.vehicle_type_id,
-        zone_code: 'A',
+        zone_code: await buildZoneCode(floor, vt, { transaction }),
         label: `${data.label} - ${vt.type_name}`,
         total_slots: maxSlots,
         monthly_pass_capacity: 0,
@@ -232,14 +233,6 @@ export const quickSetupFloor = async (payload) => {
     let areaUsed = 0; // m² đã phân bổ cho các khu — chặn vượt diện tích tầng
 
     for (const zc of zoneConfigs) {
-      const zoneDup = await Zone.findOne({
-        where: { floor_id: floor.floor_id, zone_code: zc.zoneCode },
-        transaction,
-      });
-      if (zoneDup) {
-        throw new AppError(`Zone code "${zc.zoneCode}" already exists on this floor`, 409, 'CONFLICT');
-      }
-
       const vt = await VehicleType.findByPk(zc.vehicleTypeId, { transaction });
       if (!vt) throw new AppError('Vehicle type not found', 404, 'NOT_FOUND');
 
@@ -264,7 +257,7 @@ export const quickSetupFloor = async (payload) => {
 
       if ((zc.monthlyPassCapacity ?? 0) > zc.slotCount) {
         throw new AppError(
-          `Zone "${zc.zoneCode}": monthlyPassCapacity cannot exceed slotCount`,
+          `Zone "${zc.label}": monthlyPassCapacity cannot exceed slotCount`,
           400,
           'VALIDATION_ERROR',
         );
@@ -274,7 +267,7 @@ export const quickSetupFloor = async (payload) => {
         {
           floor_id: floor.floor_id,
           vehicle_type_id: zc.vehicleTypeId,
-          zone_code: zc.zoneCode,
+          zone_code: await buildZoneCode(floor, vt, { transaction }),
           label: zc.label,
           total_slots: zc.slotCount,
           monthly_pass_capacity: zc.monthlyPassCapacity ?? 0,
@@ -381,11 +374,13 @@ export const cloneFloor = async (sourceFloorId, payload) => {
     const newPrefix = floorCode.toUpperCase();
 
     for (const zone of source.zones) {
+      const vt = await VehicleType.findByPk(zone.vehicle_type_id, { transaction });
       const newZone = await Zone.create(
         {
           floor_id: newFloor.floor_id,
           vehicle_type_id: zone.vehicle_type_id,
-          zone_code: zone.zone_code,
+          // Sinh lại mã theo tầng mới (vd F1-CAR-01 → F4-CAR-01) cho đúng quy ước.
+          zone_code: await buildZoneCode(newFloor, vt, { transaction }),
           label: zone.label,
           total_slots: zone.parkingSlots?.length ?? 0,
           monthly_pass_capacity: zone.monthly_pass_capacity,

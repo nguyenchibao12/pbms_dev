@@ -132,12 +132,12 @@ const run = async () => {
 
     const carZone = await Zone.create({
       floor_id: floor.floor_id, vehicle_type_id: car.vehicle_type_id,
-      zone_code: 'A', label: `Tầng ${level} - Khu ô tô`,
+      zone_code: `F${level}-${car.type_code}-01`, label: `Tầng ${level} - Khu ô tô`,
       total_slots: SLOTS_PER_ZONE, monthly_pass_capacity: 0,
     });
     const bikeZone = await Zone.create({
       floor_id: floor.floor_id, vehicle_type_id: bike.vehicle_type_id,
-      zone_code: 'B', label: `Tầng ${level} - Khu xe máy`,
+      zone_code: `F${level}-${bike.type_code}-01`, label: `Tầng ${level} - Khu xe máy`,
       total_slots: SLOTS_PER_ZONE, monthly_pass_capacity: 0,
     });
 
@@ -177,7 +177,7 @@ const run = async () => {
   });
   const f3Zone = await Zone.create({
     floor_id: f3.floor_id, vehicle_type_id: bike.vehicle_type_id,
-    zone_code: 'A', label: 'Tầng 3 - Xe máy',
+    zone_code: `F3-${bike.type_code}-01`, label: 'Tầng 3 - Xe máy',
     total_slots: Math.floor(F3_AREA / 1.8), monthly_pass_capacity: 0,
   });
   for (let i = 1; i <= 10; i++) {
