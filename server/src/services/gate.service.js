@@ -11,6 +11,15 @@ export const listGates = async (floorId) => {
   return Gate.findAll({ where, include: gateIncludes, order: [['gate_code', 'ASC']] });
 };
 
+// Kiosk: danh sách cổng tối giản cho dropdown (không cần đăng nhập, xác thực bằng kiosk-key).
+// Chỉ trả các cột vô hại để màn hình cổng tự chọn vị trí đang đứng.
+export const listGatesForKiosk = async () =>
+  Gate.findAll({
+    attributes: ['gate_id', 'gate_code', 'label', 'direction', 'floor_id'],
+    include: [{ association: 'floor', attributes: ['floor_code'] }],
+    order: [['floor_id', 'ASC'], ['direction', 'ASC']],
+  });
+
 export const getGate = async (id) => {
   const gate = await Gate.findByPk(id, { include: gateIncludes });
   if (!gate) throw new AppError('Gate not found', 404, 'NOT_FOUND');

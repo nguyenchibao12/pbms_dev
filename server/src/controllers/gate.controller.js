@@ -14,6 +14,23 @@ export const exitStatus = asyncHandler(async (req, res) => {
   successResponse(res, result);
 });
 
+// Kiosk cổng: danh sách cổng cho dropdown (header X-Kiosk-Key, không cần đăng nhập).
+export const kioskList = asyncHandler(async (_req, res) => {
+  const gates = await gateService.listGatesForKiosk();
+  const data = gates.map((g) => {
+    const plain = g.get({ plain: true });
+    return {
+      gate_id: plain.gate_id,
+      gate_code: plain.gate_code,
+      label: plain.label,
+      direction: plain.direction,
+      floor_id: plain.floor_id,
+      floor_code: plain.floor?.floor_code ?? null,
+    };
+  });
+  successResponse(res, data);
+});
+
 export const list = asyncHandler(async (req, res) => {
   const gates = await gateService.listGates(req.query.floorId);
   successResponse(res, gates);
