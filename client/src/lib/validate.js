@@ -77,13 +77,12 @@ export function validateVehicleTypeForm(form) {
 }
 
 /**
- * Validate form chỗ đỗ (parking_slot): khu (bắt buộc), mã chỗ (bắt buộc),
- * khoảng cách tới cổng/thang máy (tùy chọn, số ≥ 0). slotType tự do.
+ * Validate form chỗ đỗ (parking_slot): khu (bắt buộc). Mã chỗ do BE tự sinh nên không validate.
+ * Khoảng cách tới cổng/thang máy (tùy chọn, số ≥ 0). slotType tự do.
  */
 export function validateSlotForm(form) {
   return mergeErrors(
     validateRequired(form.zoneId, 'zoneId', 'khu vực'),
-    validateRequiredText(form.slotCode, 'slotCode', 'mã chỗ'),
     form.distanceToGate !== '' && form.distanceToGate != null
       ? validateNonNegativeNumber(form.distanceToGate, 'distanceToGate', { required: false })
       : {},
@@ -93,12 +92,11 @@ export function validateSlotForm(form) {
   );
 }
 
-/** Validate form khu vực (zone): tầng, loại xe, mã khu, tên, số slot. */
+/** Validate form khu vực (zone): tầng, loại xe, tên, số slot. Mã khu do BE tự sinh nên không validate. */
 export function validateZoneForm(form) {
   return mergeErrors(
     validateRequired(form.floorId, 'floorId', 'tầng'),
     validateRequired(form.vehicleTypeId, 'vehicleTypeId', 'loại xe'),
-    validateRequiredText(form.zoneCode, 'zoneCode', 'mã khu'),
     validateRequiredText(form.label, 'label', 'tên khu'),
     validateNonNegativeNumber(form.totalSlots, 'totalSlots'),
     form.monthlyPassCapacity !== '' && form.monthlyPassCapacity != null

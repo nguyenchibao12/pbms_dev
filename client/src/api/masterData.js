@@ -11,23 +11,29 @@ export const floorsApi = {
 };
 
 // CRUD khu vực (zone) trong từng tầng. Đọc cho mọi vai trò đã đăng nhập, ghi chỉ Manager.
+// Mã khu do BE tự sinh (<mã tầng>-<mã loại xe>-NN) — nextCode để xem trước, không cho nhập tay.
 export const zonesApi = {
   list: (floorId) => api.get('/zones', { params: floorId ? { floorId } : {} }),
   get: (id) => api.get(`/zones/${id}`),
   create: (data) => api.post('/zones', data),
   update: (id, data) => api.put(`/zones/${id}`, data),
   remove: (id) => api.delete(`/zones/${id}`),
+  nextCode: (floorId, vehicleTypeId) =>
+    api.get('/zones/next-code', { params: { floorId, vehicleTypeId } }),
+  bulkSlots: (zoneId, data) => api.post(`/zones/${zoneId}/slots/bulk`, data),
 };
 
 // CRUD chỗ đỗ (parking_slot) trong từng khu (zone). Lọc list theo zoneId.
 // Đổi trạng thái slot thực hiện qua update (PUT) với field `status`.
 // Đọc cho mọi vai trò đã đăng nhập, ghi chỉ Manager.
+// Mã chỗ do BE tự sinh (<mã khu>-NN) — nextCode để xem trước, không cho nhập tay.
 export const parkingSlotsApi = {
   list: (zoneId) => api.get('/parking-slots', { params: zoneId ? { zoneId } : {} }),
   get: (id) => api.get(`/parking-slots/${id}`),
   create: (data) => api.post('/parking-slots', data),
   update: (id, data) => api.put(`/parking-slots/${id}`, data),
   remove: (id) => api.delete(`/parking-slots/${id}`),
+  nextCode: (zoneId) => api.get('/parking-slots/next-code', { params: { zoneId } }),
 };
 
 // CRUD cổng (gate) ra/vào theo tầng. Lọc list theo floorId.

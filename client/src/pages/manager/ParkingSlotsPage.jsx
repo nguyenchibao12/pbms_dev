@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { parkingSlotsApi, zonesApi } from '../../api/masterData';
 import Modal, { Field, inputClass, ErrorAlert } from '../../components/Modal';
+import { toast } from '../../components/ui/toast';
 import { validateSlotForm } from '../../lib/validate';
 
 // Nhãn + màu cho từng trạng thái slot (parking_slot.status).
@@ -45,6 +46,12 @@ export default function ParkingSlotsPage() {
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState(emptyForm);
   const [savingId, setSavingId] = useState(null); // slot_id đang đổi status nhanh
+  const [slotCodePreview, setSlotCodePreview] = useState(''); // mã chỗ BE sẽ tự sinh (xem trước khi tạo)
+  // Modal "Sinh nhiều chỗ" (bulk): tạo nhiều chỗ 1 lần cho lần đầu lập khu.
+  const [bulkOpen, setBulkOpen] = useState(false);
+  const [bulkForm, setBulkForm] = useState({ zoneId: '', count: '', distanceStart: '', distanceStep: '' });
+  const [bulkInfo, setBulkInfo] = useState(null); // { total, used, remaining } của khu đang chọn
+  const [bulkBusy, setBulkBusy] = useState(false);
 
   // Tải danh sách khu 1 lần để đổ vào dropdown lọc + select trong modal.
   useEffect(() => {
@@ -71,6 +78,44 @@ export default function ParkingSlotsPage() {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [zoneFilter]);
+
+  // Xem trước mã chỗ BE sẽ sinh khi tạo mới (đã chọn khu). Sửa thì hiện mã hiện tại.
+  useEffect(() => {
+    let active = true;
+    if (!modalOpen || editing || !form.zoneId) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setSlotCodePreview('');
+      return undefined;
+    }
+    parkingSlotsApi
+      .nextCode(form.zoneId)
+      .then((res) => { if (active) setSlotCodePreview(res.data.data.slotCode); })
+      .catch(() => { if (active) setSlotCodePreview(''); });
+    return () => { active = false; };
+  }, [modalOpen, editing, form.zoneId]);
+
+  // Tính số chỗ còn thêm được (remaining = total_slots - used) cho khu trong modal bulk.
+  useEffect(() => {
+    let active = true;
+    if (!bulkOpen || !bulkForm.zoneId) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setBulkInfo(null);
+      return undefined;
+    }
+    const zone = zones.find((z) => String(z.zone_id) === String(bulkForm.zoneId));
+    const total = zone ? Number(zone.total_slots) : 0;
+    parkingSlotsApi
+      .list(bulkForm.zoneId)
+      .then((res) => {
+        if (!active) return;
+        const used = res.data.data.length;
+        const remaining = Math.max(total - used, 0);
+        setBulkInfo({ total, used, remaining });
+        setBulkForm((f) => ({ ...f, count: String(remaining) }));
+      })
+      .catch(() => { if (active) setBulkInfo(null); });
+    return () => { active = false; };
+  }, [bulkOpen, bulkForm.zoneId, zones]);
 
   // reserved/occupied do hệ thống quản lý → không cho đổi status từ form.
   const statusEditable = !editing || MANUAL_STATUSES.includes(editing.status);
@@ -109,9 +154,9 @@ export default function ParkingSlotsPage() {
     if (Object.keys(errors).length) return;
     setError('');
     try {
+      // Không gửi slotCode — BE tự sinh mã chỗ theo <mã khu>-NN.
       const payload = {
         zoneId: Number(form.zoneId),
-        slotCode: form.slotCode.trim(),
         slotType: form.slotType.trim() || null,
         distanceToGate: form.distanceToGate !== '' ? Number(form.distanceToGate) : null,
         distanceToElevator: form.distanceToElevator !== '' ? Number(form.distanceToElevator) : null,
@@ -152,6 +197,44 @@ export default function ParkingSlotsPage() {
     }
   };
 
+  const openBulk = () => {
+    setBulkForm({
+      // Mặc định khu đang lọc, nếu không thì khu đầu tiên.
+      zoneId: zoneFilter || (zones[0]?.zone_id ? String(zones[0].zone_id) : ''),
+      count: '',
+      distanceStart: '',
+      distanceStep: '',
+    });
+    setBulkInfo(null);
+    setError('');
+    setBulkOpen(true);
+  };
+
+  const handleBulk = async (e) => {
+    e.preventDefault();
+    if (!bulkForm.zoneId) { setError('Vui lòng chọn khu'); return; }
+    const count = Number(bulkForm.count);
+    if (!Number.isInteger(count) || count < 1) { setError('Số chỗ muốn tạo phải ≥ 1'); return; }
+    setError('');
+    setBulkBusy(true);
+    try {
+      const data = { count };
+      if (bulkForm.distanceStart !== '') data.distanceStart = Number(bulkForm.distanceStart);
+      if (bulkForm.distanceStep !== '') data.distanceStep = Number(bulkForm.distanceStep);
+      const res = await zonesApi.bulkSlots(bulkForm.zoneId, data);
+      const { created = 0, cappedOut = 0 } = res.data.data || {};
+      let msg = `Đã tạo ${created} chỗ.`;
+      if (cappedOut > 0) msg += ` ${cappedOut} chỗ bị chặn do khu đã đủ sức chứa.`;
+      toast.success(msg);
+      setBulkOpen(false);
+      load();
+    } catch (err) {
+      setError(err.response?.data?.error?.message || 'Sinh chỗ thất bại');
+    } finally {
+      setBulkBusy(false);
+    }
+  };
+
   return (
     <div>
       <div className="mb-6 flex items-center justify-between">
@@ -159,13 +242,22 @@ export default function ParkingSlotsPage() {
           <h1 className="text-2xl font-bold text-slate-800">Chỗ đỗ</h1>
           <p className="mt-1 text-sm text-slate-500">Chỗ đỗ (parking slot) theo từng khu vực</p>
         </div>
-        <button
-          onClick={openCreate}
-          disabled={zones.length === 0}
-          className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
-        >
-          + Thêm chỗ
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={openBulk}
+            disabled={zones.length === 0}
+            className="rounded-lg border border-blue-600 px-4 py-2 text-sm font-medium text-blue-600 hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            Sinh nhiều chỗ
+          </button>
+          <button
+            onClick={openCreate}
+            disabled={zones.length === 0}
+            className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+          >
+            + Thêm chỗ
+          </button>
+        </div>
       </div>
 
       <div className="mb-4">
@@ -184,7 +276,7 @@ export default function ParkingSlotsPage() {
         </select>
       </div>
 
-      {error && !modalOpen && (
+      {error && !modalOpen && !bulkOpen && (
         <div className="mb-4 rounded-lg bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</div>
       )}
 
@@ -254,8 +346,13 @@ export default function ParkingSlotsPage() {
               ))}
             </select>
           </Field>
-          <Field label="Mã chỗ" hint="Duy nhất trong khu, tối đa 20 ký tự" error={fieldErrors.slotCode}>
-            <input className={inputClass} value={form.slotCode} onChange={(e) => setForm({ ...form, slotCode: e.target.value })} required />
+          <Field label="Mã chỗ (tự sinh)" hint={editing ? 'Mã do hệ thống quản lý — chuyển khu sẽ tự sinh lại.' : 'Mã do hệ thống tự sinh khi lưu.'}>
+            <input
+              className={`${inputClass} cursor-not-allowed bg-slate-50 text-slate-500`}
+              value={editing ? form.slotCode : slotCodePreview}
+              placeholder="Chọn khu"
+              readOnly
+            />
           </Field>
           <Field label="Loại chỗ" hint="Tùy chọn — vd: standard, ev, disabled" error={fieldErrors.slotType}>
             <input className={inputClass} value={form.slotType} onChange={(e) => setForm({ ...form, slotType: e.target.value })} />
@@ -284,6 +381,77 @@ export default function ParkingSlotsPage() {
           <div className="flex justify-end gap-2 pt-2">
             <button type="button" onClick={() => setModalOpen(false)} className="rounded-lg border border-slate-300 px-4 py-2 text-sm">Hủy</button>
             <button type="submit" className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white">Lưu</button>
+          </div>
+        </form>
+      </Modal>
+
+      <Modal open={bulkOpen} title="Sinh nhiều chỗ" onClose={() => setBulkOpen(false)}>
+        <ErrorAlert message={error} />
+        <form onSubmit={handleBulk} className="space-y-4">
+          <Field label="Khu vực">
+            <select
+              className={inputClass}
+              value={bulkForm.zoneId}
+              onChange={(e) => setBulkForm({ ...bulkForm, zoneId: e.target.value })}
+              required
+            >
+              <option value="">— Chọn khu —</option>
+              {zones.map((z) => (
+                <option key={z.zone_id} value={z.zone_id}>
+                  {z.zone_code} — {z.label} {z.floor?.floor_code ? `(${z.floor.floor_code})` : ''}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field
+            label="Số chỗ muốn tạo"
+            hint={
+              bulkInfo
+                ? `Khu còn trống ${bulkInfo.remaining}/${bulkInfo.total} chỗ. Nhập vượt sẽ bị BE chặn phần dư.`
+                : 'Mã chỗ nối tiếp theo khu sẽ tự sinh.'
+            }
+          >
+            <input
+              type="number"
+              min="1"
+              max={bulkInfo ? bulkInfo.remaining : undefined}
+              className={inputClass}
+              value={bulkForm.count}
+              onChange={(e) => setBulkForm({ ...bulkForm, count: e.target.value })}
+              required
+            />
+          </Field>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Cách cổng — chỗ đầu (m)" hint="Tùy chọn">
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                className={inputClass}
+                value={bulkForm.distanceStart}
+                onChange={(e) => setBulkForm({ ...bulkForm, distanceStart: e.target.value })}
+              />
+            </Field>
+            <Field label="Mỗi chỗ xa thêm (m)" hint="Tùy chọn">
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                className={inputClass}
+                value={bulkForm.distanceStep}
+                onChange={(e) => setBulkForm({ ...bulkForm, distanceStep: e.target.value })}
+              />
+            </Field>
+          </div>
+          <div className="flex justify-end gap-2 pt-2">
+            <button type="button" onClick={() => setBulkOpen(false)} className="rounded-lg border border-slate-300 px-4 py-2 text-sm">Hủy</button>
+            <button
+              type="submit"
+              disabled={bulkBusy || bulkInfo?.remaining === 0}
+              className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {bulkBusy ? 'Đang tạo...' : 'Sinh chỗ'}
+            </button>
           </div>
         </form>
       </Modal>
