@@ -1,7 +1,9 @@
+import sequelize from '../config/db.js';
 import { Zone, ParkingSlot, Floor, VehicleType } from '../models/index.js';
 import { AppError } from '../utils/helpers.js';
 import { assertZoneFitsFloorArea } from '../utils/floorCapacity.js';
 import { buildZoneCode } from '../utils/zoneCode.js';
+import { resyncZoneSlotCodes } from './parkingSlot.service.js';
 
 const zoneIncludes = [
   { association: 'floor', attributes: ['floor_id', 'floor_code', 'label'] },
@@ -149,14 +151,24 @@ export const updateZone = async (id, data) => {
     ? await buildZoneCode(targetFloor, newVehicleType, { excludeZoneId: zone.zone_id })
     : zone.zone_code;
 
-  await zone.update({
+  const fields = {
     floor_id: newFloorId,
     vehicle_type_id: newVehicleTypeId,
     zone_code: newZoneCode,
     label: data.label ?? zone.label,
     total_slots: newTotalSlots,
     monthly_pass_capacity: newCapacity,
-  });
+  };
+
+  if (codeNeedsRegen) {
+    // Mã khu đổi (đổi tầng/loại xe) → mã chỗ con phải sinh lại theo mã khu mới, cùng 1 transaction.
+    await sequelize.transaction(async (t) => {
+      await zone.update(fields, { transaction: t });
+      await resyncZoneSlotCodes(zone, t);
+    });
+  } else {
+    await zone.update(fields);
+  }
   return zone;
 };
 
