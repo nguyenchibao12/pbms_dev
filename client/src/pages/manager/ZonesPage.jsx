@@ -13,6 +13,7 @@ export default function ZonesPage() {
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState(null);
   const [floorCapacity, setFloorCapacity] = useState(null); // capacity tầng đang chọn trong form
+  const [zoneCodePreview, setZoneCodePreview] = useState(''); // mã khu BE sẽ tự sinh (xem trước khi tạo)
   const [form, setForm] = useState({
     floorId: '',
     vehicleTypeId: '',
@@ -62,6 +63,21 @@ export default function ZonesPage() {
     return () => { active = false; };
   }, [modalOpen, form.floorId]);
 
+  // Xem trước mã khu BE sẽ sinh khi tạo mới (đủ tầng + loại xe). Sửa thì hiện mã hiện tại.
+  useEffect(() => {
+    let active = true;
+    if (!modalOpen || editing || !form.floorId || !form.vehicleTypeId) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setZoneCodePreview('');
+      return undefined;
+    }
+    zonesApi
+      .nextCode(form.floorId, form.vehicleTypeId)
+      .then((res) => { if (active) setZoneCodePreview(res.data.data.zoneCode); })
+      .catch(() => { if (active) setZoneCodePreview(''); });
+    return () => { active = false; };
+  }, [modalOpen, editing, form.floorId, form.vehicleTypeId]);
+
   const openCreate = () => {
     setEditing(null);
     setForm({
@@ -99,10 +115,10 @@ export default function ZonesPage() {
     if (Object.keys(errors).length) return;
     setError('');
     try {
+      // Không gửi zoneCode — BE tự sinh mã khu theo <mã tầng>-<mã loại xe>-NN.
       const payload = {
         floorId: Number(form.floorId),
         vehicleTypeId: Number(form.vehicleTypeId),
-        zoneCode: form.zoneCode.trim(),
         label: form.label.trim(),
         totalSlots: Number(form.totalSlots),
       };
@@ -236,7 +252,14 @@ export default function ZonesPage() {
               </Field>
             </>
           )}
-          <Field label="Mã khu" error={fieldErrors.zoneCode}><input className={inputClass} value={form.zoneCode} onChange={(e) => setForm({ ...form, zoneCode: e.target.value })} required /></Field>
+          <Field label="Mã khu (tự sinh)" hint={editing ? 'Mã do hệ thống quản lý — đổi tầng/loại xe sẽ tự sinh lại.' : 'Mã do hệ thống tự sinh khi lưu.'}>
+            <input
+              className={`${inputClass} cursor-not-allowed bg-slate-50 text-slate-500`}
+              value={editing ? form.zoneCode : zoneCodePreview}
+              placeholder="Chọn tầng và loại xe"
+              readOnly
+            />
+          </Field>
           <Field label="Tên hiển thị" error={fieldErrors.label}><input className={inputClass} value={form.label} onChange={(e) => setForm({ ...form, label: e.target.value })} required /></Field>
           <Field
             label="Tổng số slot"
