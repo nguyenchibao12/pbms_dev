@@ -48,7 +48,7 @@ router.get('/:id',
 router.post('/',
   /* #swagger.tags = ['Gates']
      #swagger.summary = 'Thêm cổng (Manager)'
-     #swagger.requestBody = { required: true, content: { 'application/json': { example: { floorId: 1, gateCode: 'B1-IN-CAR', direction: 'in', vehicleTypeId: 1, label: 'Cổng vào ô tô' } } } } */
+     #swagger.requestBody = { required: true, content: { 'application/json': { example: { floorId: 1, gateCode: 'F1-IN-CAR', direction: 'in', vehicleTypeId: 1, label: 'Cổng vào ô tô' } } } } */
   ...managerWrite, gateValidators.create, validate, gateController.create);
 
 router.put('/:id',
