@@ -1,12 +1,20 @@
 /**
- * Parse slot codes like A01, B12 → row letter(s) + column number.
+ * Parse mã chỗ thành (row, col) để xếp lưới sơ đồ.
+ * - Mã mới tự sinh dạng `<mã khu>-NN` (vd "F1-BIKE-01-08"): nhóm số cuối = cột,
+ *   cả khu xếp trên 1 hàng (mã không mã hóa hàng). Mỗi chỗ 1 cột → không bị đè mất.
+ * - Mã cũ dạng A01 / B12: chữ cái đầu = hàng, số = cột.
  */
 export function parseSlotCode(code) {
-  const match = String(code || '').match(/^([A-Za-z]+)(\d+)$/);
-  if (match) {
-    return { row: match[1].toUpperCase(), col: parseInt(match[2], 10) };
+  const s = String(code || '');
+  const auto = s.match(/-(\d+)$/);
+  if (auto) {
+    return { row: '', col: parseInt(auto[1], 10) };
   }
-  return { row: String(code || '?').slice(0, 1).toUpperCase(), col: 0 };
+  const legacy = s.match(/^([A-Za-z]+)(\d+)$/);
+  if (legacy) {
+    return { row: legacy[1].toUpperCase(), col: parseInt(legacy[2], 10) };
+  }
+  return { row: s.slice(0, 1).toUpperCase() || '?', col: 0 };
 }
 
 export function buildZoneGrid(slots = []) {
