@@ -143,11 +143,11 @@ const run = async () => {
 
     for (let i = 1; i <= SLOTS_PER_ZONE; i++) {
       await ParkingSlot.create({
-        zone_id: carZone.zone_id, slot_code: `A${pad2(i)}`, status: 'available',
+        zone_id: carZone.zone_id, slot_code: `${carZone.zone_code}-${pad2(i)}`, status: 'available',
         distance_to_gate: i * 2, distance_to_elevator: i * 1.5,
       });
       await ParkingSlot.create({
-        zone_id: bikeZone.zone_id, slot_code: `B${pad2(i)}`, status: 'available',
+        zone_id: bikeZone.zone_id, slot_code: `${bikeZone.zone_code}-${pad2(i)}`, status: 'available',
         distance_to_gate: i * 2, distance_to_elevator: i * 1.5,
       });
     }
@@ -182,7 +182,7 @@ const run = async () => {
   });
   for (let i = 1; i <= 10; i++) {
     await ParkingSlot.create({
-      zone_id: f3Zone.zone_id, slot_code: `A${pad2(i)}`, status: 'available',
+      zone_id: f3Zone.zone_id, slot_code: `${f3Zone.zone_code}-${pad2(i)}`, status: 'available',
       distance_to_gate: i * 2, distance_to_elevator: i * 1.5,
     });
   }
