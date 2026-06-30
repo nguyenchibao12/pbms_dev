@@ -119,7 +119,9 @@ const run = async () => {
       label: `Tầng ${level}`,
       layout_mode: 'zoned',
       vehicle_type_id: null,
-      area_m2: 300, // car 8×25 + bike 8×1.8 = 214.4 m² < 300
+      // Tầng bãi xe thực tế ~1.000–5.000 m²/tầng. Để 1.000: 2 khu seed dùng 214.4 m²,
+      // còn ~785 m² trống → đủ chỗ thêm khu / sinh nhiều chỗ (demo bulk) cho "ra dáng".
+      area_m2: 1000,
     });
 
     await Gate.create({
