@@ -30,7 +30,7 @@ function SlotCell({ slot, highlighted, selected, onClick }) {
         slot.status === 'available' && clickable && 'hover:shadow-md hover:shadow-emerald-500/30',
       )}
     >
-      {slot.slotCode.replace(/^[A-Za-z]+/, '') || slot.slotCode}
+      {slot.slotCode.match(/(\d+)$/)?.[1] || slot.slotCode}
     </button>
   );
 }
