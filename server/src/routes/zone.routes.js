@@ -38,13 +38,15 @@ router.post(
 router.post('/',
   /* #swagger.tags = ['Zones']
      #swagger.summary = 'Thêm khu (Manager) — mã khu tự sinh theo <TẦNG>-<LOẠI XE>-<NN>'
-     #swagger.requestBody = { required: true, content: { 'application/json': { example: { floorId: 1, vehicleTypeId: 1, label: 'Khu A', totalSlots: 0, monthlyPassCapacity: 5 } } } } */
+     #swagger.description = 'Mã khu do hệ thống tự sinh (không cần gửi). monthlyPassCapacity phải ≤ totalSlots. Thường tạo khu với totalSlots = 0 rồi thêm chỗ qua POST /zones/{id}/slots/bulk.'
+     #swagger.requestBody = { required: true, content: { 'application/json': { example: { floorId: 1, vehicleTypeId: 1, label: 'Khu ô tô tầng 1', totalSlots: 0, monthlyPassCapacity: 0 } } } } */
   ...managerWrite, zoneValidators.create, validate, zoneController.create);
 
 router.put('/:id',
   /* #swagger.tags = ['Zones']
      #swagger.summary = 'Sửa khu (Manager)'
-     #swagger.requestBody = { required: true, content: { 'application/json': { example: { label: 'Khu A mới', monthlyPassCapacity: 8 } } } } */
+     #swagger.description = 'Mã khu không sửa tay (tự sinh). monthlyPassCapacity phải ≤ totalSlots của khu.'
+     #swagger.requestBody = { required: true, content: { 'application/json': { example: { label: 'Khu ô tô tầng 1 (đổi tên)', monthlyPassCapacity: 3 } } } } */
   ...managerWrite, zoneValidators.update, validate, zoneController.update);
 
 router.delete('/:id',
