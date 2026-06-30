@@ -414,7 +414,6 @@ export default function ParkingSlotsPage() {
             <input
               type="number"
               min="1"
-              max={bulkInfo ? bulkInfo.remaining : undefined}
               className={inputClass}
               value={bulkForm.count}
               onChange={(e) => setBulkForm({ ...bulkForm, count: e.target.value })}
