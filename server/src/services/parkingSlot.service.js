@@ -217,6 +217,33 @@ export const bulkGenerateSlots = async (zoneId, opts, externalTransaction = null
   return sequelize.transaction(run);
 };
 
+/**
+ * Sinh lại slot_code cho TOÀN BỘ chỗ trong khu theo zone_code HIỆN TẠI của khu.
+ * Dùng khi mã khu đổi (đổi loại xe / chuyển tầng) để mã chỗ con khớp mã khu mới
+ * (vd F3-BIKE-01-NN → F3-CAR7-01-NN). `zone` truyền vào phải mang zone_code MỚI.
+ * An toàn với unique (zone_id, slot_code): prefix mới khác prefix cũ nên không đụng mã cũ.
+ * Đánh số lại 01..NN theo slot_id để thứ tự ổn định. Nên chạy trong cùng transaction
+ * với lệnh update khu (truyền externalTransaction) để nhất quán.
+ */
+export const resyncZoneSlotCodes = async (zone, externalTransaction = null) => {
+  const run = async (transaction) => {
+    const slots = await ParkingSlot.findAll({
+      where: { zone_id: zone.zone_id },
+      order: [['slot_id', 'ASC']],
+      transaction,
+    });
+    let i = 1;
+    for (const s of slots) {
+      const code = buildSlotCode(zone, i);
+      if (s.slot_code !== code) await s.update({ slot_code: code }, { transaction });
+      i += 1;
+    }
+    return slots.length;
+  };
+  if (externalTransaction) return run(externalTransaction);
+  return sequelize.transaction(run);
+};
+
 export const deleteParkingSlot = async (id) => {
   const slot = await ParkingSlot.findByPk(id);
   if (!slot) throw new AppError('Parking slot not found', 404, 'NOT_FOUND');

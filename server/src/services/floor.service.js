@@ -1,7 +1,7 @@
 import sequelize from '../config/db.js';
 import { Floor, Zone, Gate, ParkingSlot, VehicleType } from '../models/index.js';
 import { AppError } from '../utils/helpers.js';
-import { bulkGenerateSlots } from './parkingSlot.service.js';
+import { bulkGenerateSlots, resyncZoneSlotCodes } from './parkingSlot.service.js';
 import {
   maxSlotsForArea,
   assertZoneFitsFloorArea,
@@ -179,9 +179,20 @@ export const updateFloor = async (id, data) => {
     if (vt && defaultZone) {
       const maxSlots = maxSlotsForArea(newArea, slotAreaOf(vt));
       const usedSlots = await ParkingSlot.count({ where: { zone_id: defaultZone.zone_id } });
-      await defaultZone.update({
-        vehicle_type_id: newVehicleTypeId,
-        total_slots: Math.max(maxSlots, usedSlots),
+      // Đổi loại xe → mã khu phải sinh lại theo loại xe mới (như createFloor/cloneFloor đã làm),
+      // và mã chỗ con sinh lại theo mã khu mới để mã luôn "có nghĩa". Bọc transaction cho nhất quán.
+      await sequelize.transaction(async (t) => {
+        await defaultZone.update(
+          {
+            vehicle_type_id: newVehicleTypeId,
+            total_slots: Math.max(maxSlots, usedSlots),
+            zone_code: changingVehicleType
+              ? await buildZoneCode(floor, vt, { excludeZoneId: defaultZone.zone_id, transaction: t })
+              : defaultZone.zone_code,
+          },
+          { transaction: t },
+        );
+        if (changingVehicleType) await resyncZoneSlotCodes(defaultZone, t);
       });
     }
   }
