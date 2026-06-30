@@ -3,6 +3,7 @@ import ParkingSlot, { SLOT_STATUSES } from '../models/parkingSlot.model.js';
 import { Zone } from '../models/index.js';
 import { AppError } from '../utils/helpers.js';
 import { assertSlotTransition } from '../utils/stateGuards.js';
+import { buildSlotCode, nextSlotCode } from '../utils/slotCode.js';
 
 const slotIncludes = [
   {
@@ -45,6 +46,13 @@ export const getParkingSlot = async (id) => {
   return slot;
 };
 
+/** Xem trước mã chỗ kế tiếp của 1 khu (FE hiển thị read-only). */
+export const previewNextSlotCode = async (zoneId) => {
+  const zone = await Zone.findByPk(zoneId);
+  if (!zone) throw new AppError('Zone not found', 404, 'NOT_FOUND');
+  return { slotCode: await nextSlotCode(zone) };
+};
+
 export const createParkingSlot = async (data) => {
   const zone = await Zone.findByPk(data.zoneId);
   if (!zone) throw new AppError('Zone not found', 404, 'NOT_FOUND');
@@ -58,11 +66,6 @@ export const createParkingSlot = async (data) => {
     );
   }
 
-  const existing = await ParkingSlot.findOne({
-    where: { zone_id: data.zoneId, slot_code: data.slotCode },
-  });
-  if (existing) throw new AppError('Slot code already exists in this zone', 409, 'CONFLICT');
-
   const status = data.status || 'available';
   if (!SLOT_STATUSES.includes(status)) {
     throw new AppError('Invalid slot status', 400, 'VALIDATION_ERROR');
@@ -71,9 +74,12 @@ export const createParkingSlot = async (data) => {
     throw new AppError('New slots must start as available, maintenance, or locked', 400, 'VALIDATION_ERROR');
   }
 
+  // Mã chỗ tự sinh theo <mã khu>-NN (không nhận slotCode nhập tự do).
+  const slotCode = await nextSlotCode(zone);
+
   return ParkingSlot.create({
     zone_id: data.zoneId,
-    slot_code: data.slotCode,
+    slot_code: slotCode,
     status,
     slot_type: data.slotType || null,
     distance_to_gate: data.distanceToGate ?? null,
@@ -85,32 +91,24 @@ export const updateParkingSlot = async (id, data) => {
   const slot = await ParkingSlot.findByPk(id);
   if (!slot) throw new AppError('Parking slot not found', 404, 'NOT_FOUND');
 
-  if (data.zoneId) {
-    const zone = await Zone.findByPk(data.zoneId);
-    if (!zone) throw new AppError('Zone not found', 404, 'NOT_FOUND');
+  // Chuyển chỗ sang khu khác → mã chỗ sinh lại theo mã khu đích (mã không nhập tự do).
+  let newSlotCode = slot.slot_code;
+  if (data.zoneId && Number(data.zoneId) !== slot.zone_id) {
+    const targetZone = await Zone.findByPk(data.zoneId);
+    if (!targetZone) throw new AppError('Zone not found', 404, 'NOT_FOUND');
 
-    if (Number(data.zoneId) !== slot.zone_id) {
-      const used = await ParkingSlot.count({ where: { zone_id: data.zoneId } });
-      if (used >= zone.total_slots) {
-        throw new AppError(
-          `Khu đích ${zone.zone_code} đã đủ ${zone.total_slots} slot.`,
-          409,
-          'CONFLICT',
-        );
-      }
+    const used = await ParkingSlot.count({ where: { zone_id: data.zoneId } });
+    if (used >= targetZone.total_slots) {
+      throw new AppError(
+        `Khu đích ${targetZone.zone_code} đã đủ ${targetZone.total_slots} slot.`,
+        409,
+        'CONFLICT',
+      );
     }
+    newSlotCode = await nextSlotCode(targetZone);
   }
 
   const newZoneId = data.zoneId ?? slot.zone_id;
-  const newSlotCode = data.slotCode ?? slot.slot_code;
-  if (newSlotCode !== slot.slot_code || newZoneId !== slot.zone_id) {
-    const existing = await ParkingSlot.findOne({
-      where: { zone_id: newZoneId, slot_code: newSlotCode },
-    });
-    if (existing && existing.slot_id !== slot.slot_id) {
-      throw new AppError('Slot code already exists in this zone', 409, 'CONFLICT');
-    }
-  }
 
   if (data.status) {
     validateStatusChange(slot.status, data.status);
@@ -142,9 +140,6 @@ export const bulkGenerateSlots = async (zoneId, opts, externalTransaction = null
 
   const {
     count,
-    codePrefix,
-    startIndex = 1,
-    padding = 2,
     distanceStart = null,
     distanceStep = null,
     distanceElevatorStart = null,
@@ -163,13 +158,20 @@ export const bulkGenerateSlots = async (zoneId, opts, externalTransaction = null
   const used = existingSlots.length;
   const remaining = Math.max(zone.total_slots - used, 0);
 
+  // Mã tự sinh <mã khu>-NN, nối tiếp NN lớn nhất hiện có của khu.
+  let maxNum = 0;
+  for (const code of existingCodes) {
+    const m = /-(\d+)$/.exec(code);
+    if (m) maxNum = Math.max(maxNum, Number(m[1]));
+  }
+  const startNum = maxNum + 1;
+
   const toCreate = [];
   let skipped = 0;
   let cappedOut = 0;
 
   for (let i = 0; i < count; i++) {
-    const index = startIndex + i;
-    const code = `${codePrefix}${String(index).padStart(padding, '0')}`;
+    const code = buildSlotCode(zone, startNum + i);
     if (existingCodes.has(code)) {
       skipped += 1;
       continue;

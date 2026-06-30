@@ -7,11 +7,12 @@
  *
  * Dùng:  npm run seed --prefix server      (hoặc: node scripts/seedDemo.js)
  *
- * Tạo: 4 user (admin/manager/staff/user), 2 loại xe, 2 tầng, mỗi tầng 1 khu ô tô
- * + 1 khu xe máy (8 chỗ/khu), cổng tòa nhà (IN/OUT) + cổng mỗi tầng (IN/OUT),
- * bảng giá theo loại xe, 1 đặt chỗ đã xác nhận sẵn (fallback demo reservation
- * không cần đặt + thanh toán trực tiếp), và 1 khách đặt chỗ ĐANG ĐỖ (checked_in
- * + phiên active) để test luồng check-out.
+ * Tạo: 4 user (admin/manager/staff/user, mật khẩu đều 123456), 3 loại xe (CAR/BIKE/CAR7),
+ * 3 tầng — F1, F2 phân khu (zoned: 1 khu ô tô + 1 khu xe máy, 8 chỗ/khu) và F3 riêng xe máy
+ * (single). Mã khu tự sinh <TẦNG>-<LOẠI XE>-<NN> (F1-CAR-01), mã chỗ tự sinh <MÃ KHU>-<NN>
+ * (F1-CAR-01-01). Kèm cổng tòa nhà (IN/OUT) + cổng mỗi tầng (IN/OUT), bảng giá theo loại xe,
+ * 1 đặt chỗ đã xác nhận sẵn (fallback demo reservation không cần đặt + thanh toán trực tiếp),
+ * và 1 khách đặt chỗ ĐANG ĐỖ (checked_in + phiên active) để test luồng check-out.
  */
 import dotenv from 'dotenv';
 import bcrypt from 'bcryptjs';
@@ -143,11 +144,11 @@ const run = async () => {
 
     for (let i = 1; i <= SLOTS_PER_ZONE; i++) {
       await ParkingSlot.create({
-        zone_id: carZone.zone_id, slot_code: `A${pad2(i)}`, status: 'available',
+        zone_id: carZone.zone_id, slot_code: `${carZone.zone_code}-${pad2(i)}`, status: 'available',
         distance_to_gate: i * 2, distance_to_elevator: i * 1.5,
       });
       await ParkingSlot.create({
-        zone_id: bikeZone.zone_id, slot_code: `B${pad2(i)}`, status: 'available',
+        zone_id: bikeZone.zone_id, slot_code: `${bikeZone.zone_code}-${pad2(i)}`, status: 'available',
         distance_to_gate: i * 2, distance_to_elevator: i * 1.5,
       });
     }
@@ -182,7 +183,7 @@ const run = async () => {
   });
   for (let i = 1; i <= 10; i++) {
     await ParkingSlot.create({
-      zone_id: f3Zone.zone_id, slot_code: `A${pad2(i)}`, status: 'available',
+      zone_id: f3Zone.zone_id, slot_code: `${f3Zone.zone_code}-${pad2(i)}`, status: 'available',
       distance_to_gate: i * 2, distance_to_elevator: i * 1.5,
     });
   }
@@ -287,10 +288,10 @@ const run = async () => {
 
   console.log('\n================ SEED DONE ================');
   console.log('Tài khoản (username / password):');
-  console.log('  admin   / Admin@123456');
-  console.log('  manager / Manager@123456');
-  console.log('  staff   / Staff@123456');
-  console.log('  user    / User@123456');
+  console.log('  admin   / 123456');
+  console.log('  manager / 123456');
+  console.log('  staff   / 123456');
+  console.log('  user    / 123456');
   console.log('\nĐặt chỗ confirmed sẵn (demo luồng reservation, không cần thanh toán):');
   console.log(`  reservationId = ${reservation.reservation_id}`);
   console.log(`  biển số       = ${resPlate}  (Tầng 1 · khu ô tô · chỗ ${resSlot.slot_code})`);

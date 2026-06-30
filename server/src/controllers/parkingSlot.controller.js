@@ -11,6 +11,11 @@ export const get = asyncHandler(async (req, res) => {
   successResponse(res, slot);
 });
 
+export const nextCode = asyncHandler(async (req, res) => {
+  const result = await parkingSlotService.previewNextSlotCode(req.query.zoneId);
+  successResponse(res, result);
+});
+
 export const create = asyncHandler(async (req, res) => {
   const slot = await parkingSlotService.createParkingSlot(req.body);
   successResponse(res, slot, 'Parking slot created', 201);

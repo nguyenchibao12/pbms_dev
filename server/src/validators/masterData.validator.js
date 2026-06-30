@@ -84,7 +84,8 @@ export const floorValidators = {
     body('zones.*.zoneCode').optional().trim(),
     body('zones.*.label').trim().notEmpty(),
     body('zones.*.slotCount').isInt({ min: 1, max: 500 }),
-    body('zones.*.codePrefix').trim().notEmpty(),
+    // codePrefix bỏ qua nếu gửi — mã chỗ tự sinh theo <mã khu>-NN.
+    body('zones.*.codePrefix').optional().trim(),
     body('zones.*.monthlyPassCapacity').optional().isInt({ min: 0 }),
     body('zones.*.startIndex').optional().isInt({ min: 1 }),
     body('zones.*.padding').optional().isInt({ min: 1, max: 4 }),
@@ -123,13 +124,7 @@ export const zoneValidators = {
     body('count')
       .isInt({ min: 1, max: 500 }).withMessage('Số lượng chỗ (count) phải là số nguyên trong khoảng 1..500')
       .toInt(),
-    body('codePrefix')
-      .trim()
-      .notEmpty().withMessage('Tiền tố mã chỗ (codePrefix) không được để trống')
-      .bail()
-      .isLength({ max: 16 }).withMessage('Tiền tố mã chỗ tối đa 16 ký tự'),
-    body('startIndex').optional().isInt({ min: 1 }).withMessage('startIndex phải là số nguyên ≥ 1').toInt(),
-    body('padding').optional().isInt({ min: 1, max: 4 }).withMessage('padding phải trong khoảng 1..4').toInt(),
+    // Mã chỗ tự sinh theo <mã khu>-NN — không nhận codePrefix/startIndex/padding nữa.
     body('distanceStart').optional().isFloat({ min: 0 }).withMessage('distanceStart phải là số ≥ 0').toFloat(),
     body('distanceStep').optional().isFloat({ min: 0 }).withMessage('distanceStep phải là số ≥ 0').toFloat(),
     body('distanceElevatorStart').optional().isFloat({ min: 0 }).withMessage('distanceElevatorStart phải là số ≥ 0').toFloat(),
@@ -174,13 +169,12 @@ export const parkingSlotValidators = {
   list: [
     query('zoneId').optional().isInt({ min: 1 }).withMessage('zoneId phải là số nguyên dương').toInt(),
   ],
+  nextCode: [
+    query('zoneId').isInt({ min: 1 }).withMessage('zoneId không hợp lệ (số nguyên dương)').toInt(),
+  ],
   create: [
     body('zoneId').isInt({ min: 1 }).withMessage('zoneId không hợp lệ (số nguyên dương)').toInt(),
-    body('slotCode')
-      .trim()
-      .notEmpty().withMessage('Mã chỗ không được để trống')
-      .bail()
-      .isLength({ max: 20 }).withMessage('Mã chỗ tối đa 20 ký tự'),
+    // Mã chỗ tự sinh theo <mã khu>-NN — không nhận slotCode nhập tự do.
     body('status')
       .optional()
       .isIn(['available', 'maintenance', 'locked'])
@@ -192,12 +186,7 @@ export const parkingSlotValidators = {
   update: [
     ...idParam,
     body('zoneId').optional().isInt({ min: 1 }).withMessage('zoneId không hợp lệ (số nguyên dương)').toInt(),
-    body('slotCode')
-      .optional()
-      .trim()
-      .notEmpty().withMessage('Mã chỗ không được để trống')
-      .bail()
-      .isLength({ max: 20 }).withMessage('Mã chỗ tối đa 20 ký tự'),
+    // Mã chỗ không sửa tay (tự sinh; đổi khu sẽ sinh lại theo mã khu mới).
     body('status')
       .optional()
       .isIn(SLOT_STATUSES)

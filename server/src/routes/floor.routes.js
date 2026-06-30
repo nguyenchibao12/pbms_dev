@@ -15,7 +15,7 @@ router.post('/setup',
   /* #swagger.tags = ['Floors']
      #swagger.summary = 'Thiết lập nhanh tầng (Manager) — floor + zone + slot + cổng'
      #swagger.description = 'Mã khu (zoneCode) do hệ thống TỰ SINH theo <TẦNG>-<LOẠI XE>-<NN>, không cần gửi lên. floor.areaM2 = diện tích tầng (m²) để kiểm soát sức chứa.'
-     #swagger.requestBody = { required: true, content: { 'application/json': { example: { floor: { floorCode: 'B3', floorLevel: -3, label: 'Hầm B3', areaM2: 800 }, zones: [{ vehicleTypeId: 1, label: 'Khu A ô tô', slotCount: 40, codePrefix: 'A-', monthlyPassCapacity: 10, distanceStart: 10, distanceStep: 5 }], gates: { auto: true } } } } } */
+     #swagger.requestBody = { required: true, content: { 'application/json': { example: { floor: { floorCode: 'B3', floorLevel: -3, label: 'Hầm B3', areaM2: 800 }, zones: [{ vehicleTypeId: 1, label: 'Khu A ô tô', slotCount: 40, monthlyPassCapacity: 10, distanceStart: 10, distanceStep: 5 }], gates: { auto: true } } } } } */
   ...managerWrite, floorValidators.quickSetup, validate, floorController.quickSetup);
 
 router.get('/:id',

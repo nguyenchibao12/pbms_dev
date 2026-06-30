@@ -27,8 +27,9 @@ router.get('/:id',
 router.post(
   '/:id/slots/bulk',
   /* #swagger.tags = ['Zones']
-     #swagger.summary = 'Sinh nhiều chỗ cho khu (Manager)'
-     #swagger.requestBody = { required: true, content: { 'application/json': { example: { count: 20, codePrefix: 'A-', distanceStart: 10, distanceStep: 5 } } } } */
+     #swagger.summary = 'Sinh nhiều chỗ cho khu (Manager) — mã chỗ tự sinh <mã khu>-NN'
+     #swagger.description = 'Mã chỗ tự sinh nối tiếp theo <mã khu>-NN (không gửi codePrefix). Chỉ tạo tối đa (total_slots − số chỗ hiện có); phần vượt trả về cappedOut.'
+     #swagger.requestBody = { required: true, content: { 'application/json': { example: { count: 20, distanceStart: 10, distanceStep: 5 } } } } */
   ...managerWrite,
   zoneValidators.bulkSlots,
   validate,

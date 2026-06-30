@@ -281,9 +281,7 @@ export const quickSetupFloor = async (payload) => {
         zone.zone_id,
         {
           count: zc.slotCount,
-          codePrefix: zc.codePrefix,
-          startIndex: zc.startIndex ?? 1,
-          padding: zc.padding ?? 2,
+          // Mã chỗ tự sinh <mã khu>-NN (không còn dùng codePrefix/startIndex/padding).
           distanceStart: zc.distanceStart ?? null,
           distanceStep: zc.distanceStep ?? null,
           slotType: zc.slotType ?? null,

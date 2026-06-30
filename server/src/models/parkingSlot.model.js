@@ -16,8 +16,9 @@ const ParkingSlot = sequelize.define(
       allowNull: false,
     },
     slot_code: {
-      type: DataTypes.STRING(20),
+      type: DataTypes.STRING(40),
       allowNull: false,
+      comment: 'Mã chỗ tự sinh theo <mã khu>-NN (vd F1-CAR-01-03). Không nhập tự do.',
     },
     status: {
       type: DataTypes.ENUM(...SLOT_STATUSES),
