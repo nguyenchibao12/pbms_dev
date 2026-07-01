@@ -143,6 +143,9 @@ export default function GateKioskPage() {
     const token = String(raw || '').trim();
     if (!token || scanning || !gateId) return;
     setScanning(true);
+    // Huỷ timer auto-ẩn còn sót từ lượt quét OPEN trước (mỗi lần quét là 1 hành động mới) —
+    // tránh nó fire trễ và xoá nhầm popup "CẦN THANH TOÁN" (ui='payment' cố ý không tự ẩn).
+    clearTimeout(resetTimer.current);
     setResult(null);
     try {
       const { data } = await kioskApi.scan(gateId, token);
