@@ -113,6 +113,21 @@ export const getOverviewReport = async ({ from, to, floorId = null }) => {
     raw: true,
   });
 
+  // Doanh thu theo phương thức thanh toán (payos / cash / free) — phục vụ đối soát.
+  const revenueByMethod = await Payment.findAll({
+    attributes: [
+      'method',
+      [sequelize.fn('SUM', sequelize.col('amount')), 'total'],
+      [sequelize.fn('COUNT', sequelize.col('payment_id')), 'count'],
+    ],
+    where: {
+      status: 'success',
+      paid_at: { [Op.between]: [fromDate, toDate] },
+    },
+    group: ['method'],
+    raw: true,
+  });
+
   const entries = await ParkingSession.count({
     where: { time_in: { [Op.between]: [fromDate, toDate] } },
     include: sessionInclude,
@@ -185,6 +200,11 @@ export const getOverviewReport = async ({ from, to, floorId = null }) => {
       total: Number(totalRevenue),
       byType: revenueByType.map((r) => ({
         type: r.type,
+        total: Number(r.total),
+        count: Number(r.count),
+      })),
+      byMethod: revenueByMethod.map((r) => ({
+        method: r.method,
         total: Number(r.total),
         count: Number(r.count),
       })),
