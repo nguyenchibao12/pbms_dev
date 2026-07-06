@@ -1,6 +1,7 @@
 import { Op } from 'sequelize';
 import { MonthlyPass } from '../models/index.js';
 import { cancelPassOnPaymentFail } from '../services/monthlyPass.service.js';
+import { expireStaleRefunds } from '../services/refund.service.js';
 import { getBookingPendingTtlMinutes } from '../utils/settings.js';
 
 // Job nền dọn vé tháng (bắt chước reservationMaintenance.job.js):
@@ -49,10 +50,14 @@ const expireEndedActivePasses = async () => {
 export const runPassMaintenance = async () => {
   const cancelled = await expireStalePendingPasses();
   const expired = await expireEndedActivePasses();
-  if (cancelled || expired) {
-    console.log(`[pass-maintenance] cancelled ${cancelled} pending, expired ${expired} active`);
+  // Ca C (P3-8): yêu cầu hoàn tiền pending quá hạn mà user vẫn chưa cập nhật STK -> expired.
+  const refundsExpired = await expireStaleRefunds();
+  if (cancelled || expired || refundsExpired) {
+    console.log(
+      `[pass-maintenance] cancelled ${cancelled} pending, expired ${expired} active, expired ${refundsExpired} refunds`,
+    );
   }
-  return { cancelled, expired };
+  return { cancelled, expired, refundsExpired };
 };
 
 /** Bật job: quét 1 lần ngay khi boot rồi lặp mỗi phút. */

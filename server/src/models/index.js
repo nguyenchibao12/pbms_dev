@@ -14,6 +14,7 @@ import AiLog from './aiLog.model.js';
 import Incident from './incident.model.js';
 import AuditLog from './auditLog.model.js';
 import Setting from './setting.model.js';
+import RefundRequest from './refundRequest.model.js';
 
 Role.hasMany(UserAccount, { foreignKey: 'role_id', as: 'users' });
 UserAccount.belongsTo(Role, { foreignKey: 'role_id', as: 'role' });
@@ -117,6 +118,14 @@ Incident.belongsTo(MonthlyPass, { foreignKey: 'pass_id', as: 'pass' });
 UserAccount.hasMany(AuditLog, { foreignKey: 'actor_id', as: 'auditLogs' });
 AuditLog.belongsTo(UserAccount, { foreignKey: 'actor_id', as: 'actor' });
 
+// Hoàn tiền hủy vé tháng (P3-8)
+MonthlyPass.hasOne(RefundRequest, { foreignKey: 'pass_id', as: 'refundRequest' });
+RefundRequest.belongsTo(MonthlyPass, { foreignKey: 'pass_id', as: 'pass' });
+RefundRequest.belongsTo(Payment, { foreignKey: 'payment_id', as: 'payment' });
+UserAccount.hasMany(RefundRequest, { foreignKey: 'user_id', as: 'refundRequests' });
+RefundRequest.belongsTo(UserAccount, { foreignKey: 'user_id', as: 'user' });
+RefundRequest.belongsTo(UserAccount, { foreignKey: 'refunded_by', as: 'refundedBy' });
+
 export {
   Role,
   UserAccount,
@@ -134,4 +143,5 @@ export {
   Incident,
   AuditLog,
   Setting,
+  RefundRequest,
 };

@@ -10,6 +10,7 @@ import {
   googleValidator,
   verifyEmailValidator,
   resendVerificationValidator,
+  updateMeValidator,
 } from '../validators/auth.validator.js';
 import { authRateLimiter } from '../middleware/security.js';
 
@@ -74,5 +75,11 @@ router.get('/me',
   /* #swagger.tags = ['Auth']
      #swagger.summary = 'Thông tin user hiện tại' */
   auth, authController.getMe);
+
+router.patch('/me',
+  /* #swagger.tags = ['Auth']
+     #swagger.summary = 'Cập nhật hồ sơ (họ tên, SĐT, tài khoản ngân hàng nhận hoàn tiền)'
+     #swagger.requestBody = { required: true, content: { 'application/json': { example: { fullName: 'Nguyễn Văn A', phone: '0912345678', bankName: 'Vietcombank', bankAccountNumber: '0123456789', bankAccountHolder: 'NGUYEN VAN A' } } } } */
+  auth, updateMeValidator, validate, authController.updateMe);
 
 export default router;

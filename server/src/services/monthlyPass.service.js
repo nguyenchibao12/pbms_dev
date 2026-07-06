@@ -1,8 +1,10 @@
 import { Op } from 'sequelize';
 import sequelize from '../config/db.js';
-import { MonthlyPass, Payment, Floor, VehicleType, ParkingSession } from '../models/index.js';
+import { MonthlyPass, Payment, Floor, VehicleType, ParkingSession, RefundRequest } from '../models/index.js';
 import { AppError } from '../utils/helpers.js';
 import { generateQrToken } from '../utils/qr.js';
+import { buildRevokedQrToken } from '../utils/stateGuards.js';
+import { getPassRefundPolicy } from '../utils/settings.js';
 import { createPayOSPaymentLink, generateOrderCode, getPayOSPaymentInfo } from './payos.client.js';
 import { normalizeTimeInput, isWithinPassWindow } from '../utils/passWindow.js';
 import { suggestSlot, lockSlotOccupied } from '../utils/slotSuggest.js';
@@ -379,6 +381,98 @@ export const checkinWithPass = async (pass, { gateId = null } = {}) => {
 
   await logSuggestion({ ...meta, sessionId: session.session_id, context: 'monthly' });
   return session;
+};
+
+/**
+ * P3-8 — % hoàn tiền theo chính sách (đã chốt với nhóm):
+ * - Chưa tới ngày hiệu lực (hủy trước start_date): 100%
+ * - 3 ngày đầu hiệu lực ("dùng thử"):              70%
+ * - Ngày 4 → hết NỬA thời hạn vé:                  50%
+ * - Quá nửa thời hạn:                               0%
+ * Các mốc đọc từ settings (pass_refund_*), tính theo NGÀY (vé hiệu lực theo DATEONLY).
+ */
+export const computePassRefundPercent = (pass, now = new Date()) => {
+  const policy = getPassRefundPolicy();
+  const DAY = 24 * 3600 * 1000;
+  const start = new Date(`${String(pass.start_date).slice(0, 10)}T00:00:00`);
+  const end = new Date(`${String(pass.end_date).slice(0, 10)}T00:00:00`);
+  const today = new Date(now); today.setHours(0, 0, 0, 0);
+
+  const dayIndex = Math.floor((today - start) / DAY) + 1; // ngày hiệu lực thứ mấy (start = ngày 1)
+  if (dayIndex <= 0) return 100;
+  if (dayIndex <= policy.trialDays) return policy.trialPercent;
+  const totalDays = Math.floor((end - start) / DAY) + 1;
+  if (dayIndex <= Math.floor(totalDays / 2)) return policy.halfTermPercent;
+  return 0;
+};
+
+/**
+ * P3-8 — User hủy vé của mình.
+ * - Vé pending: hủy luôn (chưa trả tiền, không có gì để hoàn).
+ * - Vé active: chặn nếu xe ĐANG trong bãi; hủy + thu hồi QR; nếu % hoàn > 0 và vé đã
+ *   thanh toán thành công → tạo RefundRequest cho trang hoàn tiền của Admin
+ *   (admin chuyển khoản TAY — PayOS không có API refund tự động).
+ */
+export const cancelMonthlyPassByUser = async (userId, passId) => {
+  const pass = await MonthlyPass.findByPk(passId);
+  if (!pass) throw new AppError('Monthly pass not found', 404, 'NOT_FOUND');
+  if (pass.user_id !== userId) throw new AppError('Not allowed', 403, 'FORBIDDEN');
+
+  if (pass.status === 'pending') {
+    await pass.update({ status: 'cancelled' });
+    return {
+      pass,
+      refund: null,
+      message: 'Đã hủy vé (vé chưa thanh toán nên không phát sinh hoàn tiền)',
+    };
+  }
+  if (pass.status !== 'active') {
+    throw new AppError(`Vé không thể hủy (trạng thái hiện tại: ${pass.status})`, 409, 'CONFLICT');
+  }
+
+  const activeSession = await ParkingSession.findOne({
+    where: { pass_id: pass.pass_id, status: 'active' },
+  });
+  if (activeSession) {
+    throw new AppError('Xe đang trong bãi — vui lòng lấy xe ra trước khi hủy vé', 409, 'CONFLICT');
+  }
+
+  const percent = computePassRefundPercent(pass);
+  const paidPayment = await Payment.findOne({
+    where: { pass_id: pass.pass_id, status: 'success' },
+    order: [['created_at', 'DESC']],
+  });
+  const policy = getPassRefundPolicy();
+
+  const refund = await sequelize.transaction(async (transaction) => {
+    await pass.update(
+      { status: 'cancelled', qr_token: buildRevokedQrToken('pass', pass.pass_id) },
+      { transaction },
+    );
+    if (percent <= 0 || !paidPayment) return null;
+    return RefundRequest.create(
+      {
+        pass_id: pass.pass_id,
+        payment_id: paidPayment.payment_id,
+        user_id: pass.user_id,
+        percent,
+        amount: Math.round((Number(paidPayment.amount) * percent) / 100),
+        status: 'pending',
+        requested_at: new Date(),
+      },
+      { transaction },
+    );
+  });
+
+  return {
+    pass,
+    refund,
+    percent,
+    message: refund
+      ? `Đã hủy vé. Bạn được hoàn ${percent}% = ${Number(refund.amount).toLocaleString('vi-VN')}đ — ` +
+        `vui lòng cập nhật tài khoản ngân hàng trong hồ sơ trong vòng ${policy.bankInfoTtlDays} ngày để nhận tiền.`
+      : 'Đã hủy vé. Theo chính sách, vé không còn được hoàn tiền.',
+  };
 };
 
 /** Gọi NGƯỢC từ payment.service khi thanh toán thất bại: hủy vé pending. */

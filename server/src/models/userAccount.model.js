@@ -74,6 +74,20 @@ const UserAccount = sequelize.define(
       type: DataTypes.DATE,
       allowNull: true,
     },
+    // Tài khoản ngân hàng nhận HOÀN TIỀN (hủy vé tháng) — user tự cập nhật ở trang profile.
+    bank_name: {
+      type: DataTypes.STRING(100),
+      allowNull: true,
+    },
+    bank_account_number: {
+      type: DataTypes.STRING(30),
+      allowNull: true,
+    },
+    bank_account_holder: {
+      type: DataTypes.STRING(100),
+      allowNull: true,
+      comment: 'Tên chủ tài khoản (theo ngân hàng)',
+    },
   },
   {
     tableName: 'user_account',

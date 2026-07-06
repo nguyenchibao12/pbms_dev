@@ -17,6 +17,10 @@ const formatUser = (user) => ({
   isActive: user.is_active,
   emailVerified: user.email_verified,
   authProvider: user.auth_provider,
+  // Tài khoản ngân hàng nhận hoàn tiền hủy vé tháng (P3-8) — cập nhật qua PATCH /auth/me
+  bankName: user.bank_name,
+  bankAccountNumber: user.bank_account_number,
+  bankAccountHolder: user.bank_account_holder,
   role: user.role
     ? { roleId: user.role.role_id, roleName: user.role.role_name }
     : null,
@@ -126,6 +130,32 @@ export const login = async ({ username, password }) => {
 export const getMe = async (userId) => {
   const user = await withRole(userId);
   if (!user) throw new AppError('User not found', 404, 'NOT_FOUND');
+  return formatUser(user);
+};
+
+/**
+ * P3-8 — User tự cập nhật hồ sơ (họ tên, SĐT, tài khoản ngân hàng nhận hoàn tiền).
+ * Chỉ nhận đúng các field cho phép — username/email/role không đổi qua đây.
+ */
+export const updateMe = async (userId, data) => {
+  const user = await withRole(userId);
+  if (!user) throw new AppError('User not found', 404, 'NOT_FOUND');
+
+  const updates = {};
+  if (data.fullName !== undefined) updates.full_name = String(data.fullName).trim();
+  if (data.phone !== undefined) updates.phone = data.phone ? String(data.phone).trim() : null;
+  if (data.bankName !== undefined) updates.bank_name = data.bankName ? String(data.bankName).trim() : null;
+  if (data.bankAccountNumber !== undefined) {
+    updates.bank_account_number = data.bankAccountNumber ? String(data.bankAccountNumber).trim() : null;
+  }
+  if (data.bankAccountHolder !== undefined) {
+    updates.bank_account_holder = data.bankAccountHolder ? String(data.bankAccountHolder).trim() : null;
+  }
+  if (Object.keys(updates).length === 0) {
+    throw new AppError('Không có thông tin nào để cập nhật', 400, 'VALIDATION_ERROR');
+  }
+
+  await user.update(updates);
   return formatUser(user);
 };
 

@@ -37,6 +37,12 @@ const DEFAULT_SYSTEM = {
   booking_pending_ttl_minutes: 15,
   // Đặt chỗ confirmed quá end_time + ngần này (phút) mà không check-in → no_show + nhả slot (3.3)
   booking_no_show_grace_minutes: 15,
+  // Hủy vé tháng (P3-8): % hoàn theo mốc — trước start_date 100%; 3 ngày đầu hiệu lực 70%;
+  // tới hết NỬA thời hạn 50%; quá nửa 0%. Deadline user cập nhật STK để nhận hoàn (ngày).
+  pass_refund_trial_days: 3,
+  pass_refund_trial_percent: 70,
+  pass_refund_half_term_percent: 50,
+  pass_refund_bank_info_ttl_days: 7,
 };
 
 let buildingCache = null;
@@ -137,6 +143,18 @@ export const getBookingPendingTtlMinutes = () => {
 export const getBookingNoShowGraceMinutes = () => {
   const v = getSystemSettingsSync().booking_no_show_grace_minutes;
   return v != null && v >= 0 ? Number(v) : DEFAULT_SYSTEM.booking_no_show_grace_minutes;
+};
+
+/** P3-8 — chính sách hoàn tiền hủy vé tháng (đọc từ settings, có default). */
+export const getPassRefundPolicy = () => {
+  const s = getSystemSettingsSync();
+  const num = (v, dflt) => (v != null && Number(v) >= 0 ? Number(v) : dflt);
+  return {
+    trialDays: num(s.pass_refund_trial_days, DEFAULT_SYSTEM.pass_refund_trial_days),
+    trialPercent: num(s.pass_refund_trial_percent, DEFAULT_SYSTEM.pass_refund_trial_percent),
+    halfTermPercent: num(s.pass_refund_half_term_percent, DEFAULT_SYSTEM.pass_refund_half_term_percent),
+    bankInfoTtlDays: num(s.pass_refund_bank_info_ttl_days, DEFAULT_SYSTEM.pass_refund_bank_info_ttl_days),
+  };
 };
 
 export const getDefaultBuildingSettings = () => ({ ...readFileBuilding() });

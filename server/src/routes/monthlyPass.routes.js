@@ -25,6 +25,12 @@ router.get('/capacity',
      #swagger.parameters['vehicleTypeId'] = { in: 'query', required: true, schema: { type: 'integer' } } */
   ...authenticated, monthlyPassController.getCapacity);
 
+router.post('/:id/cancel',
+  /* #swagger.tags = ['Monthly Passes']
+     #swagger.summary = 'Hủy vé tháng (User, chủ vé) — tính % hoàn theo chính sách'
+     #swagger.description = 'Trước ngày hiệu lực hoàn 100%; 3 ngày đầu 70%; tới hết nửa thời hạn 50%; quá nửa không hoàn. Có tiền hoàn → tạo yêu cầu hoàn tiền cho Admin xử lý (cần user cập nhật STK trong hạn).' */
+  ...userOnly, passIdParam, validate, monthlyPassController.cancel);
+
 router.post('/:id/repay',
   /* #swagger.tags = ['Monthly Passes']
      #swagger.summary = 'Lấy lại link thanh toán cho vé pending (User, chủ vé)'

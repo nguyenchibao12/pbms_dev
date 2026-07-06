@@ -20,6 +20,7 @@ import monthlyPassRoutes from './routes/monthlyPass.routes.js';
 import paymentRoutes from './routes/payment.routes.js';
 import reportRoutes from './routes/report.routes.js';
 import incidentRoutes from './routes/incident.routes.js';
+import refundRoutes from './routes/refund.routes.js';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler.js';
 import { securityHeaders, jsonParserLimit, getCorsOrigin } from './middleware/security.js';
 
@@ -58,6 +59,7 @@ app.use('/api/gates', gateRoutes);
 app.use('/api/pricing-rules', pricingRuleRoutes);
 app.use('/api/admin/users', userAdminRoutes);
 app.use('/api/admin/audit-logs', auditRoutes);
+app.use('/api/admin/refunds', refundRoutes);
 app.use('/api/public', publicRoutes);
 app.use('/api/sessions', sessionRoutes);
 app.use('/api/reservations', reservationRoutes);
