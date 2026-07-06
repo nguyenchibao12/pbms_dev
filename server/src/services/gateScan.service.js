@@ -1,17 +1,15 @@
-import { Gate, Reservation, ParkingSession } from '../models/index.js';
+import { Gate, Reservation, ParkingSession, MonthlyPass } from '../models/index.js';
 import sequelize from '../config/db.js';
 import { AppError } from '../utils/helpers.js';
 import { checkinReservation } from './reservation.service.js';
+import { checkinWithPass } from './monthlyPass.service.js';
 import { initiateSessionCheckout } from './payment.service.js';
 import { recordIncident } from './incident.service.js';
 import { releaseSlotIfOccupied } from '../utils/slotSuggest.js';
 
-// LƯU Ý: bản này CHƯA hỗ trợ check-in vé tháng ở cổng (pbms_dev chưa có checkinWithPass).
-// Khi monthlyPass.service có hàm check-in, bổ sung nhánh 'pass' tương tự nhánh 'reservation'.
-
 const open = (stage, extra = {}) => ({ action: 'OPEN', stage, ...extra });
 
-// Tra cứu QR → đặt chỗ / phiên đang gửi.
+// Tra cứu QR → đặt chỗ / phiên đang gửi / vé tháng.
 const resolveQr = async (qrToken) => {
   const token = String(qrToken || '').trim();
   if (!token || token.startsWith('revoked-')) {
@@ -21,12 +19,30 @@ const resolveQr = async (qrToken) => {
   if (reservation) return { kind: 'reservation', reservation };
   const session = await ParkingSession.findOne({ where: { qr_token: token, status: 'active' } });
   if (session) return { kind: 'session', session };
-  throw new AppError('Không tìm thấy đặt chỗ / phiên theo mã QR này', 404, 'NOT_FOUND');
+  const pass = await MonthlyPass.findOne({ where: { qr_token: token } });
+  if (pass) {
+    if (pass.status !== 'active') {
+      throw new AppError(`Vé tháng không còn hiệu lực (trạng thái: ${pass.status})`, 409, 'CONFLICT');
+    }
+    // DATEONLY trả về chuỗi 'YYYY-MM-DD' → so sánh chuỗi theo ngày là đủ.
+    const today = new Date().toISOString().slice(0, 10);
+    if (today < String(pass.start_date) || today > String(pass.end_date)) {
+      throw new AppError('Vé tháng ngoài thời hạn hiệu lực', 409, 'CONFLICT');
+    }
+    return { kind: 'pass', pass };
+  }
+  throw new AppError('Không tìm thấy đặt chỗ / phiên / vé tháng theo mã QR này', 404, 'NOT_FOUND');
 };
 
 // Phiên đang gửi tương ứng với mã QR (để xử lý lúc RA).
+// Vé tháng cũng quy về phiên active theo pass_id → cả 4 cổng dùng lại máy trạng thái gate_stage.
 const findActiveSession = async (ref) => {
   if (ref.kind === 'session') return ref.session;
+  if (ref.kind === 'pass') {
+    return ParkingSession.findOne({
+      where: { pass_id: ref.pass.pass_id, status: 'active' },
+    });
+  }
   return ParkingSession.findOne({
     where: { reservation_id: ref.reservation.reservation_id, status: 'active' },
   });
@@ -34,10 +50,11 @@ const findActiveSession = async (ref) => {
 
 // CỔNG IN TÒA (máy trạng thái gate_stage):
 // - Đặt chỗ (chưa có phiên): check-in tại đây (tạo phiên + chiếm slot) → 'in_building'.
+// - Vé tháng (chưa có phiên): check-in miễn phí tại đây (checkinWithPass) → 'in_building'.
 // - Walk-in (phiên tạo ở booth, stage 'checked_in'): lần VÀO ĐẦU → 'in_building' + MỞ.
 //   (Xe phải qua cổng tòa mới vào trong để lên tầng — không thể bỏ qua.)
 // CHẶN VÀO LẠI: phiên đã qua 'checked_in' (đã vào rồi) → KHÔNG mở lần nữa.
-const buildingEntry = async (ref) => {
+const buildingEntry = async (ref, gate) => {
   const existing = await findActiveSession(ref);
   if (existing) {
     if (existing.gate_stage !== 'checked_in') {
@@ -53,8 +70,24 @@ const buildingEntry = async (ref) => {
       { where: { session_id: existing.session_id, gate_stage: 'checked_in' } },
     );
     return open('building-in', {
-      kind: existing.reservation_id ? 'reservation' : 'session',
+      kind: existing.reservation_id ? 'reservation' : existing.pass_id ? 'pass' : 'session',
       sessionId: existing.session_id,
+    });
+  }
+
+  // Vé tháng chưa có phiên → check-in ngay tại cổng tòa (trong khung giờ; ngoài khung
+  // giờ checkinWithPass chặn 409 PASS_OUTSIDE_WINDOW, hướng dẫn qua booth).
+  if (ref.kind === 'pass') {
+    const session = await checkinWithPass(ref.pass, { gateId: gate.gate_id });
+    // Vừa qua cổng tòa → 'in_building' (lần quét cổng tòa sau sẽ bị chặn vào lại).
+    await ParkingSession.update(
+      { gate_stage: 'in_building' },
+      { where: { session_id: session.session_id } },
+    );
+    return open('building-in', {
+      kind: 'pass',
+      sessionId: session.session_id,
+      slotId: session.slot_id,
     });
   }
 
@@ -206,7 +239,7 @@ export const scanGate = async ({ qrToken, gateId }) => {
   const ref = await resolveQr(qrToken);
 
   if (gate.direction === 'in') {
-    return isBuilding ? buildingEntry(ref) : floorEntry(ref, gate);
+    return isBuilding ? buildingEntry(ref, gate) : floorEntry(ref, gate);
   }
   return isBuilding ? buildingExit(ref, gate) : floorExit(ref, gate);
 };
