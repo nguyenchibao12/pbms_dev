@@ -3,6 +3,7 @@ import app from './app.js';
 import sequelize, { syncSchema } from './config/db.js';
 import { ensureRoles } from './utils/ensureRoles.js';
 import { startReservationMaintenanceJob } from './jobs/reservationMaintenance.job.js';
+import { startPassMaintenanceJob } from './jobs/passMaintenance.job.js';
 import './models/index.js';
 
 dotenv.config();
@@ -37,6 +38,9 @@ const start = async () => {
 
     startReservationMaintenanceJob();
     console.log('Reservation maintenance job started (pending TTL + no-show)');
+
+    startPassMaintenanceJob();
+    console.log('Pass maintenance job started (pending TTL + expire ended)');
 
     app.listen(PORT, () => {
       console.log(`Server running on http://localhost:${PORT}`);
