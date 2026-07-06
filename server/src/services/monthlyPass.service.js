@@ -95,6 +95,13 @@ export const purchaseMonthlyPass = async (userId, data) => {
     throw new AppError('startDate is required', 400, 'VALIDATION_ERROR');
   }
 
+  // Chặn mua vé bắt đầu trong quá khứ (so theo NGÀY, không theo giờ — hôm nay vẫn hợp lệ):
+  // vé lùi ngày mất tiền oan phần đã trôi qua.
+  const today = new Date().toISOString().slice(0, 10);
+  if (String(startDate).slice(0, 10) < today) {
+    throw new AppError('Ngày bắt đầu không được ở quá khứ', 400, 'VALIDATION_ERROR');
+  }
+
   // Cố định 1 tháng — hệ thống tự tính ngày kết thúc (không cho user nhập)
   const endDate = computePassEndDate(startDate);
   // Khung giờ hằng ngày = giờ mở cửa tòa (không cho user nhập giờ tự do)
@@ -134,24 +141,45 @@ export const purchaseMonthlyPass = async (userId, data) => {
     status: 'pending',
   });
 
-  const orderCode = generateOrderCode();
-  const payosResult = await createPayOSPaymentLink({
-    orderCode,
-    amount: price,
-    description: `Pass ${plateNumber}`,
-    returnUrl: `${process.env.CLIENT_URL}/monthly-pass`,
-    cancelUrl: `${process.env.CLIENT_URL}/monthly-pass`,
-  });
+  // Pass `pending` đã COMMIT ở trên và countPassCapacityUsage đếm cả `pending`. Nếu tạo link
+  // PayOS hoặc ghi Payment lỗi mà không bù trừ, vé kẹt `pending` chiếm suất capacity vĩnh viễn
+  // (không payment, không webhook nào tới). Bọc saga: hỏng -> hủy vé (tái dùng
+  // cancelPassOnPaymentFail). Job passMaintenance là lớp dự phòng nếu cả bù trừ cũng hỏng.
+  let payosResult;
+  let payment;
+  try {
+    const orderCode = generateOrderCode();
+    payosResult = await createPayOSPaymentLink({
+      orderCode,
+      amount: price,
+      description: `Pass ${plateNumber}`,
+      returnUrl: `${process.env.CLIENT_URL}/monthly-pass`,
+      cancelUrl: `${process.env.CLIENT_URL}/monthly-pass`,
+    });
 
-  const payment = await Payment.create({
-    pass_id: pass.pass_id,
-    order_code: orderCode,
-    amount: price,
-    status: 'pending',
-    method: 'payos',
-    gateway_transaction_id: payosResult.paymentLinkId ? String(payosResult.paymentLinkId) : null,
-    gateway_response: JSON.stringify(payosResult),
-  });
+    payment = await Payment.create({
+      pass_id: pass.pass_id,
+      order_code: orderCode,
+      amount: price,
+      status: 'pending',
+      method: 'payos',
+      gateway_transaction_id: payosResult.paymentLinkId ? String(payosResult.paymentLinkId) : null,
+      gateway_response: JSON.stringify(payosResult),
+    });
+  } catch (err) {
+    await cancelPassOnPaymentFail(pass.pass_id).catch((cleanupErr) =>
+      console.error(
+        `[purchaseMonthlyPass] bù trừ thất bại cho pass #${pass.pass_id} (job passMaintenance sẽ dọn):`,
+        cleanupErr.message,
+      ),
+    );
+    console.error('[purchaseMonthlyPass] tạo thanh toán PayOS lỗi:', err.message);
+    throw new AppError(
+      'Không tạo được liên kết thanh toán, vé đã được hủy — vui lòng thử lại',
+      502,
+      'PAYMENT_GATEWAY_ERROR',
+    );
+  }
 
   return {
     pass: await getPass(pass.pass_id),
