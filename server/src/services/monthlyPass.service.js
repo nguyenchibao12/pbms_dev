@@ -1,10 +1,12 @@
 import { Op } from 'sequelize';
 import sequelize from '../config/db.js';
-import { MonthlyPass, Payment, Floor, VehicleType } from '../models/index.js';
+import { MonthlyPass, Payment, Floor, VehicleType, ParkingSession } from '../models/index.js';
 import { AppError } from '../utils/helpers.js';
 import { generateQrToken } from '../utils/qr.js';
 import { createPayOSPaymentLink, generateOrderCode } from './payos.client.js';
-import { normalizeTimeInput } from '../utils/passWindow.js';
+import { normalizeTimeInput, isWithinPassWindow } from '../utils/passWindow.js';
+import { suggestSlot, lockSlotOccupied } from '../utils/slotSuggest.js';
+import { logSuggestion } from './aiLog.service.js';
 import { validateAndNormalizePlateVN } from '../utils/plateVN.js';
 import { getPassCapacity } from '../utils/passCapacity.js';
 import {
@@ -212,6 +214,65 @@ export const activatePassAfterPayment = async (payment) => {
   });
 
   return { pass: await getPass(pass.pass_id), payment: await payment.reload(), activated: true };
+};
+
+/**
+ * Check-in tại KIOSK bằng QR vé tháng (không có staff) — bắt chước checkIn booth
+ * (session.service): gợi ý slot theo tầng/loại xe của vé, chiếm slot trong transaction,
+ * tạo phiên monthly_pass miễn phí. Gọi từ gateScan.buildingEntry khi quét pass chưa có phiên.
+ * NGOÀI khung giờ hằng ngày của vé → CHẶN (không tự tạo phiên walk-in tính phí mà khách
+ * không biết trước) — hướng dẫn qua booth gặp staff.
+ */
+export const checkinWithPass = async (pass, { gateId = null } = {}) => {
+  const now = new Date();
+  if (!isWithinPassWindow(pass, now)) {
+    throw new AppError(
+      'Vé tháng đang ngoài khung giờ hiệu lực — vui lòng qua quầy gặp nhân viên nếu muốn gửi xe tính phí',
+      409,
+      'PASS_OUTSIDE_WINDOW',
+    );
+  }
+
+  // Chống 2 phiên cho cùng 1 xe: biển của vé đang có phiên active (vd walk-in tạo ở
+  // booth ngoài khung giờ) → không tạo thêm phiên pass.
+  const existingForPlate = await ParkingSession.findOne({
+    where: { plate_number: pass.plate_number, status: 'active' },
+  });
+  if (existingForPlate) {
+    throw new AppError('Xe đã có phiên đang gửi — không thể mở cổng vào lần nữa.', 409, 'ALREADY_PARKED');
+  }
+
+  const { slot, meta } = await suggestSlot({
+    floorId: pass.floor_id,
+    vehicleTypeId: pass.vehicle_type_id,
+  });
+
+  const qrToken = generateQrToken();
+  const session = await sequelize.transaction(async (transaction) => {
+    await lockSlotOccupied(slot.slot_id, transaction);
+    return ParkingSession.create(
+      {
+        user_id: pass.user_id,
+        pass_id: pass.pass_id,
+        gate_id: gateId,
+        slot_id: slot.slot_id,
+        vehicle_type_id: pass.vehicle_type_id,
+        plate_number: pass.plate_number,
+        time_in: now,
+        qr_token: qrToken,
+        // Kiosk không có staff — khách tự check-in bằng vé của mình (giống checkinReservation
+        // ở kiosk: actor = chủ vé; cột NOT NULL).
+        check_in_by: pass.user_id,
+        session_type: 'monthly_pass',
+        status: 'active',
+        calculated_fee: 0,
+      },
+      { transaction },
+    );
+  });
+
+  await logSuggestion({ ...meta, sessionId: session.session_id, context: 'monthly' });
+  return session;
 };
 
 /** Gọi NGƯỢC từ payment.service khi thanh toán thất bại: hủy vé pending. */
