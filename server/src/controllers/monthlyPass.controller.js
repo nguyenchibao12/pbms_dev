@@ -9,6 +9,11 @@ export const purchase = asyncHandler(async (req, res) => {
   successResponse(res, result, 'Monthly pass created — complete payment to activate', 201);
 });
 
+export const repay = asyncHandler(async (req, res) => {
+  const result = await monthlyPassService.repayMonthlyPass(req.user.user_id, req.params.id);
+  successResponse(res, result, result.reused ? 'Dùng lại link thanh toán còn hiệu lực' : 'Đã tạo link thanh toán mới');
+});
+
 export const listMine = asyncHandler(async (req, res) => {
   const list = await monthlyPassService.listUserPasses(req.user.user_id);
   successResponse(res, list);

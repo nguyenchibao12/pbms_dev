@@ -1,10 +1,16 @@
 import { Op } from 'sequelize';
 import { Zone, ParkingSession, ParkingSlot } from '../models/index.js';
 
-/** OR-03 — capacity Manager cấu hình theo zone */
-export const getPassCapacity = async (floorId, vehicleTypeId) => {
+/**
+ * OR-03 — capacity Manager cấu hình theo zone.
+ * Truyền { transaction, lock } để KHÓA các row Zone của (floor, vehicleType) khi
+ * đếm-rồi-tạo vé (chống 2 request mua đồng thời cùng qua check → bán vượt suất).
+ */
+export const getPassCapacity = async (floorId, vehicleTypeId, { transaction = null, lock = null } = {}) => {
   const zones = await Zone.findAll({
     where: { floor_id: floorId, vehicle_type_id: vehicleTypeId },
+    ...(transaction ? { transaction } : {}),
+    ...(lock ? { lock } : {}),
   });
   const configured = zones.reduce((sum, z) => sum + Number(z.monthly_pass_capacity || 0), 0);
   if (configured > 0) return configured;

@@ -3,7 +3,7 @@ import sequelize from '../config/db.js';
 import { MonthlyPass, Payment, Floor, VehicleType, ParkingSession } from '../models/index.js';
 import { AppError } from '../utils/helpers.js';
 import { generateQrToken } from '../utils/qr.js';
-import { createPayOSPaymentLink, generateOrderCode } from './payos.client.js';
+import { createPayOSPaymentLink, generateOrderCode, getPayOSPaymentInfo } from './payos.client.js';
 import { normalizeTimeInput, isWithinPassWindow } from '../utils/passWindow.js';
 import { suggestSlot, lockSlotOccupied } from '../utils/slotSuggest.js';
 import { logSuggestion } from './aiLog.service.js';
@@ -65,16 +65,28 @@ export const listUserPasses = async (userId) =>
     order: [['created_at', 'DESC']],
   });
 
-export const countPassCapacityUsage = async (floorId, vehicleTypeId) => {
+/**
+ * Đếm vé pending+active OVERLAP với khoảng [from, to] (mặc định = hôm nay, giữ nguyên
+ * hành vi cũ cho GET /capacity). Mua vé truyền khoảng của vé MỚI: vé mua trước cho
+ * tháng sau không ăn suất của tháng này, và ngược lại (P3-7).
+ */
+export const countPassCapacityUsage = async (
+  floorId,
+  vehicleTypeId,
+  { from = null, to = null, transaction = null } = {},
+) => {
   const today = new Date().toISOString().slice(0, 10);
+  const rangeFrom = from || today;
+  const rangeTo = to || today;
   return MonthlyPass.count({
     where: {
       floor_id: floorId,
       vehicle_type_id: vehicleTypeId,
       status: { [Op.in]: ['pending', 'active'] },
-      start_date: { [Op.lte]: today },
-      end_date: { [Op.gte]: today },
+      start_date: { [Op.lte]: rangeTo },
+      end_date: { [Op.gte]: rangeFrom },
     },
+    ...(transaction ? { transaction } : {}),
   });
 };
 
@@ -115,32 +127,64 @@ export const purchaseMonthlyPass = async (userId, data) => {
   const vehicleType = await VehicleType.findByPk(data.vehicleTypeId);
   if (!vehicleType) throw new AppError('Vehicle type not found', 404, 'NOT_FOUND');
 
-  const capacity = await getPassCapacity(data.floorId, data.vehicleTypeId);
-  if (capacity <= 0) {
-    throw new AppError('No pass capacity configured for this floor and vehicle type', 409, 'CONFLICT');
-  }
-
-  const used = await countPassCapacityUsage(data.floorId, data.vehicleTypeId);
-  if (used >= capacity) {
-    throw new AppError('Monthly pass capacity full for this floor', 409, 'CONFLICT');
-  }
-
-  const existingActive = await findActivePassByPlate(plateNumber, data.floorId);
-  if (existingActive) {
-    throw new AppError('An active pass already exists for this plate on this floor', 409, 'CONFLICT');
-  }
-
   const price = getMonthlyPassPrice();
-  const pass = await MonthlyPass.create({
-    user_id: userId,
-    vehicle_type_id: data.vehicleTypeId,
-    floor_id: data.floorId,
-    plate_number: plateNumber,
-    valid_from_time: fromTime,
-    valid_to_time: toTime,
-    start_date: startDate,
-    end_date: endDate,
-    status: 'pending',
+
+  // P2-4: đếm-rồi-tạo trong MỘT transaction, khóa row Zone của (floor, vehicleType)
+  // bằng LOCK.UPDATE — request mua thứ 2 phải chờ request 1 commit mới đếm được,
+  // hết cửa 2 request cùng thấy "còn 1 suất" rồi cùng tạo vé (bán vượt capacity).
+  const { pass, capacity, used } = await sequelize.transaction(async (transaction) => {
+    const cap = await getPassCapacity(data.floorId, data.vehicleTypeId, {
+      transaction,
+      lock: transaction.LOCK.UPDATE,
+    });
+    if (cap <= 0) {
+      throw new AppError('No pass capacity configured for this floor and vehicle type', 409, 'CONFLICT');
+    }
+
+    // P3-7: capacity + check trùng xét theo OVERLAP với khoảng của vé MỚI (không phải
+    // "hôm nay") → khách đang có vé tháng này vẫn mua trước được vé tháng sau (gia hạn).
+    const usage = await countPassCapacityUsage(data.floorId, data.vehicleTypeId, {
+      from: startDate,
+      to: endDate,
+      transaction,
+    });
+    if (usage >= cap) {
+      throw new AppError('Monthly pass capacity full for this floor', 409, 'CONFLICT');
+    }
+
+    const overlapping = await MonthlyPass.findOne({
+      where: {
+        plate_number: plateNumber,
+        floor_id: data.floorId,
+        status: { [Op.in]: ['pending', 'active'] },
+        start_date: { [Op.lte]: endDate },
+        end_date: { [Op.gte]: startDate },
+      },
+      transaction,
+    });
+    if (overlapping) {
+      throw new AppError(
+        'Biển số này đã có vé trùng khoảng ngày trên tầng này — vé mới phải bắt đầu sau khi vé cũ kết thúc',
+        409,
+        'CONFLICT',
+      );
+    }
+
+    const created = await MonthlyPass.create(
+      {
+        user_id: userId,
+        vehicle_type_id: data.vehicleTypeId,
+        floor_id: data.floorId,
+        plate_number: plateNumber,
+        valid_from_time: fromTime,
+        valid_to_time: toTime,
+        start_date: startDate,
+        end_date: endDate,
+        status: 'pending',
+      },
+      { transaction },
+    );
+    return { pass: created, capacity: cap, used: usage };
   });
 
   // Pass `pending` đã COMMIT ở trên và countPassCapacityUsage đếm cả `pending`. Nếu tạo link
@@ -190,6 +234,68 @@ export const purchaseMonthlyPass = async (userId, data) => {
     checkoutUrl: payosResult.checkoutUrl,
     capacity: { total: capacity, used: used + 1 },
   };
+};
+
+/**
+ * P2-6 — Lấy lại link thanh toán cho vé pending (khách tắt tab PayOS giữa chừng).
+ * Link cũ còn PENDING trên PayOS → trả lại (không tạo giao dịch thừa); không thì
+ * đánh dấu payment cũ failed rồi sinh orderCode + link + Payment pending mới.
+ */
+export const repayMonthlyPass = async (userId, passId) => {
+  const pass = await MonthlyPass.findByPk(passId);
+  if (!pass) throw new AppError('Monthly pass not found', 404, 'NOT_FOUND');
+  if (pass.user_id !== userId) throw new AppError('Not allowed', 403, 'FORBIDDEN');
+  if (pass.status !== 'pending') {
+    throw new AppError(`Vé không ở trạng thái chờ thanh toán (hiện tại: ${pass.status})`, 409, 'CONFLICT');
+  }
+
+  const oldPayment = await Payment.findOne({
+    where: { pass_id: pass.pass_id, status: 'pending' },
+    order: [['created_at', 'DESC']],
+  });
+
+  if (oldPayment) {
+    try {
+      const info = await getPayOSPaymentInfo(oldPayment.order_code);
+      if (info?.status === 'PENDING') {
+        const stored = JSON.parse(oldPayment.gateway_response || '{}');
+        if (stored.checkoutUrl) {
+          return { pass, payment: oldPayment, checkoutUrl: stored.checkoutUrl, reused: true };
+        }
+      }
+    } catch {
+      // PayOS lỗi / đơn không tra được → coi như link cũ chết, rơi xuống tạo link mới
+    }
+    await oldPayment.update({ status: 'failed' });
+  }
+
+  // Giữ đúng giá lúc mua (snapshot trên payment cũ); vé chưa từng có payment → giá hiện hành.
+  const amount = oldPayment ? Number(oldPayment.amount) : getMonthlyPassPrice();
+  try {
+    const orderCode = generateOrderCode();
+    const payosResult = await createPayOSPaymentLink({
+      orderCode,
+      amount,
+      description: `Pass ${pass.plate_number}`,
+      returnUrl: `${process.env.CLIENT_URL}/monthly-pass`,
+      cancelUrl: `${process.env.CLIENT_URL}/monthly-pass`,
+    });
+    const payment = await Payment.create({
+      pass_id: pass.pass_id,
+      order_code: orderCode,
+      amount,
+      status: 'pending',
+      method: 'payos',
+      gateway_transaction_id: payosResult.paymentLinkId ? String(payosResult.paymentLinkId) : null,
+      gateway_response: JSON.stringify(payosResult),
+    });
+    return { pass, payment, checkoutUrl: payosResult.checkoutUrl, reused: false };
+  } catch (err) {
+    // KHÔNG hủy vé ở đây (khác lúc mua): khách có thể bấm repay lại;
+    // vé pending bỏ quên quá TTL đã có job passMaintenance dọn.
+    console.error('[repayMonthlyPass] tạo thanh toán PayOS lỗi:', err.message);
+    throw new AppError('Không tạo được liên kết thanh toán — vui lòng thử lại', 502, 'PAYMENT_GATEWAY_ERROR');
+  }
 };
 
 /**
