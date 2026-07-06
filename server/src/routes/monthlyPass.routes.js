@@ -25,6 +25,12 @@ router.get('/capacity',
      #swagger.parameters['vehicleTypeId'] = { in: 'query', required: true, schema: { type: 'integer' } } */
   ...authenticated, monthlyPassController.getCapacity);
 
+router.post('/:id/repay',
+  /* #swagger.tags = ['Monthly Passes']
+     #swagger.summary = 'Lấy lại link thanh toán cho vé pending (User, chủ vé)'
+     #swagger.description = 'Link PayOS cũ còn hiệu lực thì trả lại; hết hiệu lực thì đánh dấu payment cũ failed và sinh link + payment mới. Trả về { checkoutUrl, reused }.' */
+  ...userOnly, passIdParam, validate, monthlyPassController.repay);
+
 // LƯU Ý: '/:id' (route bắt-tất) phải nằm DƯỚI mọi route chữ cụ thể như '/mine', '/capacity'.
 router.get('/:id',
   /* #swagger.tags = ['Monthly Passes']
