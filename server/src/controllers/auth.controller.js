@@ -24,6 +24,11 @@ export const getMe = asyncHandler(async (req, res) => {
   successResponse(res, user, 'Profile retrieved');
 });
 
+export const updateMe = asyncHandler(async (req, res) => {
+  const user = await authService.updateMe(req.user.user_id, req.body);
+  successResponse(res, user, 'Đã cập nhật hồ sơ');
+});
+
 export const forgotPassword = asyncHandler(async (req, res) => {
   const result = await authService.forgotPassword({ email: req.body.email });
   successResponse(res, result, result.message);

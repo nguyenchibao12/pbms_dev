@@ -85,3 +85,32 @@ export const sendVerificationEmail = async (to, verifyUrl) => {
       </div>`,
   });
 };
+
+/** P3-8 — nhắc user cập nhật tài khoản ngân hàng để nhận hoàn tiền hủy vé tháng. */
+export const sendRefundBankInfoEmail = async (to, { fullName, amount, profileUrl, deadlineDays }) => {
+  const amountStr = Number(amount).toLocaleString('vi-VN');
+  await sendMail({
+    to,
+    subject: 'PBMS — Cập nhật tài khoản ngân hàng để nhận hoàn tiền vé tháng',
+    text:
+      `Chào ${fullName},\n\n` +
+      `Yêu cầu hủy vé tháng của bạn đã được ghi nhận và bạn được hoàn ${amountStr}đ.\n` +
+      `Để nhận tiền, vui lòng cập nhật tài khoản ngân hàng trong hồ sơ cá nhân:\n${profileUrl}\n\n` +
+      `Lưu ý: nếu quá ${deadlineDays} ngày kể từ lúc hủy mà chưa cập nhật, yêu cầu hoàn tiền sẽ hết hạn.\n\n` +
+      `Trân trọng,\nPBMS`,
+    html: `
+      <div style="font-family:Arial,sans-serif;max-width:480px;margin:auto">
+        <h2 style="color:#2563eb">Hoàn tiền vé tháng PBMS</h2>
+        <p>Chào <strong>${fullName}</strong>,</p>
+        <p>Yêu cầu hủy vé tháng của bạn đã được ghi nhận và bạn được hoàn
+           <strong>${amountStr}đ</strong>.</p>
+        <p>Để nhận tiền, vui lòng cập nhật <strong>tài khoản ngân hàng</strong> trong hồ sơ cá nhân:</p>
+        <p style="text-align:center;margin:24px 0">
+          <a href="${profileUrl}" style="background:#2563eb;color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none">Cập nhật hồ sơ</a>
+        </p>
+        <p style="color:#64748b;font-size:13px">Hoặc dán liên kết này vào trình duyệt:<br>${profileUrl}</p>
+        <p style="color:#ef4444;font-size:13px">Lưu ý: quá <strong>${deadlineDays} ngày</strong> kể từ lúc hủy
+           mà chưa cập nhật, yêu cầu hoàn tiền sẽ hết hạn.</p>
+      </div>`,
+  });
+};

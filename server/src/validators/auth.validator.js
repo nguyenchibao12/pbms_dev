@@ -116,3 +116,21 @@ export const resendVerificationValidator = [
     .isEmail()
     .withMessage('Email không hợp lệ'),
 ];
+
+/** P3-8 — cập nhật hồ sơ + tài khoản ngân hàng nhận hoàn tiền. Mọi field đều optional. */
+export const updateMeValidator = [
+  body('fullName').optional().trim().notEmpty().withMessage('Họ tên không được rỗng')
+    .isLength({ max: 100 }).withMessage('Họ tên tối đa 100 ký tự'),
+  body('phone').optional({ nullable: true })
+    .customSanitizer((v) => (v == null || v === '' ? null : String(v).trim()))
+    .custom((v) => v === null || /^0\d{9,10}$/.test(v))
+    .withMessage('Số điện thoại không hợp lệ (0 + 9-10 số)'),
+  body('bankName').optional({ nullable: true }).trim()
+    .isLength({ max: 100 }).withMessage('Tên ngân hàng tối đa 100 ký tự'),
+  body('bankAccountNumber').optional({ nullable: true })
+    .customSanitizer((v) => (v == null || v === '' ? null : String(v).trim()))
+    .custom((v) => v === null || /^\d{6,30}$/.test(v))
+    .withMessage('Số tài khoản không hợp lệ (6-30 chữ số)'),
+  body('bankAccountHolder').optional({ nullable: true }).trim()
+    .isLength({ max: 100 }).withMessage('Tên chủ tài khoản tối đa 100 ký tự'),
+];
