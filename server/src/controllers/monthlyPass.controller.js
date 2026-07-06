@@ -19,6 +19,17 @@ export const cancel = asyncHandler(async (req, res) => {
   successResponse(res, result, result.message);
 });
 
+export const list = asyncHandler(async (req, res) => {
+  const result = await monthlyPassService.listPasses({
+    status: req.query.status,
+    floorId: req.query.floorId,
+    plate: req.query.plate,
+    page: req.query.page,
+    limit: req.query.limit,
+  });
+  successResponse(res, result);
+});
+
 export const listMine = asyncHandler(async (req, res) => {
   const list = await monthlyPassService.listUserPasses(req.user.user_id);
   successResponse(res, list);

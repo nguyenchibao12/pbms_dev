@@ -15,6 +15,7 @@ import {
   getMonthlyPassPrice as getPassPriceFromSettings,
   getBuildingSettingsSync,
 } from '../utils/settings.js';
+import { parsePagination, findAndPaginate } from '../utils/pagination.js';
 
 const passIncludes = [
   { association: 'floor' },
@@ -66,6 +67,33 @@ export const listUserPasses = async (userId) =>
     include: passIncludes,
     order: [['created_at', 'DESC']],
   });
+
+/**
+ * P3-9 — Staff/Manager tra cứu vé tháng: lọc theo status / tầng / biển số, phân trang.
+ * Staff dùng tra nhanh "biển này có vé không"; Manager xem tổng thể theo tầng.
+ */
+export const listPasses = async ({ status, floorId, plate, page, limit } = {}) => {
+  const where = {};
+  if (status) where.status = status;
+  if (floorId) where.floor_id = Number(floorId);
+  if (plate) {
+    // Tìm gần đúng theo biển (bỏ ký tự phân cách để '51A12345' vẫn khớp '51A-123.45')
+    const compact = String(plate).replace(/[^0-9a-zA-Z]/g, '').toUpperCase();
+    where[Op.and] = sequelize.where(
+      sequelize.fn('REPLACE', sequelize.fn('REPLACE', sequelize.col('monthly_pass.plate_number'), '-', ''), '.', ''),
+      { [Op.like]: `%${compact}%` },
+    );
+  }
+
+  const pagination = parsePagination({ page, limit });
+  const result = await findAndPaginate(MonthlyPass, {
+    where,
+    include: passIncludes,
+    order: [['created_at', 'DESC']],
+    ...pagination,
+  });
+  return result;
+};
 
 /**
  * Đếm vé pending+active OVERLAP với khoảng [from, to] (mặc định = hôm nay, giữ nguyên
