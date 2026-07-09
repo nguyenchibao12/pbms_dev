@@ -15,6 +15,7 @@ import Button from '../../components/ui/Button';
 import { toast } from '../../components/ui/toast';
 import QrScanner from '../../components/QrScanner';
 import { incidentsApi } from '../../api/incidents';
+import { staffPassesApi } from '../../api/staffPasses';
 
 // Lấy floor_id của phiên (từ chỗ đỗ, fallback sang cổng vào) — để lọc cổng RA cùng tầng.
 const sessionFloorId = (s) => s?.slot?.zone?.floor?.floor_id ?? s?.gate?.floor_id ?? null;
@@ -48,6 +49,23 @@ const INCIDENT_STATUS_BADGE = {
   investigating: 'bg-blue-50 text-blue-700',
   resolved: 'bg-emerald-50 text-emerald-700',
 };
+
+// Vé tháng (tab tra cứu của Staff).
+const PASS_STATUS_OPTIONS = [
+  ['pending', 'Chờ thanh toán'],
+  ['active', 'Đang hiệu lực'],
+  ['expired', 'Hết hạn'],
+  ['cancelled', 'Đã hủy'],
+];
+const PASS_LABEL = Object.fromEntries(PASS_STATUS_OPTIONS);
+const PASS_BADGE = {
+  pending: 'bg-amber-50 text-amber-700',
+  active: 'bg-emerald-50 text-emerald-700',
+  expired: 'bg-slate-100 text-slate-500',
+  cancelled: 'bg-slate-100 text-slate-500',
+};
+const fmtPassDate = (v) => (v ? new Date(v).toLocaleDateString('vi-VN') : '—');
+const hhmm = (t) => (t ? String(t).slice(0, 5) : '—');
 
 export default function StaffOperationsPage() {
   const [tab, setTab] = useState('checkin'); // 'checkin' | 'active' | 'reservation' | 'booth' | 'incident'
@@ -113,6 +131,11 @@ export default function StaffOperationsPage() {
   const [incFieldErrors, setIncFieldErrors] = useState({});
   const [incError, setIncError] = useState('');
   const [incSubmitting, setIncSubmitting] = useState(false);
+
+  // Vé tháng — tab tra cứu (danh sách phân trang + bộ lọc trạng thái/tầng/biển số).
+  const [passes, setPasses] = useState({ items: [], total: 0, page: 1, limit: 50, pages: 0 });
+  const [passLoading, setPassLoading] = useState(false);
+  const [passFilters, setPassFilters] = useState({ status: '', floorId: '', plate: '' });
 
   const loadActive = async () => {
     setLoadingActive(true);
@@ -191,6 +214,28 @@ export default function StaffOperationsPage() {
     }
   };
 
+  // Tra cứu vé tháng (Staff) — lọc trạng thái/tầng/biển số, phân trang.
+  const loadPasses = async (f = passFilters, page = 1) => {
+    setPassLoading(true);
+    try {
+      const params = { page };
+      if (f.status) params.status = f.status;
+      if (f.floorId) params.floorId = f.floorId;
+      if (f.plate.trim()) params.plate = f.plate.trim();
+      const { data } = await staffPassesApi.list(params);
+      setPasses(data.data);
+    } catch (err) {
+      toast.error(err.response?.data?.error?.message || 'Không tải được danh sách vé tháng');
+    } finally {
+      setPassLoading(false);
+    }
+  };
+
+  const handlePassSearch = (e) => {
+    e.preventDefault();
+    loadPasses(passFilters, 1);
+  };
+
   // Tải danh mục + danh sách xe đang đỗ + đặt chỗ sắp tới + số chỗ trống khi mở trang.
   useEffect(() => {
     (async () => {
@@ -205,7 +250,9 @@ export default function StaffOperationsPage() {
       loadUpcoming();
       loadAvailability();
       loadIncidents();
+      loadPasses();
     })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Mở modal "Cho xe vào" cho 1 đơn đặt chỗ: nạp cổng VÀO (IN) cùng tầng đã đặt.
@@ -487,6 +534,7 @@ export default function StaffOperationsPage() {
           { id: 'reservation', label: `Đặt chỗ vào${upcoming.length ? ` (${upcoming.length})` : ''}` },
           { id: 'booth', label: 'Thu tiền mặt (ra)' },
           { id: 'incident', label: `Sự cố${incidents.length ? ` (${incidents.length})` : ''}` },
+          { id: 'passes', label: 'Vé tháng' },
         ].map((t) => (
           <button
             key={t.id}
@@ -904,6 +952,87 @@ export default function StaffOperationsPage() {
                 </tbody>
               </table>
             </div>
+          </Card>
+        </div>
+      )}
+
+      {/* TAB VÉ THÁNG — Staff tra cứu vé tháng theo trạng thái / tầng / biển số */}
+      {tab === 'passes' && (
+        <div className="space-y-4">
+          <Card>
+            <h2 className="mb-1 text-lg font-semibold text-slate-800">Tra cứu vé tháng</h2>
+            <p className="mb-4 text-sm text-slate-500">Xem vé tháng của khách theo trạng thái, tầng hoặc biển số.</p>
+            <form onSubmit={handlePassSearch} className="flex flex-wrap items-end gap-3">
+              <label className="text-sm">
+                <span className="mb-1 block font-medium text-slate-600">Trạng thái</span>
+                <select className={inputClass} value={passFilters.status} onChange={(e) => setPassFilters({ ...passFilters, status: e.target.value })}>
+                  <option value="">— Tất cả —</option>
+                  {PASS_STATUS_OPTIONS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                </select>
+              </label>
+              <label className="text-sm">
+                <span className="mb-1 block font-medium text-slate-600">Tầng</span>
+                <select className={inputClass} value={passFilters.floorId} onChange={(e) => setPassFilters({ ...passFilters, floorId: e.target.value })}>
+                  <option value="">— Tất cả —</option>
+                  {floors.map((f) => <option key={f.floor_id} value={f.floor_id}>{f.floor_code} — {f.label}</option>)}
+                </select>
+              </label>
+              <label className="text-sm">
+                <span className="mb-1 block font-medium text-slate-600">Biển số</span>
+                <input className={inputClass} value={passFilters.plate} onChange={(e) => setPassFilters({ ...passFilters, plate: e.target.value.toUpperCase() })} placeholder="51A-12345" />
+              </label>
+              <Button type="submit" className="brand-gradient border-0" loading={passLoading}>Lọc</Button>
+            </form>
+          </Card>
+
+          <Card padding={false}>
+            <div className="overflow-x-auto">
+              <table className="min-w-full text-sm">
+                <thead className="bg-slate-50 text-left text-slate-600">
+                  <tr>
+                    <th className="px-4 py-3 font-medium">Biển số</th>
+                    <th className="px-4 py-3 font-medium">Loại xe</th>
+                    <th className="px-4 py-3 font-medium">Tầng</th>
+                    <th className="px-4 py-3 font-medium">Hiệu lực</th>
+                    <th className="px-4 py-3 font-medium">Khung giờ</th>
+                    <th className="px-4 py-3 font-medium">Chủ vé</th>
+                    <th className="px-4 py-3 font-medium">Trạng thái</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {passLoading ? (
+                    <tr><td colSpan={7} className="px-4 py-10 text-center text-slate-400">Đang tải...</td></tr>
+                  ) : passes.items.length === 0 ? (
+                    <tr><td colSpan={7} className="px-4 py-10 text-center text-slate-400">Không có vé tháng nào khớp</td></tr>
+                  ) : (
+                    passes.items.map((p) => (
+                      <tr key={p.pass_id} className="border-t border-slate-100 hover:bg-slate-50/60">
+                        <td className="px-4 py-3 font-mono font-medium text-slate-800">{p.plate_number}</td>
+                        <td className="px-4 py-3">{p.vehicleType?.type_name || '—'}</td>
+                        <td className="px-4 py-3">{p.floor?.floor_code || '—'}</td>
+                        <td className="px-4 py-3 text-slate-600">{fmtPassDate(p.start_date)} → {fmtPassDate(p.end_date)}</td>
+                        <td className="px-4 py-3 text-slate-600">{hhmm(p.valid_from_time)}–{hhmm(p.valid_to_time)}</td>
+                        <td className="px-4 py-3 text-slate-600">{p.user?.full_name || p.user?.username || '—'}</td>
+                        <td className="px-4 py-3">
+                          <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${PASS_BADGE[p.status] || 'bg-slate-100 text-slate-600'}`}>
+                            {PASS_LABEL[p.status] || p.status}
+                          </span>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+            {passes.pages > 1 && (
+              <div className="flex items-center justify-between border-t border-slate-200 px-4 py-3 text-sm text-slate-500">
+                <span>Trang {passes.page}/{passes.pages} · {passes.total} vé</span>
+                <div className="flex gap-2">
+                  <Button variant="secondary" size="sm" onClick={() => loadPasses(passFilters, passes.page - 1)} disabled={passLoading || passes.page <= 1}>← Trước</Button>
+                  <Button variant="secondary" size="sm" onClick={() => loadPasses(passFilters, passes.page + 1)} disabled={passLoading || passes.page >= passes.pages}>Sau →</Button>
+                </div>
+              </div>
+            )}
           </Card>
         </div>
       )}
