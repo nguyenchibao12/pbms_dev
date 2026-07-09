@@ -262,9 +262,20 @@ export const loginWithGoogle = async ({ idToken }) => {
     if (!user.is_active) {
       throw new AppError('Tài khoản đã bị vô hiệu hóa', 403, 'FORBIDDEN');
     }
-    // Liên kết google_id nếu trước đó là tài khoản local cùng email
+    // Liên kết google_id nếu trước đó là tài khoản local cùng email.
     if (!user.google_id) {
-      await user.update({ google_id: profile.sub });
+      const updates = { google_id: profile.sub };
+      // Chống pre-account-takeover: tài khoản local cùng email nhưng CHƯA xác minh
+      // có thể do người khác đăng ký hờ để cài sẵn mật khẩu. Google đã xác minh
+      // người đăng nhập là chủ email → vô hiệu mật khẩu cũ + coi email đã xác minh
+      // (chủ thật vẫn đặt lại được mật khẩu qua quên-mật-khẩu nếu muốn dùng local).
+      if (!user.email_verified) {
+        updates.password_hash = await bcrypt.hash(crypto.randomBytes(24).toString('hex'), 10);
+        updates.email_verified = true;
+        updates.verification_token_hash = null;
+        updates.verification_token_expires = null;
+      }
+      await user.update(updates);
     }
   } else {
     const userRole = await getUserRole();
