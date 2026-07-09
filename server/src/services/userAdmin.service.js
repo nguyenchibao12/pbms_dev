@@ -33,13 +33,34 @@ export const listUsers = async () => {
 
 const resolveRole = async (roleId) => {
   const role = await Role.findByPk(roleId);
-  if (!role) throw new AppError('Role not found', 404, 'NOT_FOUND');
+  if (!role) throw new AppError('Vai trò không tồn tại', 404, 'NOT_FOUND');
   return role;
 };
 
+// Chặn trùng username/email/SĐT (unique ở DB) → trả 409 rõ ràng thay vì để Sequelize ném 500.
+// excludeId: bỏ qua chính user đang sửa.
+const assertUniqueFields = async ({ username, email, phone }, excludeId = null) => {
+  const notSelf = (row) => row && row.user_id !== excludeId;
+  if (username) {
+    const dup = await UserAccount.unscoped().findOne({ where: { username } });
+    if (notSelf(dup)) throw new AppError('Tên đăng nhập đã tồn tại', 409, 'CONFLICT');
+  }
+  if (email) {
+    const dup = await UserAccount.unscoped().findOne({ where: { email } });
+    if (notSelf(dup)) throw new AppError('Email đã được dùng cho tài khoản khác', 409, 'CONFLICT');
+  }
+  if (phone) {
+    const dup = await UserAccount.unscoped().findOne({ where: { phone } });
+    if (notSelf(dup)) throw new AppError('Số điện thoại đã được dùng cho tài khoản khác', 409, 'CONFLICT');
+  }
+};
+
 export const createUser = async (adminId, data) => {
-  const existing = await UserAccount.unscoped().findOne({ where: { username: data.username } });
-  if (existing) throw new AppError('Username already exists', 409, 'CONFLICT');
+  await assertUniqueFields({
+    username: data.username,
+    email: data.email || null,
+    phone: data.phone || null,
+  });
 
   const role = await resolveRole(data.roleId);
   const passwordHash = await bcrypt.hash(data.password, 10);
@@ -65,16 +86,25 @@ export const createUser = async (adminId, data) => {
 
 export const updateUser = async (adminId, userId, data) => {
   const user = await UserAccount.findByPk(userId, { include: userIncludes });
-  if (!user) throw new AppError('User not found', 404, 'NOT_FOUND');
+  if (!user) throw new AppError('Không tìm thấy người dùng', 404, 'NOT_FOUND');
 
   if (userId === adminId) {
     if (data.isActive === false) {
-      throw new AppError('Cannot deactivate your own account', 409, 'CONFLICT');
+      throw new AppError('Không thể tự khóa tài khoản của mình', 409, 'CONFLICT');
     }
     if (data.roleId && data.roleId !== user.role_id) {
-      throw new AppError('Cannot change your own role', 409, 'CONFLICT');
+      throw new AppError('Không thể tự đổi vai trò của mình', 409, 'CONFLICT');
     }
   }
+
+  // Chặn trùng email/SĐT với tài khoản KHÁC (nếu có thay đổi).
+  await assertUniqueFields(
+    {
+      email: data.email !== undefined ? data.email || null : null,
+      phone: data.phone !== undefined ? data.phone || null : null,
+    },
+    userId,
+  );
 
   const patch = {};
   if (data.fullName != null) patch.full_name = data.fullName;
@@ -93,9 +123,13 @@ export const updateUser = async (adminId, userId, data) => {
 
   await user.update(patch);
 
+  const changed = Object.keys(patch);
   await logAdminAction(adminId, 'user.update', {
     targetUserId: userId,
-    fields: Object.keys(patch).filter((k) => k !== 'password_hash'),
+    targetUsername: user.username,
+    fields: changed.filter((k) => k !== 'password_hash'),
+    passwordChanged: changed.includes('password_hash'),
+    ...(patch.is_active !== undefined ? { isActive: patch.is_active } : {}),
   });
 
   return formatUser(await UserAccount.findByPk(userId, { include: userIncludes }));

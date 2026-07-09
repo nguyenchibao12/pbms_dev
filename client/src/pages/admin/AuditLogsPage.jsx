@@ -9,21 +9,51 @@ import Button from '../../components/ui/Button';
 
 const emptyFilters = { action: '', actorId: '', from: '', to: '' };
 
-// details là chuỗi JSON BE lưu lại — hiển thị gọn 1 dòng, full khi hover.
-const formatDetails = (raw) => {
-  if (!raw) return '—';
-  try {
-    const obj = JSON.parse(raw);
-    if (obj && typeof obj === 'object') {
-      const s = Object.entries(obj)
-        .map(([k, v]) => `${k}=${typeof v === 'object' ? JSON.stringify(v) : v}`)
-        .join(', ');
-      return s || '—';
-    }
-    return String(obj);
-  } catch {
-    return String(raw); // không phải JSON hợp lệ -> hiện thô
+// Nhãn hành động thân thiện (thay mã kỹ thuật user.create...).
+const ACTION_LABEL = {
+  'user.create': 'Tạo tài khoản',
+  'user.update': 'Cập nhật tài khoản',
+  RESERVATION_REFUND_OWED: 'Ghi nợ hoàn tiền đặt chỗ',
+};
+const actionText = (a) => ACTION_LABEL[a] || a;
+
+// Danh sách hành động cho ô lọc (dropdown thay vì gõ mã).
+const ACTION_OPTIONS = [
+  ['', 'Tất cả hành động'],
+  ['user.create', 'Tạo tài khoản'],
+  ['user.update', 'Cập nhật tài khoản'],
+  ['RESERVATION_REFUND_OWED', 'Ghi nợ hoàn tiền đặt chỗ'],
+];
+
+// Nhãn tiếng Việt cho tên trường DB (dùng mô tả "cập nhật những gì").
+const FIELD_LABEL = {
+  is_active: 'trạng thái hoạt động',
+  role_id: 'vai trò',
+  full_name: 'họ tên',
+  email: 'email',
+  phone: 'số điện thoại',
+};
+
+// Mô tả chi tiết thân thiện từ JSON BE lưu — thay cho "targetUserId=5, fields=[...]".
+const describe = (action, raw) => {
+  let d = {};
+  try { d = raw ? JSON.parse(raw) : {}; } catch { return String(raw || '—'); }
+  const who = d.targetUsername || d.username || (d.targetUserId ? `#${d.targetUserId}` : '—');
+  if (action === 'user.create') {
+    return `Tạo tài khoản "${who}" — vai trò ${d.role || '—'}`;
   }
+  if (action === 'user.update') {
+    // Ưu tiên diễn đạt khóa/mở nếu chỉ đổi trạng thái.
+    if (d.isActive !== undefined && (d.fields || []).length === 1 && d.fields[0] === 'is_active' && !d.passwordChanged) {
+      return `${d.isActive ? 'Mở khóa' : 'Khóa'} tài khoản "${who}"`;
+    }
+    const parts = (d.fields || []).map((f) => FIELD_LABEL[f] || f);
+    if (d.passwordChanged) parts.push('mật khẩu');
+    return `Cập nhật "${who}": ${parts.length ? parts.join(', ') : '—'}`;
+  }
+  // Fallback: hiện gọn key=value.
+  const s = Object.entries(d).map(([k, v]) => `${k}=${typeof v === 'object' ? JSON.stringify(v) : v}`).join(', ');
+  return s || '—';
 };
 
 export default function AuditLogsPage() {
@@ -87,12 +117,15 @@ export default function AuditLogsPage() {
       <form onSubmit={applyFilters} className="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-5 lg:items-end">
         <label className="text-sm">
           <span className="mb-1 block font-medium text-slate-600">Hành động</span>
-          <input
+          <select
             className={inputClass}
             value={filters.action}
             onChange={(e) => setFilters({ ...filters, action: e.target.value })}
-            placeholder="vd: user.create"
-          />
+          >
+            {ACTION_OPTIONS.map(([v, label]) => (
+              <option key={v} value={v}>{label}</option>
+            ))}
+          </select>
         </label>
         <label className="text-sm">
           <span className="mb-1 block font-medium text-slate-600">Người thực hiện (ID)</span>
@@ -147,11 +180,11 @@ export default function AuditLogsPage() {
                     <span className="ml-1 text-xs text-slate-400">#{log.actor_id}</span>
                   </td>
                   <td className="px-4 py-3">
-                    <span className="rounded-md bg-brand-light px-2 py-0.5 font-mono text-xs text-brand">{log.action}</span>
+                    <span className="rounded-md bg-brand-light px-2 py-0.5 text-xs font-medium text-brand">{actionText(log.action)}</span>
                   </td>
                   <td className="px-4 py-3 text-slate-600">
-                    <span className="block max-w-md truncate font-mono text-xs" title={formatDetails(log.details)}>
-                      {formatDetails(log.details)}
+                    <span className="block max-w-md truncate text-xs" title={describe(log.action, log.details)}>
+                      {describe(log.action, log.details)}
                     </span>
                   </td>
                 </tr>
