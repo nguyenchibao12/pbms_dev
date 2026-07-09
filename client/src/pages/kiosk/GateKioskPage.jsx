@@ -158,7 +158,13 @@ export default function GateKioskPage() {
         scheduleReset(d.slotId ? 9000 : 5000);
       }
     } catch (err) {
-      setResult({ ui: 'error', message: err.response?.data?.error?.message || 'Mã không hợp lệ hoặc lỗi hệ thống' });
+      const e = err.response?.data?.error;
+      // Vé tháng quét ngoài khung giờ -> hướng khách qua quầy. Các lỗi vé khác BE đã trả
+      // error.message tiếng Việt sẵn (vé không active/ngoài hạn...) nên hiện nguyên văn.
+      const message = e?.code === 'PASS_OUTSIDE_WINDOW'
+        ? 'Vé tháng ngoài khung giờ — vui lòng qua quầy gặp nhân viên.'
+        : e?.message || 'Mã không hợp lệ hoặc lỗi hệ thống';
+      setResult({ ui: 'error', message });
       scheduleReset(6000);
     } finally {
       setQr(''); // clear ô input sau mỗi lượt
