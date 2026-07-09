@@ -6,9 +6,11 @@ import Card from '../components/ui/Card';
 import Input from '../components/ui/Input';
 import Field, { ErrorAlert } from '../components/ui/Field';
 import Button from '../components/ui/Button';
+import GoogleLoginButton from '../components/GoogleLoginButton';
+import { toast } from '../components/ui/toast';
 
 export default function LoginPage() {
-  const { login, isAuthenticated, user } = useAuth();
+  const { login, loginWithGoogle, isAuthenticated, user } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const requestedPath = location.state?.from;
@@ -39,6 +41,29 @@ export default function LoginPage() {
       navigate(target, { replace: true, state: {} });
     } catch (err) {
       setError(err.response?.data?.error?.message || 'Đăng nhập thất bại');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  // Nút Google trả về ID token -> BE verify -> nhận JWT PBMS, redirect theo vai trò như login thường.
+  const handleGoogleCredential = async (idToken) => {
+    if (!idToken) return;
+    setError('');
+    setSubmitting(true);
+    try {
+      const result = await loginWithGoogle(idToken);
+      if (result.isNew) toast.success('Chào mừng bạn đến PBMS!');
+      const roleName = getRoleName(result.user);
+      navigate(resolveRedirectAfterLogin(roleName, requestedPath), { replace: true, state: {} });
+    } catch (err) {
+      const code = err.response?.data?.error?.code;
+      // Token giả/hết hạn/sai client ID -> message BE quá kỹ thuật, hiện câu thân thiện.
+      setError(
+        code === 'GOOGLE_TOKEN_INVALID'
+          ? 'Đăng nhập Google thất bại — vui lòng thử lại.'
+          : err.response?.data?.error?.message || 'Đăng nhập Google thất bại.',
+      );
     } finally {
       setSubmitting(false);
     }
@@ -95,6 +120,14 @@ export default function LoginPage() {
               Đăng nhập
             </Button>
           </form>
+
+          {/* Google là đường đăng nhập THÊM — form trên vẫn là đường dự phòng cho tài khoản local. */}
+          <div className="my-5 flex items-center gap-3 text-xs text-slate-400">
+            <span className="h-px flex-1 bg-slate-200" />
+            hoặc
+            <span className="h-px flex-1 bg-slate-200" />
+          </div>
+          <GoogleLoginButton onCredential={handleGoogleCredential} className="flex justify-center" />
         </Card>
 
         <p className="mt-4 text-center text-sm text-slate-500">

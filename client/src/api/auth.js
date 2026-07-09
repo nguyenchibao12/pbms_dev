@@ -7,6 +7,10 @@ export const login = (username, password) =>
 // Đăng ký tài khoản khách hàng mới.
 export const register = (data) => api.post('/auth/register', data);
 
+// Đăng nhập bằng Google: gửi ID token lấy từ nút Google Sign-In, BE tự verify.
+// Trả về cùng shape với /auth/login, kèm isNew (true = tài khoản vừa tạo từ Google).
+export const googleLogin = (idToken) => api.post('/auth/google', { idToken });
+
 // Lấy thông tin người dùng hiện tại từ token (dùng để khôi phục phiên).
 export const getMe = () => api.get('/auth/me');
 
