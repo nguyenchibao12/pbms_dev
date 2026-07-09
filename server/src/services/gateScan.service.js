@@ -192,14 +192,19 @@ const floorExit = async (ref, gate) => {
 };
 
 // CỔNG OUT TÒA: checkout + tính phí (tái dùng initiateSessionCheckout).
-// Yêu cầu xe đã RỜI TẦNG ('left_floor') — không cho ra cổng tòa khi còn đang trên tầng
-// (chưa quét cổng tầng RA) hoặc chưa từng lên tầng.
+// Cho ra khi: 'left_floor' (rời tầng bình thường) HOẶC 'in_building' (vào tòa nhưng ĐỔI Ý
+// ra sớm, chưa lên tầng — không bắt lái lên tầng rồi vòng xuống).
+// CHẶN: 'on_floor' (đang trên tầng → phải quét CỔNG TẦNG RA trước khi xuống) và
+//       'checked_in' (chưa thực sự vào tòa).
 const buildingExit = async (ref, gate) => {
   const session = await findActiveSession(ref);
   if (!session) throw new AppError('Không có phiên đang gửi cho mã QR này', 404, 'NOT_FOUND');
-  if (session.gate_stage !== 'left_floor') {
+  if (session.gate_stage === 'checked_in') {
+    throw new AppError('Xe chưa vào tòa — chưa thể ra cổng tòa.', 409, 'NOT_IN_BUILDING');
+  }
+  if (session.gate_stage === 'on_floor') {
     throw new AppError(
-      'Xe chưa rời tầng — vui lòng quét CỔNG TẦNG RA trước khi ra cổng tòa.',
+      'Xe đang trên tầng — vui lòng quét CỔNG TẦNG RA trước khi ra cổng tòa.',
       409,
       'NOT_LEFT_FLOOR',
     );
