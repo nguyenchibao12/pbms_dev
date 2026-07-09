@@ -3,10 +3,11 @@ import { useAuth } from '../context/AuthContext';
 import { useLogout } from '../hooks/useLogout';
 import { getRoleName, roleLabels } from '../lib/auth';
 
-// Các tab khu vực Khách hàng (User) — đặt chỗ + theo dõi đơn của mình.
+// Các tab khu vực Khách hàng (User) — đặt chỗ + vé tháng, theo dõi đơn/vé của mình.
 const tabs = [
   { to: '/reservations', label: 'Đơn của tôi', end: true },
   { to: '/reservations/new', label: 'Đặt chỗ mới' },
+  { to: '/monthly-pass', label: 'Vé tháng của tôi', end: true },
 ];
 
 export default function UserLayout() {
