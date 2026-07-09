@@ -35,6 +35,7 @@ import GateKioskPage from './pages/kiosk/GateKioskPage';
 import PaymentSuccessPage from './pages/user/PaymentSuccessPage';
 import PaymentFailedPage from './pages/user/PaymentFailedPage';
 import MyMonthlyPassesPage from './pages/user/MyMonthlyPassesPage';
+import BuyMonthlyPassPage from './pages/user/BuyMonthlyPassPage';
 import PassPaymentSuccessPage from './pages/user/PassPaymentSuccessPage';
 import PassPaymentFailedPage from './pages/user/PassPaymentFailedPage';
 
@@ -109,6 +110,7 @@ export default function App() {
             {/* Vé tháng — route riêng /monthly-pass (BE cố định returnUrl PayOS về đây) */}
             <Route path="/monthly-pass" element={<UserLayout />}>
               <Route index element={<MyMonthlyPassesPage />} />
+              <Route path="new" element={<BuyMonthlyPassPage />} />
               <Route path="payment/success" element={<PassPaymentSuccessPage />} />
               <Route path="payment/failed" element={<PassPaymentFailedPage />} />
             </Route>
