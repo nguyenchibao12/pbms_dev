@@ -49,6 +49,13 @@ app.get('/', (_req, res) => {
   res.json({ success: true, data: { name: 'PBMS API', version: '1.0.0' }, message: 'Welcome' });
 });
 
+// Trình duyệt tự xin favicon khi mở các trang HTML do BE phục vụ (verify-email,
+// google-test, swagger) — trả 204 để log không bị rác lỗi 404 NOT_FOUND.
+app.get('/favicon.ico', (_req, res) => {
+  // #swagger.ignore = true
+  res.status(204).end();
+});
+
 app.use('/api/health', healthRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/vehicle-types', vehicleTypeRoutes);

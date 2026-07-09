@@ -37,6 +37,12 @@ router.post('/google',
      #swagger.requestBody = { required: true, content: { 'application/json': { example: { idToken: '<google_id_token>' } } } } */
   authRateLimiter, googleValidator, validate, authController.googleLogin);
 
+router.get('/google-test',
+  /* #swagger.tags = ['Auth']
+     #swagger.summary = 'Trang test đăng nhập Google (chỉ dev — 404 ở production)'
+     #swagger.security = [] */
+  authController.googleTestPage); // mở bằng trình duyệt để lấy ID token thật + gọi thử API
+
 router.post('/forgot-password',
   /* #swagger.tags = ['Auth']
      #swagger.summary = 'Quên mật khẩu (gửi email link reset)'
