@@ -34,6 +34,7 @@ import ReservePage from './pages/user/ReservePage';
 import GateKioskPage from './pages/kiosk/GateKioskPage';
 import PaymentSuccessPage from './pages/user/PaymentSuccessPage';
 import PaymentFailedPage from './pages/user/PaymentFailedPage';
+import ProfilePage from './pages/user/ProfilePage';
 
 export default function App() {
   return (
@@ -102,6 +103,10 @@ export default function App() {
               <Route path="new" element={<ReservePage />} />
               <Route path="payment/success" element={<PaymentSuccessPage />} />
               <Route path="payment/failed" element={<PaymentFailedPage />} />
+            </Route>
+            {/* Hồ sơ cá nhân — cập nhật STK nhận hoàn tiền (BE cố định link email nhắc về /profile) */}
+            <Route path="/profile" element={<UserLayout />}>
+              <Route index element={<ProfilePage />} />
             </Route>
           </Route>
         </Routes>
