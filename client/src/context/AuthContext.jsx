@@ -106,9 +106,12 @@ export const AuthProvider = ({ children }) => {
     clearSession();
   }, [clearSession]);
 
+  // Cập nhật user trong context sau khi PATCH /auth/me (nhận lại user đầy đủ từ BE).
+  const updateUser = useCallback((nextUser) => setUser(nextUser), []);
+
   return (
     <AuthContext.Provider
-      value={{ user, loading, login, register, logout, isAuthenticated: !!user }}
+      value={{ user, loading, login, register, logout, updateUser, isAuthenticated: !!user }}
     >
       {children}
     </AuthContext.Provider>
