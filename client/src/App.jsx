@@ -38,6 +38,7 @@ import MyMonthlyPassesPage from './pages/user/MyMonthlyPassesPage';
 import BuyMonthlyPassPage from './pages/user/BuyMonthlyPassPage';
 import PassPaymentSuccessPage from './pages/user/PassPaymentSuccessPage';
 import PassPaymentFailedPage from './pages/user/PassPaymentFailedPage';
+import ProfilePage from './pages/user/ProfilePage';
 
 export default function App() {
   return (
@@ -113,6 +114,10 @@ export default function App() {
               <Route path="new" element={<BuyMonthlyPassPage />} />
               <Route path="payment/success" element={<PassPaymentSuccessPage />} />
               <Route path="payment/failed" element={<PassPaymentFailedPage />} />
+            </Route>
+            {/* Hồ sơ cá nhân — cập nhật STK nhận hoàn tiền (BE cố định link email nhắc về /profile) */}
+            <Route path="/profile" element={<UserLayout />}>
+              <Route index element={<ProfilePage />} />
             </Route>
           </Route>
         </Routes>
