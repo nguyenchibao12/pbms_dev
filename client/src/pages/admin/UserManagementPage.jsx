@@ -83,16 +83,23 @@ export default function UserManagementPage() {
     setModalOpen(true);
   };
 
+  const PHONE_RE = /^0\d{9}$/; // di động VN: 10 số, bắt đầu 0
+  const USERNAME_RE = /^[a-zA-Z0-9._-]+$/;
+
   const validate = () => {
     const e = {};
     if (mode === 'create') {
       if (form.username.trim().length < 3) e.username = 'Tối thiểu 3 ký tự';
+      else if (!USERNAME_RE.test(form.username.trim())) e.username = 'Chỉ gồm chữ, số và . _ -';
       if (form.password.length < 6) e.password = 'Tối thiểu 6 ký tự';
     } else if (form.password && form.password.length < 6) {
       e.password = 'Tối thiểu 6 ký tự';
     }
     if (!form.fullName.trim()) e.fullName = 'Bắt buộc';
     if (!form.roleId) e.roleId = 'Chọn vai trò';
+    // SĐT: BẮT BUỘC + đúng định dạng.
+    if (!form.phone.trim()) e.phone = 'Bắt buộc';
+    else if (!PHONE_RE.test(form.phone.trim())) e.phone = 'SĐT không hợp lệ (VD: 0901234567)';
     if (form.email.trim() && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(form.email.trim())) e.email = 'Email không hợp lệ';
     return e;
   };
@@ -111,8 +118,8 @@ export default function UserManagementPage() {
           password: form.password,
           fullName: form.fullName.trim(),
           roleId: Number(form.roleId),
+          phone: form.phone.trim(), // bắt buộc
           ...(form.email.trim() ? { email: form.email.trim() } : {}),
-          ...(form.phone.trim() ? { phone: form.phone.trim() } : {}),
         });
         toast.success('Đã tạo người dùng');
       } else {
@@ -256,8 +263,8 @@ export default function UserManagementPage() {
           <Field label="Email" error={fieldErrors.email} hint="Tùy chọn">
             <input type="email" className={inputClass} value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="a@gmail.com" />
           </Field>
-          <Field label="Số điện thoại" hint="Tùy chọn">
-            <input className={inputClass} value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
+          <Field label="Số điện thoại" required error={fieldErrors.phone} hint="VD: 0901234567">
+            <input className={inputClass} value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} placeholder="0901234567" required />
           </Field>
           <Field label="Vai trò" required error={fieldErrors.roleId}>
             <select
