@@ -8,6 +8,7 @@ const tabs = [
   { to: '/admin', label: 'Tổng quan', end: true },
   { to: '/admin/users', label: 'Người dùng' },
   { to: '/admin/incidents', label: 'Sự cố' },
+  { to: '/admin/refunds', label: 'Hoàn tiền' },
   { to: '/admin/audit-logs', label: 'Nhật ký' },
 ];
 
