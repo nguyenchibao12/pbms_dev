@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useRef, useState, useCallback } from 'react';
-import { getMe, login as loginApi, register as registerApi } from '../api/auth';
+import { getMe, login as loginApi, register as registerApi, googleLogin as googleLoginApi } from '../api/auth';
 import { setOnUnauthorized } from '../api/axios';
 import { toast } from '../components/ui/toast';
 
@@ -94,6 +94,16 @@ export const AuthProvider = ({ children }) => {
     return data.data;
   };
 
+  // Đăng nhập Google: BE verify idToken rồi trả JWT PBMS y như login thường.
+  // data.data = { user, token, isNew } — isNew = tài khoản vừa được tạo từ Google.
+  const loginWithGoogle = async (idToken) => {
+    clearSession();
+    const { data } = await googleLoginApi(idToken);
+    localStorage.setItem('token', data.data.token);
+    setUser(data.data.user);
+    return data.data;
+  };
+
   const register = async (payload) => {
     clearSession();
     const { data } = await registerApi(payload);
@@ -111,7 +121,7 @@ export const AuthProvider = ({ children }) => {
 
   return (
     <AuthContext.Provider
-      value={{ user, loading, login, register, logout, updateUser, isAuthenticated: !!user }}
+      value={{ user, loading, login, loginWithGoogle, register, logout, updateUser, isAuthenticated: !!user }}
     >
       {children}
     </AuthContext.Provider>
