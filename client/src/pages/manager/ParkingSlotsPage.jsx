@@ -31,7 +31,6 @@ const emptyForm = {
   slotCode: '',
   slotType: '',
   distanceToGate: '',
-  distanceToElevator: '',
   status: 'available',
 };
 
@@ -139,7 +138,6 @@ export default function ParkingSlotsPage() {
       slotCode: item.slot_code,
       slotType: item.slot_type || '',
       distanceToGate: item.distance_to_gate != null ? String(item.distance_to_gate) : '',
-      distanceToElevator: item.distance_to_elevator != null ? String(item.distance_to_elevator) : '',
       status: item.status,
     });
     setFieldErrors({});
@@ -159,7 +157,6 @@ export default function ParkingSlotsPage() {
         zoneId: Number(form.zoneId),
         slotType: form.slotType.trim() || null,
         distanceToGate: form.distanceToGate !== '' ? Number(form.distanceToGate) : null,
-        distanceToElevator: form.distanceToElevator !== '' ? Number(form.distanceToElevator) : null,
       };
       // Chỉ gửi status khi Manager được phép đặt/đổi (tránh backend từ chối reserved/occupied).
       if (statusEditable) payload.status = form.status;
@@ -289,16 +286,15 @@ export default function ParkingSlotsPage() {
               <th className="px-4 py-3">Tầng</th>
               <th className="px-4 py-3">Loại chỗ</th>
               <th className="px-4 py-3">Cách cổng (m)</th>
-              <th className="px-4 py-3">Cách thang máy (m)</th>
               <th className="px-4 py-3">Trạng thái</th>
               <th className="px-4 py-3 text-right">Thao tác</th>
             </tr>
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={8} className="px-4 py-8 text-center text-slate-400">Đang tải...</td></tr>
+              <tr><td colSpan={7} className="px-4 py-8 text-center text-slate-400">Đang tải...</td></tr>
             ) : items.length === 0 ? (
-              <tr><td colSpan={8} className="px-4 py-8 text-center text-slate-400">Chưa có chỗ đỗ</td></tr>
+              <tr><td colSpan={7} className="px-4 py-8 text-center text-slate-400">Chưa có chỗ đỗ</td></tr>
             ) : items.map((item) => (
               <tr key={item.slot_id} className="border-b border-slate-100">
                 <td className="px-4 py-3 font-medium">{item.slot_code}</td>
@@ -306,7 +302,6 @@ export default function ParkingSlotsPage() {
                 <td className="px-4 py-3">{item.zone?.floor?.floor_code || '—'}</td>
                 <td className="px-4 py-3">{item.slot_type || '—'}</td>
                 <td className="px-4 py-3">{item.distance_to_gate ?? '—'}</td>
-                <td className="px-4 py-3">{item.distance_to_elevator ?? '—'}</td>
                 <td className="px-4 py-3">
                   {MANUAL_STATUSES.includes(item.status) ? (
                     <select
@@ -359,9 +354,6 @@ export default function ParkingSlotsPage() {
           </Field>
           <Field label="Khoảng cách tới cổng (m)" hint="Tùy chọn — dùng cho AI gợi ý slot" error={fieldErrors.distanceToGate}>
             <input type="number" min="0" step="0.01" className={inputClass} value={form.distanceToGate} onChange={(e) => setForm({ ...form, distanceToGate: e.target.value })} />
-          </Field>
-          <Field label="Khoảng cách tới thang máy (m)" hint="Tùy chọn" error={fieldErrors.distanceToElevator}>
-            <input type="number" min="0" step="0.01" className={inputClass} value={form.distanceToElevator} onChange={(e) => setForm({ ...form, distanceToElevator: e.target.value })} />
           </Field>
           <Field
             label="Trạng thái"

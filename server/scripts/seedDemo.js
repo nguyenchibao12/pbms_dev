@@ -28,6 +28,7 @@ import {
   PricingRule,
   Reservation,
   ParkingSession,
+  Payment,
 } from '../src/models/index.js';
 import { ensureRoles } from '../src/utils/ensureRoles.js';
 import { ROLES } from '../src/middleware/rbac.js';
@@ -37,7 +38,21 @@ import { normalizePlateVN } from '../src/utils/plateVN.js';
 dotenv.config();
 
 const SLOTS_PER_ZONE = 8;
+const BOOKING_FEE = 20000; // khớp default booking_fee trong utils/settings.js
 const hash = (pw) => bcrypt.hash(pw, 10);
+
+// Đơn confirmed NGOÀI ĐỜI luôn đi kèm payment success (xác nhận = đã trả phí giữ chỗ).
+// Seed thiếu payment làm luồng HỦY + HOÀN TIỀN demo sai (không có gì để hoàn → FE báo nhầm).
+let seedOrderCode = Math.floor(Date.now() / 1000) * 1000;
+const paySuccess = (reservationId) =>
+  Payment.create({
+    reservation_id: reservationId,
+    order_code: (seedOrderCode += 1),
+    amount: BOOKING_FEE,
+    status: 'success',
+    method: 'payos',
+    paid_at: new Date(),
+  });
 const pad2 = (n) => String(n).padStart(2, '0');
 
 const run = async () => {
@@ -215,6 +230,7 @@ const run = async () => {
     reservation_type: 'standard',
     qr_token: resQr,
   });
+  await paySuccess(reservation.reservation_id);
 
   // --- 1 khách ĐẶT CHỖ ĐANG ĐỖ (checked_in + phiên active) — test luồng check-OUT ---
   const f1InGate = await Gate.findOne({ where: { gate_code: 'F1-IN' } });
@@ -239,6 +255,7 @@ const run = async () => {
     reservation_type: 'standard',
     qr_token: inResQr,
   });
+  await paySuccess(inReservation.reservation_id);
   const inSessQr = generateQrToken();
   const inSession = await ParkingSession.create({
     user_id: users.user.user_id,
@@ -307,6 +324,7 @@ const run = async () => {
       reservation_type: w.shift,
       qr_token: generateQrToken(),
     });
+    await paySuccess(r.reservation_id);
     multiReservations.push({ r, w });
   }
 
