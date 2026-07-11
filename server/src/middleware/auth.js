@@ -1,6 +1,7 @@
 import { verifyToken } from '../utils/jwt.js';
 import { AppError } from '../utils/helpers.js';
 import { UserAccount } from '../models/index.js';
+import { assertEmailVerified } from '../services/auth.service.js';
 
 export const auth = async (req, _res, next) => {
   try {
@@ -19,6 +20,8 @@ export const auth = async (req, _res, next) => {
     if (!user || !user.is_active) {
       throw new AppError('Invalid or inactive account', 401, 'UNAUTHORIZED');
     }
+    // Chặn cả token phát TRƯỚC khi siết (JWT sống 30 ngày) — không chỉ chặn ở cửa login.
+    assertEmailVerified(user);
 
     req.user = user;
     next();

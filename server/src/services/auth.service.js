@@ -28,6 +28,21 @@ const formatUser = (user) => ({
 
 const sha256 = (value) => crypto.createHash('sha256').update(value).digest('hex');
 
+/**
+ * Tài khoản LOCAL bắt buộc xác minh email mới được dùng hệ thống.
+ * Tài khoản Google không đi qua đây (Google đã xác minh email — email_verified = true khi tạo).
+ * Dùng chung cho login VÀ middleware auth (token cũ phát trước khi siết cũng bị chặn).
+ */
+export const assertEmailVerified = (user) => {
+  if (user.auth_provider === 'local' && !user.email_verified) {
+    throw new AppError(
+      'Email chưa được xác minh. Kiểm tra hộp thư hoặc yêu cầu gửi lại liên kết xác minh.',
+      403,
+      'EMAIL_NOT_VERIFIED',
+    );
+  }
+};
+
 const getUserRole = async () => {
   const userRole = await Role.findOne({ where: { role_name: ROLES.USER } });
   if (!userRole) {
@@ -79,6 +94,15 @@ export const register = async ({ username, password, fullName, email, phone }) =
   if (!normalizedEmail) {
     throw new AppError('Email là bắt buộc', 400, 'VALIDATION_ERROR');
   }
+  // Xác minh email nay là BẮT BUỘC → không có kênh gửi mail thì tài khoản tạo ra sẽ không bao
+  // giờ đăng nhập được. Thà chặn ngay còn hơn đẻ ra tài khoản chết.
+  if (!isMailConfigured()) {
+    throw new AppError(
+      'Hệ thống gửi email chưa được cấu hình — tạm thời không thể đăng ký. Vui lòng thử lại sau.',
+      503,
+      'MAIL_NOT_CONFIGURED',
+    );
+  }
 
   const existing = await UserAccount.unscoped().findOne({
     where: { [Op.or]: [{ username }, { email: normalizedEmail }] },
@@ -104,8 +128,13 @@ export const register = async ({ username, password, fullName, email, phone }) =
 
   await issueVerificationEmail(user);
 
-  const token = signToken({ userId: user.user_id, roleName: ROLES.USER });
-  return { user: formatUser(await withRole(user.user_id)), token };
+  // KHÔNG phát JWT ở đây: phát token lúc này thì user chưa xác minh vẫn gọi được API,
+  // vô hiệu hóa toàn bộ việc chặn login bên dưới. Phải verify rồi đăng nhập.
+  return {
+    user: formatUser(await withRole(user.user_id)),
+    emailVerificationSent: true,
+    message: 'Đăng ký thành công. Mở email và bấm liên kết xác minh trước khi đăng nhập.',
+  };
 };
 
 export const login = async ({ username, password }) => {
@@ -122,6 +151,10 @@ export const login = async ({ username, password }) => {
   if (!valid) {
     throw new AppError('Invalid username or password', 401, 'UNAUTHORIZED');
   }
+
+  // Chặn đăng nhập khi chưa xác minh email. Đặt SAU khi so mật khẩu: người ngoài đoán mò
+  // username sẽ luôn nhận 401 giống nhau, chỉ chủ tài khoản (biết mật khẩu) mới thấy 403 này.
+  assertEmailVerified(user);
 
   const token = signToken({ userId: user.user_id, roleName: user.role.role_name });
   return { user: formatUser(user), token };
@@ -210,23 +243,29 @@ export const resetPassword = async ({ email, token, newPassword }) => {
 export const verifyEmail = async ({ email, token }) => {
   const normalizedEmail = (email || '').trim().toLowerCase();
   const user = await UserAccount.unscoped().findOne({ where: { email: normalizedEmail } });
+  const tokenMatches =
+    !!user && !!token && !!user.verification_token_hash &&
+    user.verification_token_hash === sha256(token);
 
+  // Bấm LẠI link cũ sau khi đã xác minh → vẫn báo thành công (không bắt lỗi vô cớ), nhưng
+  // phải đúng token. Trả "đã xác minh" cho email bất kỳ sẽ thành kênh dò email nào có thật.
   if (user && user.email_verified) {
-    return { message: 'Email đã được xác minh.' };
+    if (tokenMatches) return { message: 'Email đã được xác minh.' };
+    throw new AppError('Liên kết xác minh không hợp lệ hoặc đã hết hạn', 400, 'VERIFY_TOKEN_INVALID');
   }
+
   if (
-    !user ||
-    !user.verification_token_hash ||
+    !tokenMatches ||
     !user.verification_token_expires ||
-    new Date(user.verification_token_expires) < new Date() ||
-    user.verification_token_hash !== sha256(token)
+    new Date(user.verification_token_expires) < new Date()
   ) {
     throw new AppError('Liên kết xác minh không hợp lệ hoặc đã hết hạn', 400, 'VERIFY_TOKEN_INVALID');
   }
 
+  // Giữ lại hash (KHÔNG null) để lần bấm lại vẫn khớp token ở nhánh trên; token đã dùng xong
+  // không còn tác dụng gì vì email_verified = true. Xóa hạn để nó không còn "sống".
   await user.update({
     email_verified: true,
-    verification_token_hash: null,
     verification_token_expires: null,
   });
   return { message: 'Xác minh email thành công.' };

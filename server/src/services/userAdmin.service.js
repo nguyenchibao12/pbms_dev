@@ -73,6 +73,9 @@ export const createUser = async (adminId, data) => {
     phone: data.phone || null,
     role_id: role.role_id,
     is_active: true,
+    // Admin tạo tay (nhân viên nội bộ) → coi như đã xác minh: không có luồng gửi/nhận mail
+    // xác minh cho các tài khoản này, để false là khóa họ ra ngoài ngay từ đầu.
+    email_verified: true,
   });
 
   await logAdminAction(adminId, 'user.create', {
