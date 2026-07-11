@@ -82,6 +82,12 @@ const envSystemDefaults = () => ({
     process.env.BOOKING_NO_SHOW_GRACE_MINUTES !== ''
       ? Number(process.env.BOOKING_NO_SHOW_GRACE_MINUTES)
       : DEFAULT_SYSTEM.booking_no_show_grace_minutes,
+  // Chính sách hoàn tiền vé tháng (Nhóm B) — đưa vào cache để GET /settings/system trả về
+  // cho FE đổ form. getPassRefundPolicy() vẫn có fallback riêng nên an toàn hai chiều.
+  pass_refund_trial_days: DEFAULT_SYSTEM.pass_refund_trial_days,
+  pass_refund_trial_percent: DEFAULT_SYSTEM.pass_refund_trial_percent,
+  pass_refund_half_term_percent: DEFAULT_SYSTEM.pass_refund_half_term_percent,
+  pass_refund_bank_info_ttl_days: DEFAULT_SYSTEM.pass_refund_bank_info_ttl_days,
 });
 
 export const clearSettingsCache = () => {
