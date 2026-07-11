@@ -26,6 +26,27 @@ const fmtMoney = (v) => `${Number(v || 0).toLocaleString('vi-VN')} ₫`;
 const fmtDateTime = (v) => (v ? new Date(v).toLocaleString('vi-VN') : '—');
 const fmtDate = (v) => (v ? new Date(v).toLocaleDateString('vi-VN') : '—');
 
+// Loại nguồn hoàn (migration 006): vé tháng hay đặt chỗ. BE trả field `type`.
+const TYPE_META = {
+  monthly_pass: ['Vé tháng', 'bg-indigo-50 text-indigo-700'],
+  booking: ['Đặt chỗ', 'bg-sky-50 text-sky-700'],
+};
+
+// Refund tham chiếu 1 trong 2: pass (vé tháng, hạn theo ngày) HOẶC reservation (đặt chỗ, khung giờ).
+// Gộp về chung { plate, range } để render cột — reservation dùng datetime, pass dùng date.
+const refundSource = (r) => {
+  if (r.type === 'booking' && r.reservation) {
+    return {
+      plate: r.reservation.plate_number,
+      range: `${fmtDateTime(r.reservation.start_time)} → ${fmtDateTime(r.reservation.end_time)}`,
+    };
+  }
+  return {
+    plate: r.pass?.plate_number,
+    range: `${fmtDate(r.pass?.start_date)} → ${fmtDate(r.pass?.end_date)}`,
+  };
+};
+
 export default function RefundsPage() {
   const [data, setData] = useState({ items: [], total: 0, page: 1, limit: 50, pages: 0 });
   const [loading, setLoading] = useState(true);
@@ -103,9 +124,9 @@ export default function RefundsPage() {
     <div>
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-slate-900">Hoàn tiền vé tháng</h1>
+          <h1 className="text-2xl font-bold tracking-tight text-slate-900">Hoàn tiền</h1>
           <p className="mt-1 text-sm text-slate-500">
-            Yêu cầu hoàn tiền khi khách hủy vé — nhắc khách nhập STK & đánh dấu đã chuyển khoản (thủ công)
+            Yêu cầu hoàn tiền khi khách hủy vé tháng hoặc đặt chỗ — nhắc khách nhập STK & đánh dấu đã chuyển khoản (thủ công)
           </p>
         </div>
         <Button variant="secondary" size="sm" onClick={() => load(page)} loading={loading}>Làm mới</Button>
@@ -131,7 +152,7 @@ export default function RefundsPage() {
             <tr>
               <th className="px-4 py-3 font-medium whitespace-nowrap">Yêu cầu lúc</th>
               <th className="px-4 py-3 font-medium">Khách</th>
-              <th className="px-4 py-3 font-medium">Vé (biển số · hạn)</th>
+              <th className="px-4 py-3 font-medium">Nguồn hoàn (biển số · hạn)</th>
               <th className="px-4 py-3 font-medium">Hoàn</th>
               <th className="px-4 py-3 font-medium">Tài khoản NH</th>
               <th className="px-4 py-3 font-medium">Trạng thái</th>
@@ -144,7 +165,10 @@ export default function RefundsPage() {
             ) : items.length === 0 ? (
               <tr><td colSpan={7} className="px-4 py-10 text-center text-slate-400">Không có yêu cầu hoàn tiền nào khớp bộ lọc</td></tr>
             ) : (
-              items.map((r) => (
+              items.map((r) => {
+                const src = refundSource(r);
+                const [typeLabel, typeBadge] = TYPE_META[r.type] || ['Khác', 'bg-slate-100 text-slate-600'];
+                return (
                 <tr key={r.refund_id} className="border-b border-slate-100 last:border-0 align-top hover:bg-slate-50/60">
                   <td className="px-4 py-3 whitespace-nowrap text-slate-600">{fmtDateTime(r.requested_at)}</td>
                   <td className="px-4 py-3">
@@ -152,8 +176,9 @@ export default function RefundsPage() {
                     <span className="block text-xs text-slate-400">{r.user?.phone || r.user?.email || ''}</span>
                   </td>
                   <td className="px-4 py-3 text-slate-600">
-                    <span className="font-mono">{r.pass?.plate_number || '—'}</span>
-                    <span className="block text-xs text-slate-400">{fmtDate(r.pass?.start_date)} → {fmtDate(r.pass?.end_date)}</span>
+                    <span className={`mb-1 inline-block rounded-full px-2 py-0.5 text-xs font-medium ${typeBadge}`}>{typeLabel}</span>
+                    <span className="block font-mono">{src.plate || '—'}</span>
+                    <span className="block text-xs text-slate-400">{src.range}</span>
                   </td>
                   <td className="px-4 py-3">
                     <span className="font-semibold text-brand">{fmtMoney(r.amount)}</span>
@@ -198,7 +223,8 @@ export default function RefundsPage() {
                     )}
                   </td>
                 </tr>
-              ))
+                );
+              })
             )}
           </tbody>
         </table>
