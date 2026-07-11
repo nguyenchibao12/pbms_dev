@@ -60,3 +60,21 @@ export const assertSessionCheckoutTime = (timeIn, timeOut) => {
 /** DV-05 / OR-16 — token vô hiệu sau check-out */
 export const buildRevokedQrToken = (entity, id) =>
   `revoked-${entity}-${id}-${Date.now()}`;
+
+/**
+ * OR-16 — QR đặt chỗ hết hiệu lực theo TRẠNG THÁI, không bằng cách bẻ token
+ * (token gốc được giữ lại để user/staff còn tra cứu lịch sử, giống vé tháng hết hạn).
+ * 'checked_in' PHẢI còn hiệu lực: xe đang trong bãi vẫn quét chính mã này ở cổng
+ * tầng và cổng ra — chặn ở đây sẽ nhốt xe lại trong bãi.
+ */
+const RESERVATION_QR_DEAD_STATUSES = ['cancelled', 'no_show', 'completed'];
+
+export const assertReservationQrUsable = (reservation) => {
+  if (RESERVATION_QR_DEAD_STATUSES.includes(reservation.status)) {
+    throw new AppError(
+      `Đặt chỗ không còn hiệu lực (trạng thái: ${reservation.status})`,
+      409,
+      'CONFLICT',
+    );
+  }
+};
