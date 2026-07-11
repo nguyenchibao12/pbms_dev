@@ -91,7 +91,7 @@ const run = async () => {
 
   console.log('=== TEST 5: PayOS chết → 502, ĐƠN KHÔNG BỊ HỦY (khách bấm lại được) ===');
   const t5 = await makeReservation({});
-  await makePendingPayment(t5.reservation_id);
+  const p5 = await makePendingPayment(t5.reservation_id);
   const r5 = await grab(() => repayReservation(USER_ID, t5.reservation_id));
   check('502 PAYMENT_GATEWAY_ERROR', r5.ok === false && r5.status === 502, JSON.stringify(r5));
   await t5.reload();
@@ -99,8 +99,12 @@ const run = async () => {
   const slot5 = await ParkingSlot.findByPk(t5.slot_id);
   check('slot không bị nhả oan', slot5 != null);
 
-  console.log('=== TEST 6: Chỉ tạo link mới, KHÔNG confirm đơn (tiền chưa về) ===');
+  console.log('=== TEST 6: CHỐNG THU TIỀN 2 LẦN — không chắc link cũ đã chết thì KHÔNG phát link mới ===');
+  // PayOS không tra được → không thể khẳng định link cũ đã chết → phải DỪNG, nếu vẫn phát link
+  // mới thì khách có 2 link cùng sống và có thể trả tiền hai lần cho một chỗ đỗ.
   const paymentsOfT5 = await Payment.findAll({ where: { reservation_id: t5.reservation_id } });
+  check('KHÔNG đẻ thêm payment thứ 2', paymentsOfT5.length === 1, `(có ${paymentsOfT5.length})`);
+  check('payment cũ GIỮ pending (chưa dám đánh failed)', (await p5.reload()).status === 'pending');
   check('không có payment nào thành success', paymentsOfT5.every((p) => p.status !== 'success'));
   check('đơn chưa confirmed', (await Reservation.findByPk(t5.reservation_id)).status === 'pending');
 };

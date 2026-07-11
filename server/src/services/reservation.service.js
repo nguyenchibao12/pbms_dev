@@ -21,7 +21,12 @@ import {
 } from '../utils/slotSuggest.js';
 import { resolveZoneIds, findSlotsAvailableForWindow } from '../utils/slotWindow.js';
 import { buildScoreReason } from '../utils/slotScoring.js';
-import { createPayOSPaymentLink, generateOrderCode, getPayOSPaymentInfo } from './payos.client.js';
+import {
+  createPayOSPaymentLink,
+  generateOrderCode,
+  getPayOSPaymentInfo,
+  cancelPayOSPaymentLink,
+} from './payos.client.js';
 import { logSuggestion } from './aiLog.service.js';
 import { getParkingInsights, getUserParkingPreferences } from './prediction.service.js';
 import { getSession } from './session.service.js';
@@ -690,21 +695,57 @@ export const repayReservation = async (userId, reservationId) => {
   });
 
   if (oldPayment) {
+    let info = null;
     try {
-      const info = await getPayOSPaymentInfo(oldPayment.order_code);
-      if (info?.status === 'PENDING') {
-        const stored = JSON.parse(oldPayment.gateway_response || '{}');
-        if (stored.checkoutUrl) {
-          return {
-            reservation: await getReservation(reservation.reservation_id),
-            payment: oldPayment,
-            checkoutUrl: stored.checkoutUrl,
-            reused: true,
-          };
+      info = await getPayOSPaymentInfo(oldPayment.order_code);
+    } catch {
+      info = null; // không tra được (mạng/PayOS lỗi) — xử lý thận trọng bên dưới
+    }
+
+    // Link cũ còn sống → trả lại chính nó, không đẻ giao dịch thừa.
+    if (info?.status === 'PENDING') {
+      const stored = JSON.parse(oldPayment.gateway_response || '{}');
+      if (stored.checkoutUrl) {
+        return {
+          reservation: await getReservation(reservation.reservation_id),
+          payment: oldPayment,
+          checkoutUrl: stored.checkoutUrl,
+          reused: true,
+        };
+      }
+    }
+
+    // Tiền ĐÃ về nhưng webhook chưa tới (localhost không có webhook) → xác nhận đơn luôn,
+    // tuyệt đối không phát link mới: phát nữa là khách trả tiền lần hai cho cùng chỗ đỗ.
+    if (info?.status === 'PAID') {
+      await confirmReservationAfterPayment(oldPayment);
+      return {
+        reservation: await getReservation(reservation.reservation_id),
+        payment: await Payment.findByPk(oldPayment.payment_id),
+        checkoutUrl: null,
+        alreadyPaid: true,
+        reused: false,
+      };
+    }
+
+    // Sắp phát link MỚI → phải chắc chắn link cũ đã chết Ở PHÍA PAYOS. Chỉ đánh dấu 'failed'
+    // trong DB mình là chưa đủ: đơn cũ vẫn thanh toán được → hai link cùng sống → thu tiền 2 lần.
+    if (info?.status !== 'CANCELLED') {
+      try {
+        await cancelPayOSPaymentLink(oldPayment.order_code);
+      } catch (err) {
+        // Hủy lỗi: có thể do đơn đã chết sẵn (PayOS ném lỗi) — nhưng cũng có thể do mạng.
+        // Hỏi lại; còn PENDING hoặc vẫn không tra được thì DỪNG, không phát link thứ hai.
+        const recheck = await getPayOSPaymentInfo(oldPayment.order_code).catch(() => null);
+        if (!recheck || recheck.status === 'PENDING') {
+          console.error('[repayReservation] không hủy được link cũ:', err.message);
+          throw new AppError(
+            'Chưa hủy được liên kết thanh toán cũ — vui lòng thử lại sau giây lát',
+            502,
+            'PAYMENT_GATEWAY_ERROR',
+          );
         }
       }
-    } catch {
-      // PayOS lỗi / đơn không tra được → coi như link cũ chết, rơi xuống tạo link mới
     }
     await oldPayment.update({ status: 'failed' });
   }
