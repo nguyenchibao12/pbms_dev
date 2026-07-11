@@ -53,19 +53,6 @@ const QR_HISTORY_LABEL = {
   no_show: 'Không đến',
 };
 
-// BE chưa có endpoint tạo lại link thanh toán cho đơn 'pending' (khác vé tháng có /repay).
-// Đọc lại checkoutUrl đã lưu trong payment 'pending' của đơn để chuyển thẳng sang PayOS.
-// Không có link khả dụng nghĩa là link cũ đã hết hạn — khách cần đặt chỗ mới.
-const pendingCheckoutUrl = (r) => {
-  const pending = (r.payments || []).find((p) => p.status === 'pending' && p.method === 'payos');
-  if (!pending?.gateway_response) return '';
-  try {
-    return JSON.parse(pending.gateway_response)?.checkoutUrl || '';
-  } catch {
-    return '';
-  }
-};
-
 export default function MyReservationsPage() {
   const [searchParams] = useSearchParams();
   const [items, setItems] = useState([]);
@@ -107,17 +94,46 @@ export default function MyReservationsPage() {
     load('initial');
   }, [load, paymentResult]);
 
-  // "Trả tiếp": chuyển lại sang PayOS bằng link đã lưu của đơn pending.
-  const handleRepay = (r) => {
+  // Khách bấm "back" từ PayOS → trang khôi phục từ bfcache, spinner "Trả tiếp" còn kẹt.
+  // Reset lại state khi trang quay lại từ bfcache để nút dùng được ngay (khỏi F5).
+  useEffect(() => {
+    const onPageShow = (e) => {
+      if (e.persisted) setRepayingId(null);
+    };
+    window.addEventListener('pageshow', onPageShow);
+    return () => window.removeEventListener('pageshow', onPageShow);
+  }, []);
+
+  // "Trả tiếp": xin BE link PayOS MỚI cho đơn pending rồi điều hướng sang.
+  const handleRepay = async (r) => {
     if (repayingId) return;
-    const url = pendingCheckoutUrl(r);
-    if (!url) {
-      toast.error('Link thanh toán đã hết hạn — vui lòng tạo đặt chỗ mới');
-      return;
-    }
     setRepayingId(r.reservation_id);
-    toast.success('Chuyển sang thanh toán phí giữ chỗ');
-    window.location.assign(url);
+    try {
+      const { data } = await reservationsApi.repay(r.reservation_id);
+      const info = data.data || {};
+      // Khách đã trả tiền nhưng webhook chưa về: BE hỏi PayOS thấy PAID → tự xác nhận đơn,
+      // không phát link mới. Không được điều hướng sang PayOS lần nữa (tránh trả 2 lần).
+      if (info.alreadyPaid || !info.checkoutUrl) {
+        toast.success('Đơn đã được thanh toán — đang cập nhật trạng thái');
+        await load('manual');
+        return;
+      }
+      toast.success('Chuyển sang thanh toán phí giữ chỗ');
+      window.location.assign(info.checkoutUrl);
+    } catch (err) {
+      const status = err.response?.status;
+      const msg = err.response?.data?.error?.message;
+      if (status === 409 || status === 404) {
+        // Đơn không còn pending / không tồn tại / khung giờ đã kết thúc → làm mới danh sách.
+        toast.error(msg || 'Đơn không còn ở trạng thái chờ thanh toán');
+        await load('manual');
+      } else {
+        // 403 (không phải đơn của mình) hoặc 502 (PayOS lỗi / chưa hủy được link cũ) — cho bấm lại.
+        toast.error(msg || 'Chưa tạo lại được liên kết thanh toán — vui lòng thử lại');
+      }
+    } finally {
+      setRepayingId(null);
+    }
   };
 
   const handleCancel = async () => {
