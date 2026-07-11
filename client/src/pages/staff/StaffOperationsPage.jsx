@@ -112,6 +112,12 @@ export default function StaffOperationsPage() {
   const [ciError, setCiError] = useState('');
   const [ciSubmitting, setCiSubmitting] = useState(false);
 
+  // Tra cứu phiên đang đỗ bằng QR (xem chi tiết xe rồi cho ra / sửa biển số).
+  const [lkQr, setLkQr] = useState('');
+  const [lkLooking, setLkLooking] = useState(false);
+  const [lkError, setLkError] = useState('');
+  const [lkSession, setLkSession] = useState(null); // phiên tra được (null = chưa tra)
+
   // Booth thu tiền mặt (xe ra) — tra cứu bằng QR HOẶC biển số (khi khách mất vé). BE tự suy cổng.
   const [boothQr, setBoothQr] = useState('');
   const [boothPlate, setBoothPlate] = useState(''); // tra theo biển số khi khách MẤT VÉ (không có QR)
@@ -318,6 +324,29 @@ export default function StaffOperationsPage() {
     }
   };
 
+  // Tra cứu phiên đang đỗ theo mã QR (từ ô nhập tay HOẶC camera).
+  const runSessionLookup = async (raw) => {
+    const token = String(raw || '').trim();
+    if (!token) return;
+    setLkError('');
+    setLkLooking(true);
+    try {
+      const { data } = await sessionsApi.staffLookup(token);
+      setLkSession(data.data);
+      setLkQr('');
+    } catch (err) {
+      setLkSession(null);
+      setLkError(err.response?.data?.error?.message || 'Không tìm thấy xe đang gửi với mã QR này');
+    } finally {
+      setLkLooking(false);
+    }
+  };
+
+  const handleSessionLookup = (e) => {
+    e.preventDefault();
+    runSessionLookup(lkQr);
+  };
+
   // Khi đổi tầng: nạp cổng IN + khu của tầng đó, reset cổng/khu đã chọn.
   const onFloorChange = async (floorId) => {
     setForm((f) => ({ ...f, floorId, gateId: '', zoneId: '' }));
@@ -428,6 +457,8 @@ export default function StaffOperationsPage() {
       } else {
         toast.info('Cần thanh toán để mở barie');
       }
+      // Nếu phiên này vừa tra qua tab "Tra cứu xe (QR)" thì bỏ card cũ đi cho khỏi lệch.
+      if (lkSession?.session_id === coSession.session_id) setLkSession(null);
       loadActive(); // phiên rời khỏi danh sách đang đỗ
       loadAvailability();
     } catch (err) {
@@ -545,6 +576,7 @@ export default function StaffOperationsPage() {
           { id: 'checkin', label: 'Check-in (xe vào)' },
           { id: 'active', label: `Xe đang đỗ${active.length ? ` (${active.length})` : ''}` },
           { id: 'reservation', label: `Đặt chỗ vào${upcoming.length ? ` (${upcoming.length})` : ''}` },
+          { id: 'lookup', label: 'Tra cứu xe (QR)' },
           { id: 'booth', label: 'Thu tiền mặt (ra)' },
           { id: 'incident', label: `Sự cố${incidents.length ? ` (${incidents.length})` : ''}` },
           { id: 'passes', label: 'Vé tháng' },
@@ -825,6 +857,54 @@ export default function StaffOperationsPage() {
               </table>
             </div>
           </Card>
+        </div>
+      )}
+
+      {/* TAB TRA CỨU XE (QR) — quét mã QR trên vé để mở đúng phiên đang đỗ rồi cho ra */}
+      {tab === 'lookup' && (
+        <div className="max-w-xl space-y-6">
+          <Card>
+            <h2 className="mb-1 text-lg font-semibold text-slate-800">Tra cứu xe đang gửi</h2>
+            <p className="mb-4 text-sm text-slate-500">Quét / nhập mã QR trên vé của khách để xem xe đang đỗ và cho xe ra.</p>
+            <ErrorAlert message={lkError} className="mb-4" />
+            <form onSubmit={handleSessionLookup} className="flex flex-col gap-3 sm:flex-row">
+              <input
+                className={inputClass}
+                value={lkQr}
+                onChange={(e) => setLkQr(e.target.value)}
+                placeholder="Dán hoặc quét mã QR..."
+              />
+              <Button type="submit" className="brand-gradient shrink-0 border-0" loading={lkLooking}>Tra cứu</Button>
+              <Button type="button" variant="secondary" className="shrink-0" onClick={() => setScanTarget('lookup')}>
+                <Camera className="h-4 w-4" /> Quét camera
+              </Button>
+            </form>
+          </Card>
+
+          {lkSession && (
+            <Card>
+              <div className="flex items-center justify-between">
+                <h3 className="font-mono text-base font-semibold text-slate-800">{lkSession.plate_number}</h3>
+                {lkSession.overstay && (
+                  <span className="rounded bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700">Quá giờ</span>
+                )}
+              </div>
+              <dl className="mt-3 space-y-2 text-sm">
+                <div className="flex justify-between"><dt className="text-slate-500">Loại xe</dt><dd>{lkSession.vehicleType?.type_name || '—'}</dd></div>
+                <div className="flex justify-between"><dt className="text-slate-500">Chỗ đỗ</dt><dd className="font-medium text-brand">{lkSession.slot?.slot_code || '—'}</dd></div>
+                <div className="flex justify-between"><dt className="text-slate-500">Khu / Tầng</dt><dd>{lkSession.slot?.zone?.label || '—'}{lkSession.slot?.zone?.floor ? ` · ${lkSession.slot.zone.floor.floor_code}` : ''}</dd></div>
+                <div className="flex justify-between"><dt className="text-slate-500">Giờ vào</dt><dd>{lkSession.time_in ? new Date(lkSession.time_in).toLocaleString('vi-VN') : '—'}</dd></div>
+                <div className="flex justify-between"><dt className="text-slate-500">Đã đỗ</dt><dd>{fmtElapsed(lkSession.time_in)}</dd></div>
+                {fees[lkSession.session_id] && (
+                  <div className="flex justify-between border-t border-slate-200 pt-2"><dt className="text-slate-500">Phí tạm tính</dt><dd className="font-semibold text-brand">{fmtMoney(fees[lkSession.session_id].fee)}</dd></div>
+                )}
+              </dl>
+              <div className="mt-4 flex flex-wrap justify-end gap-2">
+                <Button type="button" variant="secondary" onClick={() => handlePreviewFee(lkSession)}>Xem phí</Button>
+                <Button type="button" className="brand-gradient border-0" onClick={() => openCheckout(lkSession)}>Xe ra</Button>
+              </div>
+            </Card>
+          )}
         </div>
       )}
 
@@ -1218,6 +1298,9 @@ export default function StaffOperationsPage() {
             if (target === 'reservation') {
               setResQr(token);
               runReservationLookup(token);
+            } else if (target === 'lookup') {
+              setLkQr(token);
+              runSessionLookup(token);
             } else if (target === 'booth') {
               setBoothQr(token);
               lookupBooth({ qrToken: token });
