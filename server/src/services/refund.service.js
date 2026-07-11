@@ -18,6 +18,7 @@ const refundIncludes = [
     ],
   },
   { association: 'pass', attributes: ['pass_id', 'plate_number', 'start_date', 'end_date', 'status'] },
+  { association: 'reservation', attributes: ['reservation_id', 'plate_number', 'start_time', 'end_time', 'status'] },
   { association: 'payment', attributes: ['payment_id', 'order_code', 'amount', 'method', 'paid_at'] },
   { association: 'refundedBy', attributes: ['user_id', 'full_name', 'username'] },
 ];
@@ -26,6 +27,8 @@ const refundIncludes = [
 const withBankReady = (refund) => ({
   ...refund.toJSON(),
   bankInfoReady: Boolean(refund.user?.bank_account_number),
+  // Nguồn hoàn cho FE lọc/hiển thị cột: vé tháng hay đặt chỗ (migration 006).
+  type: refund.pass_id ? 'monthly_pass' : 'booking',
 });
 
 export const listRefunds = async ({ status, page, limit } = {}) => {
