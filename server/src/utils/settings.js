@@ -18,7 +18,6 @@ const DEFAULT_BUILDING = {
 const DEFAULT_SCORE_WEIGHTS = {
   gate: 1,
   zone_balance: 0.5,
-  elevator: 0.3,
   slot_type: 0.2,
   preference: 0.25,
 };

@@ -136,11 +136,11 @@ const run = async () => {
     for (let i = 1; i <= SLOTS_PER_ZONE; i++) {
       await ParkingSlot.create({
         zone_id: carZone.zone_id, slot_code: `A${pad2(i)}`, status: 'available',
-        distance_to_gate: i * 2, distance_to_elevator: i * 1.5,
+        distance_to_gate: i * 2,
       });
       await ParkingSlot.create({
         zone_id: bikeZone.zone_id, slot_code: `B${pad2(i)}`, status: 'available',
-        distance_to_gate: i * 2, distance_to_elevator: i * 1.5,
+        distance_to_gate: i * 2,
       });
     }
 
