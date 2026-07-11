@@ -21,7 +21,12 @@ import {
 } from '../utils/slotSuggest.js';
 import { resolveZoneIds, findSlotsAvailableForWindow } from '../utils/slotWindow.js';
 import { buildScoreReason } from '../utils/slotScoring.js';
-import { createPayOSPaymentLink, generateOrderCode } from './payos.client.js';
+import {
+  createPayOSPaymentLink,
+  generateOrderCode,
+  getPayOSPaymentInfo,
+  cancelPayOSPaymentLink,
+} from './payos.client.js';
 import { logSuggestion } from './aiLog.service.js';
 import { getParkingInsights, getUserParkingPreferences } from './prediction.service.js';
 import { getSession } from './session.service.js';
@@ -661,6 +666,123 @@ export const cancelUserReservation = async (userId, reservationId) => {
 
 /** @deprecated alias */
 export const cancelPendingReservation = cancelUserReservation;
+
+/**
+ * Lấy lại link thanh toán phí giữ chỗ cho đơn pending (khách tắt tab PayOS giữa chừng).
+ * Đối xứng với repayMonthlyPass: link cũ còn PENDING trên PayOS → trả lại (không đẻ giao dịch
+ * thừa); link đã chết (khách bấm hủy trên PayOS → orderCode CANCELLED) → đánh dấu payment cũ
+ * 'failed' rồi sinh orderCode + link + Payment pending MỚI.
+ */
+export const repayReservation = async (userId, reservationId) => {
+  const reservation = await Reservation.findByPk(reservationId);
+  if (!reservation) throw new AppError('Reservation not found', 404, 'NOT_FOUND');
+  if (reservation.user_id !== userId) throw new AppError('Not your reservation', 403, 'FORBIDDEN');
+  if (reservation.status !== 'pending') {
+    throw new AppError(
+      `Đơn không ở trạng thái chờ thanh toán (hiện tại: ${reservation.status})`,
+      409,
+      'CONFLICT',
+    );
+  }
+  // Đơn quá giờ vào bãi thì trả tiền cũng vô nghĩa — chặn sớm thay vì thu tiền rồi mới báo hỏng.
+  if (new Date(reservation.end_time) <= new Date()) {
+    throw new AppError('Khung giờ đặt đã kết thúc — vui lòng đặt chỗ mới', 409, 'CONFLICT');
+  }
+
+  const oldPayment = await Payment.findOne({
+    where: { reservation_id: reservation.reservation_id, status: 'pending' },
+    order: [['created_at', 'DESC']],
+  });
+
+  if (oldPayment) {
+    let info = null;
+    try {
+      info = await getPayOSPaymentInfo(oldPayment.order_code);
+    } catch {
+      info = null; // không tra được (mạng/PayOS lỗi) — xử lý thận trọng bên dưới
+    }
+
+    // Link cũ còn sống → trả lại chính nó, không đẻ giao dịch thừa.
+    if (info?.status === 'PENDING') {
+      const stored = JSON.parse(oldPayment.gateway_response || '{}');
+      if (stored.checkoutUrl) {
+        return {
+          reservation: await getReservation(reservation.reservation_id),
+          payment: oldPayment,
+          checkoutUrl: stored.checkoutUrl,
+          reused: true,
+        };
+      }
+    }
+
+    // Tiền ĐÃ về nhưng webhook chưa tới (localhost không có webhook) → xác nhận đơn luôn,
+    // tuyệt đối không phát link mới: phát nữa là khách trả tiền lần hai cho cùng chỗ đỗ.
+    if (info?.status === 'PAID') {
+      await confirmReservationAfterPayment(oldPayment);
+      return {
+        reservation: await getReservation(reservation.reservation_id),
+        payment: await Payment.findByPk(oldPayment.payment_id),
+        checkoutUrl: null,
+        alreadyPaid: true,
+        reused: false,
+      };
+    }
+
+    // Sắp phát link MỚI → phải chắc chắn link cũ đã chết Ở PHÍA PAYOS. Chỉ đánh dấu 'failed'
+    // trong DB mình là chưa đủ: đơn cũ vẫn thanh toán được → hai link cùng sống → thu tiền 2 lần.
+    if (info?.status !== 'CANCELLED') {
+      try {
+        await cancelPayOSPaymentLink(oldPayment.order_code);
+      } catch (err) {
+        // Hủy lỗi: có thể do đơn đã chết sẵn (PayOS ném lỗi) — nhưng cũng có thể do mạng.
+        // Hỏi lại; còn PENDING hoặc vẫn không tra được thì DỪNG, không phát link thứ hai.
+        const recheck = await getPayOSPaymentInfo(oldPayment.order_code).catch(() => null);
+        if (!recheck || recheck.status === 'PENDING') {
+          console.error('[repayReservation] không hủy được link cũ:', err.message);
+          throw new AppError(
+            'Chưa hủy được liên kết thanh toán cũ — vui lòng thử lại sau giây lát',
+            502,
+            'PAYMENT_GATEWAY_ERROR',
+          );
+        }
+      }
+    }
+    await oldPayment.update({ status: 'failed' });
+  }
+
+  // Giữ đúng giá lúc đặt (snapshot trên payment cũ); đơn chưa từng có payment → giá hiện hành.
+  const amount = oldPayment ? Number(oldPayment.amount) : getBookingFee();
+  try {
+    const orderCode = generateOrderCode();
+    const payosResult = await createPayOSPaymentLink({
+      orderCode,
+      amount,
+      description: `Booking ${reservation.plate_number}`,
+      returnUrl: `${process.env.CLIENT_URL}/reservations`,
+      cancelUrl: `${process.env.CLIENT_URL}/reservations`,
+    });
+    const payment = await Payment.create({
+      reservation_id: reservation.reservation_id,
+      order_code: orderCode,
+      amount,
+      status: 'pending',
+      method: 'payos',
+      gateway_transaction_id: payosResult.paymentLinkId ? String(payosResult.paymentLinkId) : null,
+      gateway_response: JSON.stringify(payosResult),
+    });
+    return {
+      reservation: await getReservation(reservation.reservation_id),
+      payment,
+      checkoutUrl: payosResult.checkoutUrl,
+      reused: false,
+    };
+  } catch (err) {
+    // KHÔNG hủy đơn ở đây (khác lúc đặt): khách còn bấm "Trả tiếp" lại được;
+    // đơn pending bỏ quên quá TTL đã có job nền dọn.
+    console.error('[repayReservation] tạo thanh toán PayOS lỗi:', err.message);
+    throw new AppError('Không tạo được liên kết thanh toán — vui lòng thử lại', 502, 'PAYMENT_GATEWAY_ERROR');
+  }
+};
 
 /** Staff — booking đã thanh toán, chờ check-in (chưa vào bãi) */
 export const listStaffUpcomingReservations = async () => {
