@@ -56,17 +56,28 @@ export const listActiveSessions = async (query = {}) => {
 const enrichActiveSessionForStaff = async (session) => {
   const row = session.toJSON();
 
-  // Cảnh báo LỐ GIỜ — CHỈ cho khách VÃNG LAI (walk-in). Đặt chỗ / vé tháng có logic khung
-  // giờ riêng (window_violation / pass window) do reservation & monthly lo, không tính ở đây.
+  // Cảnh báo LỐ GIỜ. Walk-in: vượt ngưỡng chung max_parking_hours (Manager set).
+  // Đặt chỗ: vượt end_time của ĐƠN (ngưỡng riêng từng đơn). Vé tháng: khung riêng, monthly lo.
   const maxHours = getMaxParkingHours();
   const isWalkIn = ['walk_in', 'auto_registered'].includes(row.session_type);
+  row.overstay = false;
+  row.overstayHours = 0;
+  row.overstayReason = null;
+
   if (maxHours != null && isWalkIn && row.time_in) {
     const parkedHours = (Date.now() - new Date(row.time_in).getTime()) / (1000 * 60 * 60);
-    row.overstay = parkedHours > maxHours;
-    row.overstayHours = row.overstay ? Math.floor(parkedHours - maxHours) : 0;
-  } else {
-    row.overstay = false;
-    row.overstayHours = 0;
+    if (parkedHours > maxHours) {
+      row.overstay = true;
+      row.overstayHours = Math.floor(parkedHours - maxHours);
+      row.overstayReason = 'walk_in_max_hours';
+    }
+  } else if (row.reservation_id) {
+    const resv = await detectReservationOverstay(session, new Date());
+    if (resv.overstay) {
+      row.overstay = true;
+      row.overstayHours = resv.overstayHours;
+      row.overstayReason = 'reservation_window';
+    }
   }
 
   if (row.reservation_id || row.reservation?.status) return row;
@@ -336,6 +347,29 @@ export const cashCheckout = async (staffUserId, data) => {
   return settleCashCheckout(staffUserId, data);
 };
 
+// Ân hạn lấy xe sau khi hết khung giờ đã đặt (đối xứng với ân hạn check-in sớm 15').
+const RESERVATION_OVERSTAY_GRACE_MS = 15 * 60 * 1000;
+
+/**
+ * Lố giờ của ĐẶT CHỖ — khác walk-in: ngưỡng là `end_time` của ĐƠN, không phải max_parking_hours.
+ * Ở quá khung đã đặt là giữ mất chỗ của người đặt ca kế tiếp → thu phụ thu như walk-in lố giờ.
+ * (Không dùng import từ reservation.service để tránh vòng lặp import — file đó đã import file này.)
+ */
+const detectReservationOverstay = async (session, feeEnd) => {
+  const none = { overstay: false, overstayHours: 0 };
+  if (!session?.reservation_id) return none;
+
+  const reservation = await Reservation.findByPk(session.reservation_id);
+  if (!reservation?.end_time) return none;
+
+  const endTime = new Date(reservation.end_time);
+  const overMs = feeEnd.getTime() - endTime.getTime();
+  if (overMs <= RESERVATION_OVERSTAY_GRACE_MS) return none;
+
+  // Số giờ tính TỪ end_time (không trừ ân hạn) — ân hạn chỉ để quyết định CÓ thu hay không.
+  return { overstay: true, overstayHours: Math.floor(overMs / (1000 * 60 * 60)) };
+};
+
 export const previewCheckoutFee = async (data) => {
   let session;
 
@@ -396,8 +430,22 @@ export const previewCheckoutFee = async (data) => {
   const maxHours = getMaxParkingHours();
   const isWalkIn = ['walk_in', 'auto_registered'].includes(session.session_type);
   const parkedHours = (feeEnd.getTime() - new Date(session.time_in).getTime()) / (1000 * 60 * 60);
-  const overstay = maxHours != null && isWalkIn && parkedHours > maxHours;
-  const overstayHours = overstay ? Math.floor(parkedHours - maxHours) : 0;
+  const walkInOverstay = maxHours != null && isWalkIn && parkedHours > maxHours;
+
+  // ĐẶT CHỖ lố giờ: "ngưỡng" không phải max_parking_hours mà là end_time của ĐƠN — ở quá khung
+  // đã đặt là chiếm chỗ của người đặt ca sau. Ân hạn 15 phút cho khách lấy xe (đối xứng với
+  // ân hạn check-in sớm 15 phút bên reservation.service).
+  const resvOverstay = await detectReservationOverstay(session, feeEnd);
+
+  const overstay = walkInOverstay || resvOverstay.overstay;
+  const overstayHours = walkInOverstay
+    ? Math.floor(parkedHours - maxHours)
+    : resvOverstay.overstayHours;
+  const overstayReason = walkInOverstay
+    ? 'walk_in_max_hours'
+    : resvOverstay.overstay
+      ? 'reservation_window'
+      : null;
 
   // enforced = hệ thống bắt buộc thu (đã phát hiện lố giờ). charge = thực tế có cộng phụ thu.
   const overstayEnforced = overstay;
@@ -414,6 +462,7 @@ export const previewCheckoutFee = async (data) => {
     passCovered: false,
     overstay, // đã phát hiện lố giờ (theo phiên/QR/biển số)
     overstayHours,
+    overstayReason, // 'walk_in_max_hours' | 'reservation_window' | null — để staff/FE nói đúng lý do
     overstayEnforced, // true = bắt buộc thu, staff không bỏ được
     overstayCharge, // thực tế có cộng phụ thu lố giờ
     overstayFee, // mức phụ thu đã cộng (0 nếu không thu)
