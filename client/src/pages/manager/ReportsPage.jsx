@@ -35,16 +35,6 @@ const METHOD_LABEL = { payos: 'PayOS (online)', cash: 'Tiền mặt', free: 'Mi�
 // Màu thanh theo mức lấp đầy.
 const rateColor = (rate) => (rate >= 80 ? 'bg-red-500' : rate >= 50 ? 'bg-amber-500' : 'bg-emerald-500');
 
-// Cơ cấu chỗ: 5 nhóm này cộng lại = tổng số chỗ (occupied+reserved+available+maintenance+locked).
-// Ghép thành dòng phương trình cân đối dưới các thẻ, tránh đọc nhầm "đang đặt" (số CHỖ) với số lượt đặt (số đơn).
-const COMPOSITION = [
-  { key: 'occupied', label: 'Đang dùng' },
-  { key: 'reserved', label: 'Đang đặt' },
-  { key: 'available', label: 'Còn trống' },
-  { key: 'maintenance', label: 'Bảo trì' },
-  { key: 'locked', label: 'Tạm khóa' },
-];
-
 // Khoảng ngày mặc định / preset: N ngày gần nhất tính đến hôm nay.
 const presetRange = (days) => {
   const to = new Date();
@@ -170,10 +160,6 @@ export default function ReportsPage() {
   const byFloor = report?.occupancy?.byFloor || [];
   const revenue = report?.revenue;
   const traffic = report?.traffic;
-  // Các thành phần > 0 để ghép thành phương trình "a đang dùng + b đang đặt + ... = tổng".
-  const compParts = snapshot
-    ? COMPOSITION.filter((c) => snapshot[c.key] > 0).map((c) => `${fmtNum(snapshot[c.key])} ${c.label.toLowerCase()}`)
-    : [];
 
   return (
     <div>
@@ -231,12 +217,9 @@ export default function ReportsPage() {
               <StatCard label="Tỷ lệ lấp đầy" value={`${snapshot.occupancyRate}%`} sub={`${fmtNum(snapshot.inUse)}/${fmtNum(snapshot.total)} chỗ đang dùng`} icon={TrendingUp} />
               <StatCard label="Tổng số chỗ" value={fmtNum(snapshot.total)} icon={LayoutGrid} />
               <StatCard label="Đang dùng" value={fmtNum(snapshot.occupied)} icon={Car} />
-              <StatCard label="Đang đặt" value={fmtNum(snapshot.reserved)} sub="chỗ giữ cho đặt chỗ (≠ số lượt đặt)" icon={Clock} />
+              <StatCard label="Đang đặt" value={fmtNum(snapshot.reserved)} icon={Clock} />
               <StatCard label="Còn trống" value={fmtNum(snapshot.available)} />
             </div>
-            <p className="mt-3 text-xs text-slate-400">
-              {compParts.join(' + ') || '0'} = {fmtNum(snapshot.total)} tổng số chỗ
-            </p>
             <Card className="mt-4">
               <CardHeader title="Lấp đầy theo tầng" description="Số chỗ đang dùng trên tổng số chỗ mỗi tầng (hiện tại)." />
               {byFloor.length === 0 ? (
