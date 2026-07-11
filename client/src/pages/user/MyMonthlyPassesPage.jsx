@@ -76,12 +76,25 @@ export default function MyMonthlyPassesPage() {
     setRepayingId(pass.pass_id);
     try {
       const { data } = await monthlyPassApi.repay(pass.pass_id);
-      const checkoutUrl = data.data?.checkoutUrl;
-      if (!checkoutUrl) throw new Error('Không nhận được link thanh toán');
-      toast.success('Chuyển sang thanh toán vé tháng');
-      window.location.assign(checkoutUrl);
+      const info = data.data || {};
+      // Tiền đã về, webhook chưa tới → BE tự kích hoạt vé. KHÔNG điều hướng (tránh thu tiền 2 lần).
+      if (info.alreadyPaid) {
+        toast.success('Vé tháng đã được thanh toán và kích hoạt');
+        await load('manual');
+        return;
+      }
+      // Link cũ còn sống (reused) hoặc link mới → sang PayOS.
+      if (info.checkoutUrl) {
+        toast.success('Chuyển sang thanh toán vé tháng');
+        window.location.assign(info.checkoutUrl);
+        return;
+      }
+      // Không có link mà cũng không alreadyPaid → coi như lỗi tạo link.
+      toast.error('Chưa tạo được liên kết thanh toán — vui lòng thử lại');
     } catch (err) {
-      toast.error(err.response?.data?.error?.message || err.message || 'Không lấy được link thanh toán');
+      // 502 = BE cố tình không phát link mới khi chưa chắc link cũ đã chết → hiện lỗi, cho bấm lại.
+      toast.error(err.response?.data?.error?.message || 'Chưa tạo lại được liên kết thanh toán — vui lòng thử lại');
+    } finally {
       setRepayingId(null);
     }
   };

@@ -21,7 +21,10 @@ export const monthlyPassApi = {
   capacity: (params) => api.get('/monthly-passes/capacity', { params }),
 
   // Lấy lại link thanh toán cho vé đang 'pending' (khách tắt tab PayOS giữa chừng).
-  // Trả về data: { pass, payment, checkoutUrl, reused }
+  // Trả về data: { pass, payment, checkoutUrl, reused } — link cũ còn sống (reused=true) hoặc link mới.
+  // Nếu tiền ĐÃ về mà webhook chưa tới (localhost): { pass, payment, checkoutUrl: null, alreadyPaid: true }
+  //   ⇒ BE tự kích hoạt vé, FE KHÔNG được điều hướng (tránh thu tiền 2 lần).
+  // Có thể trả 502 PAYMENT_GATEWAY_ERROR khi chưa chắc link cũ đã chết ⇒ cho user bấm lại.
   repay: (id) => api.post(`/monthly-passes/${id}/repay`),
 
   // Hủy vé + tính % hoàn theo chính sách. Thông điệp kết quả nằm ở res.data.message;
