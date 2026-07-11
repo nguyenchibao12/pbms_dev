@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import { Link, Navigate, useSearchParams } from 'react-router-dom';
 import { QRCodeSVG } from 'qrcode.react';
-import { CalendarPlus, RefreshCw, MapPin, CheckCircle2 } from 'lucide-react';
+import { CalendarPlus, RefreshCw, MapPin, CheckCircle2, CreditCard } from 'lucide-react';
 import { reservationsApi } from '../../api/reservations';
 import { formatShiftLabel } from '../../lib/shifts';
 import PageHeader from '../../components/ui/PageHeader';
@@ -41,6 +41,19 @@ const formatLocation = (r) => {
 
 const isCancellable = (status) => status === 'pending' || status === 'confirmed';
 
+// BE chưa có endpoint tạo lại link thanh toán cho đơn 'pending' (khác vé tháng có /repay).
+// Đọc lại checkoutUrl đã lưu trong payment 'pending' của đơn để chuyển thẳng sang PayOS.
+// Không có link khả dụng nghĩa là link cũ đã hết hạn — khách cần đặt chỗ mới.
+const pendingCheckoutUrl = (r) => {
+  const pending = (r.payments || []).find((p) => p.status === 'pending' && p.method === 'payos');
+  if (!pending?.gateway_response) return '';
+  try {
+    return JSON.parse(pending.gateway_response)?.checkoutUrl || '';
+  } catch {
+    return '';
+  }
+};
+
 export default function MyReservationsPage() {
   const [searchParams] = useSearchParams();
   const [items, setItems] = useState([]);
@@ -49,6 +62,7 @@ export default function MyReservationsPage() {
   const [error, setError] = useState('');
   const [cancelTarget, setCancelTarget] = useState(null);
   const [cancelLoading, setCancelLoading] = useState(false);
+  const [repayingId, setRepayingId] = useState(null);
 
   const load = useCallback(async (mode = 'initial') => {
     if (mode === 'manual') setRefreshing(true);
@@ -80,6 +94,19 @@ export default function MyReservationsPage() {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     load('initial');
   }, [load, paymentResult]);
+
+  // "Trả tiếp": chuyển lại sang PayOS bằng link đã lưu của đơn pending.
+  const handleRepay = (r) => {
+    if (repayingId) return;
+    const url = pendingCheckoutUrl(r);
+    if (!url) {
+      toast.error('Link thanh toán đã hết hạn — vui lòng tạo đặt chỗ mới');
+      return;
+    }
+    setRepayingId(r.reservation_id);
+    toast.success('Chuyển sang thanh toán phí giữ chỗ');
+    window.location.assign(url);
+  };
 
   const handleCancel = async () => {
     if (!cancelTarget || cancelLoading) return;
@@ -184,6 +211,17 @@ export default function MyReservationsPage() {
                   </div>
 
                   <div className="flex shrink-0 flex-wrap gap-2 sm:flex-col sm:items-end">
+                    {r.status === 'pending' && (
+                      <Button
+                        size="sm"
+                        onClick={() => handleRepay(r)}
+                        loading={repayingId === r.reservation_id}
+                        disabled={!!repayingId}
+                      >
+                        <CreditCard className="h-4 w-4" />
+                        Trả tiếp
+                      </Button>
+                    )}
                     {isCancellable(r.status) && (
                       <Button
                         size="sm"
