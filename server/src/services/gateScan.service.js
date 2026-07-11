@@ -6,6 +6,7 @@ import { checkinWithPass } from './monthlyPass.service.js';
 import { initiateSessionCheckout } from './payment.service.js';
 import { recordIncident } from './incident.service.js';
 import { releaseSlotIfOccupied } from '../utils/slotSuggest.js';
+import { assertReservationQrUsable } from '../utils/stateGuards.js';
 
 const open = (stage, extra = {}) => ({ action: 'OPEN', stage, ...extra });
 
@@ -16,7 +17,11 @@ const resolveQr = async (qrToken) => {
     throw new AppError('Mã QR không hợp lệ hoặc đã vô hiệu', 400, 'VALIDATION_ERROR');
   }
   const reservation = await Reservation.findOne({ where: { qr_token: token } });
-  if (reservation) return { kind: 'reservation', reservation };
+  if (reservation) {
+    // OR-16: token gốc được giữ lại kể cả khi đơn đã hủy/no-show/xong → chặn theo status.
+    assertReservationQrUsable(reservation);
+    return { kind: 'reservation', reservation };
+  }
   const session = await ParkingSession.findOne({ where: { qr_token: token, status: 'active' } });
   if (session) return { kind: 'session', session };
   const pass = await MonthlyPass.findOne({ where: { qr_token: token } });

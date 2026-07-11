@@ -29,7 +29,7 @@ import { recordWrongFloorIncident, recordIncident } from './incident.service.js'
 import { validateAndNormalizePlateVN } from '../utils/plateVN.js';
 import { assertGateVehicleType } from '../utils/gateVehicle.js';
 import { resolveFloorGate } from '../utils/gateResolve.js';
-import { assertReservationTransition, buildRevokedQrToken } from '../utils/stateGuards.js';
+import { assertReservationTransition, assertReservationQrUsable } from '../utils/stateGuards.js';
 import { resolveShiftWindow } from '../utils/shifts.js';
 import {
   getBookingFee as getBookingFeeFromSettings,
@@ -522,13 +522,8 @@ export const markReservationNoShow = async (reservationId) => {
     }
 
     assertReservationTransition(locked.status, 'no_show');
-    await locked.update(
-      {
-        status: 'no_show',
-        qr_token: buildRevokedQrToken('reservation', locked.reservation_id),
-      },
-      { transaction },
-    );
+    // OR-16: giữ nguyên qr_token — cổng chặn theo status (assertReservationQrUsable).
+    await locked.update({ status: 'no_show' }, { transaction });
   });
 
   return getReservation(reservationId);
@@ -598,14 +593,8 @@ export const cancelUserReservation = async (userId, reservationId) => {
       await releaseSlot(reservation.slot_id, transaction);
     }
 
-    // OR-16: vô hiệu hóa QR khi hủy
-    await reservation.update(
-      {
-        status: 'cancelled',
-        qr_token: buildRevokedQrToken('reservation', reservation.reservation_id),
-      },
-      { transaction },
-    );
+    // OR-16: giữ nguyên qr_token — cổng chặn theo status (assertReservationQrUsable).
+    await reservation.update({ status: 'cancelled' }, { transaction });
 
     const payment = await Payment.findOne({
       where: {
@@ -695,6 +684,7 @@ export const listStaffUpcomingReservations = async () => {
 /** Staff — tra cứu đặt chỗ từ mã QR (preview trước check-in) */
 export const staffLookupReservationByQr = async (qrToken) => {
   const token = String(qrToken || '').trim();
+  // Token bị bẻ từ trước OR-16 (dữ liệu cũ) — không còn tra ngược được về đơn nào.
   if (!token || token.startsWith('revoked-')) {
     throw new AppError('Mã QR không hợp lệ hoặc đã vô hiệu', 400, 'VALIDATION_ERROR');
   }
@@ -705,6 +695,7 @@ export const staffLookupReservationByQr = async (qrToken) => {
   if (!reservation) {
     throw new AppError('Không tìm thấy đặt chỗ với mã QR này', 404, 'NOT_FOUND');
   }
+  assertReservationQrUsable(reservation);
   return reservation;
 };
 

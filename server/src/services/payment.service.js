@@ -23,7 +23,6 @@ import {
   assertSessionCheckoutTime,
   buildRevokedQrToken,
 } from '../utils/stateGuards.js';
-import { Reservation } from '../models/index.js';
 import { getLostTicketFee } from '../utils/settings.js';
 import { createIncident, recordIncident } from './incident.service.js';
 
@@ -89,14 +88,9 @@ export const completeSessionAfterPayment = async (payment, staffUserId = null) =
       { transaction }
     );
     if (session.reservation_id) {
+      // OR-16: giữ nguyên qr_token của đặt chỗ (user còn xem lại lịch sử); status
+      // 'completed' đã đủ để cổng từ chối — xem assertReservationQrUsable.
       await markReservationCompleted(session.reservation_id, transaction);
-      const reservation = await Reservation.findByPk(session.reservation_id, { transaction });
-      if (reservation?.qr_token) {
-        await reservation.update(
-          { qr_token: buildRevokedQrToken('reservation', reservation.reservation_id) },
-          { transaction },
-        );
-      }
     }
   });
 
