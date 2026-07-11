@@ -104,12 +104,11 @@ export const AuthProvider = ({ children }) => {
     return data.data;
   };
 
+  // Đăng ký KHÔNG tạo phiên: BE không phát JWT nữa — user phải bấm link xác minh
+  // trong email rồi mới đăng nhập được. Trả về { user, emailVerificationSent } + message.
   const register = async (payload) => {
-    clearSession();
     const { data } = await registerApi(payload);
-    localStorage.setItem('token', data.data.token);
-    setUser(data.data.user);
-    return data.data;
+    return { ...data.data, message: data.message };
   };
 
   const logout = useCallback(() => {
