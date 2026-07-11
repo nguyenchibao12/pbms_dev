@@ -18,6 +18,10 @@ export const getMe = () => api.get('/auth/me');
 // Mọi field optional; chỉ gửi field cần đổi. Trả về user đầy đủ như getMe.
 export const updateMe = (data) => api.patch('/auth/me', data);
 
+// Gửi lại email xác minh tài khoản (link xác minh trỏ vào trang HTML của BE).
+// BE luôn trả message chung, không lộ email có tồn tại hay không.
+export const resendVerification = (email) => api.post('/auth/resend-verification', { email });
+
 // Quên mật khẩu: gửi email kèm link đặt lại (BE luôn trả message chung, không lộ email tồn tại hay không).
 export const forgotPassword = (email) => api.post('/auth/forgot-password', { email });
 

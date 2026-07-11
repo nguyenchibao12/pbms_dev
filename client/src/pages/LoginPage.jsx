@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { resendVerification } from '../api/auth';
 import { getRoleName, resolveRedirectAfterLogin } from '../lib/auth';
 import Card from '../components/ui/Card';
 import Input from '../components/ui/Input';
@@ -19,6 +20,25 @@ export default function LoginPage() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  // Tài khoản chưa xác minh email (BE trả EMAIL_NOT_VERIFIED): hiện khối gửi lại link xác minh.
+  // Login dùng username còn resend cần email → cho nhập email (điền sẵn nếu username là email).
+  const [needVerify, setNeedVerify] = useState(false);
+  const [resendEmail, setResendEmail] = useState('');
+  const [resending, setResending] = useState(false);
+
+  const handleResend = async (e) => {
+    e.preventDefault();
+    if (!resendEmail.trim()) return;
+    setResending(true);
+    try {
+      const { data } = await resendVerification(resendEmail.trim());
+      toast.success(data.message || 'Đã gửi lại email xác minh');
+    } catch (err) {
+      toast.error(err.response?.data?.error?.message || 'Gửi lại email thất bại');
+    } finally {
+      setResending(false);
+    }
+  };
 
   // Đã đăng nhập rồi thì chuyển thẳng về trang chính tương ứng vai trò.
   useEffect(() => {
@@ -33,6 +53,7 @@ export default function LoginPage() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
+    setNeedVerify(false);
     setSubmitting(true);
     try {
       const result = await login(username, password);
@@ -40,6 +61,10 @@ export default function LoginPage() {
       const target = resolveRedirectAfterLogin(roleName, requestedPath);
       navigate(target, { replace: true, state: {} });
     } catch (err) {
+      if (err.response?.data?.error?.code === 'EMAIL_NOT_VERIFIED') {
+        setNeedVerify(true);
+        setResendEmail(username.includes('@') ? username.trim() : '');
+      }
       setError(err.response?.data?.error?.message || 'Đăng nhập thất bại');
     } finally {
       setSubmitting(false);
@@ -91,6 +116,28 @@ export default function LoginPage() {
             </div>
           )}
           <ErrorAlert message={error} className="mb-4" />
+
+          {/* Chưa xác minh email: cho nhập email nhận lại link (không lộ email có tồn tại hay không). */}
+          {needVerify && (
+            <form onSubmit={handleResend} className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
+              <p className="text-sm text-amber-800">
+                Tài khoản chưa xác minh email. Nhập email đã đăng ký để nhận lại liên kết xác minh:
+              </p>
+              <div className="mt-2 flex gap-2">
+                <Input
+                  type="email"
+                  value={resendEmail}
+                  onChange={(e) => setResendEmail(e.target.value)}
+                  placeholder="email@vidu.com"
+                  autoComplete="email"
+                  required
+                />
+                <Button type="submit" variant="secondary" loading={resending} className="whitespace-nowrap">
+                  Gửi lại
+                </Button>
+              </div>
+            </form>
+          )}
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <Field label="Tên đăng nhập" required>

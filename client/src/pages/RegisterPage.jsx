@@ -1,8 +1,10 @@
 import { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
+import { MailCheck } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { getRoleName, getHomePathForRole, roleLabels } from '../lib/auth';
 import { useLogout } from '../hooks/useLogout';
+import { resendVerification } from '../api/auth';
 import Card from '../components/ui/Card';
 import Input from '../components/ui/Input';
 import Field, { ErrorAlert } from '../components/ui/Field';
@@ -12,7 +14,6 @@ import { toast } from '../components/ui/toast';
 export default function RegisterPage() {
   const { register, isAuthenticated, user } = useAuth();
   const logout = useLogout();
-  const navigate = useNavigate();
   const roleName = getRoleName(user);
 
   const [form, setForm] = useState({
@@ -25,6 +26,22 @@ export default function RegisterPage() {
   });
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  // Email đã đăng ký thành công (null = còn ở form). BE không phát JWT khi đăng ký —
+  // phải xác minh email rồi mới đăng nhập, nên hiện màn "kiểm tra hộp thư" thay vì vào app.
+  const [registeredEmail, setRegisteredEmail] = useState(null);
+  const [resending, setResending] = useState(false);
+
+  const handleResend = async () => {
+    setResending(true);
+    try {
+      const { data } = await resendVerification(registeredEmail);
+      toast.success(data.message || 'Đã gửi lại email xác minh');
+    } catch (err) {
+      toast.error(err.response?.data?.error?.message || 'Gửi lại email thất bại');
+    } finally {
+      setResending(false);
+    }
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -45,15 +62,15 @@ export default function RegisterPage() {
 
     setSubmitting(true);
     try {
-      await register({
+      const result = await register({
         username: form.username.trim(),
         password: form.password,
         fullName: form.fullName.trim(),
         email: form.email.trim(),
         phone: form.phone.trim() || undefined,
       });
-      toast.success('Đăng ký thành công! Chào mừng bạn đến PBMS.');
-      navigate(getHomePathForRole('User'), { replace: true });
+      toast.success(result.message || 'Đăng ký thành công! Kiểm tra email để xác minh tài khoản.');
+      setRegisteredEmail(form.email.trim());
     } catch (err) {
       setError(err.response?.data?.error?.message || 'Đăng ký thất bại');
     } finally {
@@ -104,6 +121,38 @@ export default function RegisterPage() {
               </Button>
             </Link>
             <Link to="/" className="text-center text-sm text-brand hover:underline">
+              Về trang chủ
+            </Link>
+          </div>
+        </Card>
+      </div>
+    );
+  }
+
+  // Đăng ký xong: nhắc mở email bấm link xác minh (link trỏ vào trang xác minh của hệ thống).
+  if (registeredEmail) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-surface px-4">
+        <Card className="w-full max-w-md text-center">
+          <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-emerald-50">
+            <MailCheck className="h-7 w-7 text-emerald-600" />
+          </div>
+          <h1 className="text-xl font-bold text-slate-800">Kiểm tra hộp thư của bạn</h1>
+          <p className="mt-2 text-sm text-slate-600">
+            Chúng tôi đã gửi liên kết xác minh tới <strong>{registeredEmail}</strong>.
+            Bấm vào liên kết trong email để kích hoạt tài khoản, sau đó quay lại đăng nhập.
+          </p>
+          <p className="mt-2 text-xs text-slate-400">
+            Không thấy email? Kiểm tra mục Spam/Quảng cáo, hoặc bấm gửi lại bên dưới.
+          </p>
+          <div className="mt-6 flex flex-col gap-2">
+            <Link to="/login">
+              <Button className="brand-gradient w-full border-0">Tôi đã xác minh — Đăng nhập</Button>
+            </Link>
+            <Button variant="secondary" className="w-full" loading={resending} onClick={handleResend}>
+              Gửi lại email xác minh
+            </Button>
+            <Link to="/" className="text-sm text-brand hover:underline">
               Về trang chủ
             </Link>
           </div>
