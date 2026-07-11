@@ -25,6 +25,7 @@ import PricingRulesPage from './pages/manager/PricingRulesPage';
 import ZonesPage from './pages/manager/ZonesPage';
 import ParkingSlotsPage from './pages/manager/ParkingSlotsPage';
 import GatesPage from './pages/manager/GatesPage';
+import SettingsPage from './pages/manager/SettingsPage';
 import StaffOperationsPage from './pages/staff/StaffOperationsPage';
 import PricingPage from './pages/guest/PricingPage';
 import AvailabilityPage from './pages/guest/AvailabilityPage';
@@ -91,6 +92,7 @@ export default function App() {
               <Route path="zones" element={<ZonesPage />} />
               <Route path="parking-slots" element={<ParkingSlotsPage />} />
               <Route path="gates" element={<GatesPage />} />
+              <Route path="settings" element={<SettingsPage />} />
             </Route>
           </Route>
           {/* Khu vực Nhân viên — StaffLayout bọc trang vận hành */}
