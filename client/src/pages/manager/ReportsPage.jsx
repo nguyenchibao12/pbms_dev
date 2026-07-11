@@ -35,6 +35,16 @@ const METHOD_LABEL = { payos: 'PayOS (online)', cash: 'Tiền mặt', free: 'Mi�
 // Màu thanh theo mức lấp đầy.
 const rateColor = (rate) => (rate >= 80 ? 'bg-red-500' : rate >= 50 ? 'bg-amber-500' : 'bg-emerald-500');
 
+// Cơ cấu chỗ: 5 nhóm này cộng lại = tổng số chỗ (occupied+reserved+available+maintenance+locked).
+// Dùng để hiển thị cân đối, tránh đọc nhầm "đang đặt" (số CHỖ) với số lượt đặt (số đơn).
+const COMPOSITION = [
+  { key: 'occupied', label: 'Đang dùng', bar: 'bg-rose-500' },
+  { key: 'reserved', label: 'Đang đặt', bar: 'bg-amber-500' },
+  { key: 'available', label: 'Còn trống', bar: 'bg-emerald-500' },
+  { key: 'maintenance', label: 'Bảo trì', bar: 'bg-slate-400' },
+  { key: 'locked', label: 'Tạm khóa', bar: 'bg-violet-500' },
+];
+
 // Khoảng ngày mặc định / preset: N ngày gần nhất tính đến hôm nay.
 const presetRange = (days) => {
   const to = new Date();
@@ -160,6 +170,10 @@ export default function ReportsPage() {
   const byFloor = report?.occupancy?.byFloor || [];
   const revenue = report?.revenue;
   const traffic = report?.traffic;
+  // Các thành phần > 0 để ghép thành phương trình "a đang dùng + b đang đặt + ... = tổng".
+  const compParts = snapshot
+    ? COMPOSITION.filter((c) => snapshot[c.key] > 0).map((c) => `${fmtNum(snapshot[c.key])} ${c.label.toLowerCase()}`)
+    : [];
 
   return (
     <div>
@@ -219,11 +233,39 @@ export default function ReportsPage() {
               <StatCard label="Đang dùng" value={fmtNum(snapshot.occupied)} icon={Car} />
               <StatCard label="Còn trống" value={fmtNum(snapshot.available)} />
             </div>
-            <div className="mt-3 flex flex-wrap gap-2 text-xs">
-              <span className="rounded-full bg-yellow-50 px-2.5 py-1 font-medium text-yellow-700">Đã đặt: {fmtNum(snapshot.reserved)}</span>
-              <span className="rounded-full bg-slate-100 px-2.5 py-1 font-medium text-slate-600">Bảo trì: {fmtNum(snapshot.maintenance)}</span>
-              <span className="rounded-full bg-violet-50 px-2.5 py-1 font-medium text-violet-700">Tạm khóa: {fmtNum(snapshot.locked)}</span>
-            </div>
+            <Card className="mt-4">
+              <CardHeader
+                title="Cơ cấu chỗ đỗ"
+                description="Năm nhóm cộng lại đúng bằng tổng số chỗ. Lưu ý: 'Đang đặt' là số CHỖ đang giữ cho đặt chỗ (mỗi chỗ có thể nhiều lượt đặt ở khung giờ khác nhau), không phải số lượt/đơn đặt."
+              />
+              <div className="mb-4 flex h-3 w-full overflow-hidden rounded-full bg-slate-100">
+                {COMPOSITION.map((c) =>
+                  snapshot[c.key] > 0 ? (
+                    <div
+                      key={c.key}
+                      className={c.bar}
+                      style={{ width: `${(snapshot[c.key] / snapshot.total) * 100}%` }}
+                      title={`${c.label}: ${fmtNum(snapshot[c.key])}`}
+                    />
+                  ) : null,
+                )}
+              </div>
+              <div className="grid grid-cols-2 gap-x-6 gap-y-2 sm:grid-cols-3">
+                {COMPOSITION.map((c) => (
+                  <div key={c.key} className="flex items-center justify-between gap-2 text-sm">
+                    <span className="flex items-center gap-2 text-slate-600">
+                      <span className={`h-2.5 w-2.5 rounded-sm ${c.bar}`} />
+                      {c.label}
+                    </span>
+                    <span className="font-semibold text-slate-800">{fmtNum(snapshot[c.key])}</span>
+                  </div>
+                ))}
+              </div>
+              <div className="mt-4 border-t border-slate-100 pt-3 text-sm text-slate-600">
+                {compParts.join(' + ') || '0'}
+                <span className="font-semibold text-slate-900"> = {fmtNum(snapshot.total)} tổng số chỗ</span>
+              </div>
+            </Card>
 
             <Card className="mt-4">
               <CardHeader title="Lấp đầy theo tầng" description="Số chỗ đang dùng trên tổng số chỗ mỗi tầng (hiện tại)." />
