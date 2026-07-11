@@ -26,6 +26,9 @@ const DEFAULT_SYSTEM = {
   booking_fee: 20000,
   monthly_pass_price: 500000,
   lost_ticket_fee: 50000,
+  // Phụ thu quá giờ (walk-in vượt max_parking_hours) — mặc định 0 = chưa áp dụng cho tới
+  // khi Manager đặt giá. BE walk-in đọc qua getOverstayFee() khi enforce lúc checkout.
+  overstay_fee: 0,
   slot_suggest_strategy: 'nearest_gate',
   suggest_score_weights: { ...DEFAULT_SCORE_WEIGHTS },
   ai_logging_enabled: true,
@@ -59,6 +62,7 @@ const envSystemDefaults = () => ({
   booking_fee: Number(process.env.BOOKING_FEE) || DEFAULT_SYSTEM.booking_fee,
   monthly_pass_price: Number(process.env.MONTHLY_PASS_PRICE) || DEFAULT_SYSTEM.monthly_pass_price,
   lost_ticket_fee: Number(process.env.LOST_TICKET_FEE) || DEFAULT_SYSTEM.lost_ticket_fee,
+  overstay_fee: Number(process.env.OVERSTAY_FEE) || DEFAULT_SYSTEM.overstay_fee,
   slot_suggest_strategy:
     process.env.SLOT_SUGGEST_STRATEGY === 'zone_balanced' ? 'zone_balanced' : 'nearest_gate',
   ai_logging_enabled: process.env.AI_LOGGING_ENABLED !== 'false',
@@ -76,6 +80,12 @@ const envSystemDefaults = () => ({
     process.env.BOOKING_NO_SHOW_GRACE_MINUTES !== ''
       ? Number(process.env.BOOKING_NO_SHOW_GRACE_MINUTES)
       : DEFAULT_SYSTEM.booking_no_show_grace_minutes,
+  // Chính sách hoàn tiền vé tháng (Nhóm B) — đưa vào cache để GET /settings/system trả về
+  // cho FE đổ form. getPassRefundPolicy() vẫn có fallback riêng nên an toàn hai chiều.
+  pass_refund_trial_days: DEFAULT_SYSTEM.pass_refund_trial_days,
+  pass_refund_trial_percent: DEFAULT_SYSTEM.pass_refund_trial_percent,
+  pass_refund_half_term_percent: DEFAULT_SYSTEM.pass_refund_half_term_percent,
+  pass_refund_bank_info_ttl_days: DEFAULT_SYSTEM.pass_refund_bank_info_ttl_days,
 });
 
 export const clearSettingsCache = () => {
@@ -114,6 +124,12 @@ export const getBookingFee = () => Number(getSystemSettingsSync().booking_fee);
 export const getMonthlyPassPrice = () => Number(getSystemSettingsSync().monthly_pass_price);
 
 export const getLostTicketFee = () => Number(getSystemSettingsSync().lost_ticket_fee);
+
+/** Phụ thu quá giờ (VND). BE walk-in gọi hàm này khi enforce phụ thu lúc checkout. */
+export const getOverstayFee = () => {
+  const v = getSystemSettingsSync().overstay_fee;
+  return v != null && Number(v) >= 0 ? Number(v) : 0;
+};
 
 export const getSuggestStrategy = () => getSystemSettingsSync().slot_suggest_strategy || 'nearest_gate';
 

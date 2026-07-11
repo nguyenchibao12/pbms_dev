@@ -16,6 +16,7 @@ import {
   getBuildingSettingsSync,
 } from '../utils/settings.js';
 import { parsePagination, findAndPaginate } from '../utils/pagination.js';
+import { recordPassWindowViolation } from './incident.service.js';
 
 const passIncludes = [
   { association: 'floor' },
@@ -362,6 +363,13 @@ export const activatePassAfterPayment = async (payment) => {
 export const checkinWithPass = async (pass, { gateId = null } = {}) => {
   const now = new Date();
   if (!isWithinPassWindow(pass, now)) {
+    // Ghi vết audit (không chặn luồng nếu ghi lỗi) rồi chặn cứng.
+    await recordPassWindowViolation({
+      passId: pass.pass_id,
+      userId: pass.user_id,
+      plateNumber: pass.plate_number,
+      gateId,
+    });
     throw new AppError(
       'Vé tháng đang ngoài khung giờ hiệu lực — vui lòng qua quầy gặp nhân viên nếu muốn gửi xe tính phí',
       409,

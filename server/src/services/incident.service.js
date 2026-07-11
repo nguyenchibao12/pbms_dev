@@ -126,6 +126,31 @@ export const updateIncidentStatus = async (id, status) => {
   return enrichIncident(await incident.reload({ include: incidentIncludes }));
 };
 
+/**
+ * Vé tháng quét cổng ngoài khung giờ hiệu lực → ghi incident window_violation để admin có
+ * vết audit (kèm chặn cứng PASS_OUTSIDE_WINDOW ở monthlyPass.service). Chống spam: bỏ qua
+ * nếu vé này đã có incident window_violation 'open' trong 60 phút gần nhất (khách hay quét lại).
+ */
+export const recordPassWindowViolation = async ({ passId, userId, plateNumber, gateId }) => {
+  const recent = await Incident.findOne({
+    where: {
+      pass_id: passId,
+      type: 'window_violation',
+      status: 'open',
+      created_at: { [Op.gte]: new Date(Date.now() - 60 * 60 * 1000) },
+    },
+  });
+  if (recent) return recent;
+
+  return recordIncident({
+    type: 'window_violation',
+    passId,
+    userId,
+    description: `Vé tháng ${plateNumber} quét cổng ngoài khung giờ hiệu lực${gateId ? ` (gate ${gateId})` : ''}`,
+    status: 'open',
+  });
+};
+
 export const recordWrongFloorIncident = async ({
   gateFloorId,
   expectedFloorId,
