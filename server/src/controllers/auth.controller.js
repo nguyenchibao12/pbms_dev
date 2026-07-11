@@ -4,14 +4,15 @@ import { isGoogleConfigured } from '../utils/google.js';
 
 export const register = asyncHandler(async (req, res) => {
   const { username, password, fullName, email, phone } = req.body;
-  const result = await authService.register({
+  // message nằm ở vỏ envelope, không lặp lại trong data.
+  const { message, ...data } = await authService.register({
     username,
     password,
     fullName,
     email,
     phone,
   });
-  successResponse(res, result, 'Registration successful', 201);
+  successResponse(res, data, message, 201);
 });
 
 export const login = asyncHandler(async (req, res) => {
@@ -31,17 +32,17 @@ export const updateMe = asyncHandler(async (req, res) => {
 });
 
 export const forgotPassword = asyncHandler(async (req, res) => {
-  const result = await authService.forgotPassword({ email: req.body.email });
-  successResponse(res, result, result.message);
+  const { message } = await authService.forgotPassword({ email: req.body.email });
+  successResponse(res, null, message);
 });
 
 export const resetPassword = asyncHandler(async (req, res) => {
-  const result = await authService.resetPassword({
+  const { message } = await authService.resetPassword({
     email: req.body.email,
     token: req.body.token,
     newPassword: req.body.newPassword,
   });
-  successResponse(res, result, result.message);
+  successResponse(res, null, message);
 });
 
 export const googleLogin = asyncHandler(async (req, res) => {
@@ -54,13 +55,13 @@ export const googleLogin = asyncHandler(async (req, res) => {
 });
 
 export const verifyEmail = asyncHandler(async (req, res) => {
-  const result = await authService.verifyEmail({ email: req.body.email, token: req.body.token });
-  successResponse(res, result, result.message);
+  const { message } = await authService.verifyEmail({ email: req.body.email, token: req.body.token });
+  successResponse(res, null, message);
 });
 
 export const resendVerification = asyncHandler(async (req, res) => {
-  const result = await authService.resendVerification({ email: req.body.email });
-  successResponse(res, result, result.message);
+  const { message } = await authService.resendVerification({ email: req.body.email });
+  successResponse(res, null, message);
 });
 
 // Trang HTML hiển thị khi user BẤM link trong email (request GET). Trả HTML thay vì JSON.
