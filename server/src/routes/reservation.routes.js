@@ -88,5 +88,9 @@ router.post('/:id/cancel',
   /* #swagger.tags = ['Reservations']
      #swagger.summary = 'Hủy đặt chỗ + hoàn phí (User)' */
   ...userOnly, reservationIdParam, validate, reservationController.cancel);
+router.post('/:id/repay',
+  /* #swagger.tags = ['Reservations']
+     #swagger.summary = 'Trả tiếp phí giữ chỗ cho đơn pending (User) — tạo lại link PayOS' */
+  ...userOnly, reservationIdParam, validate, reservationController.repay);
 
 export default router;

@@ -58,6 +58,16 @@ export const getPayOSPaymentInfo = async (orderCode) => {
   return payos.paymentRequests.get(Number(orderCode));
 };
 
+/**
+ * Hủy hẳn đơn cũ Ở PHÍA PAYOS (không chỉ đánh dấu trong DB mình).
+ * Bắt buộc trước khi phát link mới cho cùng một đơn: hai link cùng sống = khách có thể trả
+ * tiền HAI LẦN cho một chỗ đỗ. Đơn đã CANCELLED/PAID sẵn thì PayOS ném lỗi — người gọi tự xử.
+ */
+export const cancelPayOSPaymentLink = async (orderCode, reason = 'Khách tạo lại liên kết thanh toán') => {
+  const payos = getPayOSClient();
+  return payos.paymentRequests.cancel(Number(orderCode), reason);
+};
+
 export const verifyPayOSWebhook = async (body) => {
   const payos = getPayOSClient();
   return payos.webhooks.verify(body);

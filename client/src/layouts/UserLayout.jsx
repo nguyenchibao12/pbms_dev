@@ -10,6 +10,7 @@ const tabs = [
   { to: '/reservations/new', label: 'Đặt chỗ mới' },
   { to: '/monthly-pass', label: 'Vé tháng của tôi', end: true },
   { to: '/monthly-pass/new', label: 'Mua vé tháng' },
+  { to: '/parking', label: 'Xe trong bãi' },
 ];
 
 export default function UserLayout() {

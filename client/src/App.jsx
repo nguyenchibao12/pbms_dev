@@ -25,11 +25,13 @@ import PricingRulesPage from './pages/manager/PricingRulesPage';
 import ZonesPage from './pages/manager/ZonesPage';
 import ParkingSlotsPage from './pages/manager/ParkingSlotsPage';
 import GatesPage from './pages/manager/GatesPage';
+import SettingsPage from './pages/manager/SettingsPage';
 import StaffOperationsPage from './pages/staff/StaffOperationsPage';
 import PricingPage from './pages/guest/PricingPage';
 import AvailabilityPage from './pages/guest/AvailabilityPage';
 import InfoPage from './pages/guest/InfoPage';
 import MyReservationsPage from './pages/user/MyReservationsPage';
+import MyParkingPage from './pages/user/MyParkingPage';
 import ReservePage from './pages/user/ReservePage';
 import GateKioskPage from './pages/kiosk/GateKioskPage';
 import PaymentSuccessPage from './pages/user/PaymentSuccessPage';
@@ -91,6 +93,7 @@ export default function App() {
               <Route path="zones" element={<ZonesPage />} />
               <Route path="parking-slots" element={<ParkingSlotsPage />} />
               <Route path="gates" element={<GatesPage />} />
+              <Route path="settings" element={<SettingsPage />} />
             </Route>
           </Route>
           {/* Khu vực Nhân viên — StaffLayout bọc trang vận hành */}
@@ -114,6 +117,10 @@ export default function App() {
               <Route path="new" element={<BuyMonthlyPassPage />} />
               <Route path="payment/success" element={<PassPaymentSuccessPage />} />
               <Route path="payment/failed" element={<PassPaymentFailedPage />} />
+            </Route>
+            {/* Xe của tôi đang trong bãi — theo dõi phiên gửi + mã QR ra cổng */}
+            <Route path="/parking" element={<UserLayout />}>
+              <Route index element={<MyParkingPage />} />
             </Route>
             {/* Hồ sơ cá nhân — cập nhật STK nhận hoàn tiền (BE cố định link email nhắc về /profile) */}
             <Route path="/profile" element={<UserLayout />}>
