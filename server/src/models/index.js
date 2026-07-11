@@ -118,9 +118,11 @@ Incident.belongsTo(MonthlyPass, { foreignKey: 'pass_id', as: 'pass' });
 UserAccount.hasMany(AuditLog, { foreignKey: 'actor_id', as: 'auditLogs' });
 AuditLog.belongsTo(UserAccount, { foreignKey: 'actor_id', as: 'actor' });
 
-// Hoàn tiền hủy vé tháng (P3-8)
+// Hoàn tiền hủy vé tháng (P3-8) + hủy đặt chỗ trước cutoff (migration 006)
 MonthlyPass.hasOne(RefundRequest, { foreignKey: 'pass_id', as: 'refundRequest' });
 RefundRequest.belongsTo(MonthlyPass, { foreignKey: 'pass_id', as: 'pass' });
+Reservation.hasOne(RefundRequest, { foreignKey: 'reservation_id', as: 'refundRequest' });
+RefundRequest.belongsTo(Reservation, { foreignKey: 'reservation_id', as: 'reservation' });
 RefundRequest.belongsTo(Payment, { foreignKey: 'payment_id', as: 'payment' });
 UserAccount.hasMany(RefundRequest, { foreignKey: 'user_id', as: 'refundRequests' });
 RefundRequest.belongsTo(UserAccount, { foreignKey: 'user_id', as: 'user' });

@@ -8,6 +8,7 @@ import {
   Gate,
   Floor,
   VehicleType,
+  RefundRequest,
 } from '../models/index.js';
 import { AppError } from '../utils/helpers.js';
 import { generateQrToken } from '../utils/qr.js';
@@ -33,6 +34,7 @@ import { resolveShiftWindow } from '../utils/shifts.js';
 import {
   getBookingFee as getBookingFeeFromSettings,
   getBookingRefundCutoffHours,
+  getPassRefundPolicy,
 } from '../utils/settings.js';
 import { logAdminAction } from '../utils/auditLog.js';
 
@@ -401,30 +403,37 @@ export const confirmReservationAfterPayment = async (payment) => {
   const reservation = await Reservation.findByPk(payment.reservation_id);
   if (!reservation) throw new AppError('Reservation not found', 404, 'NOT_FOUND');
   if (reservation.status === 'cancelled') {
-    // Tiền về SAU khi đặt chỗ đã hủy → ghi nhận hoàn (thủ công), không hồi sinh đặt chỗ
-    if (payment.status !== 'refunded') {
-      let meta = {};
-      try {
-        meta = payment.gateway_response ? JSON.parse(payment.gateway_response) : {};
-      } catch {
-        meta = {};
+    // Tiền về SAU khi đặt chỗ đã hủy → không hồi sinh đặt chỗ. Payment giữ 'success'
+    // (tiền ĐÃ về thật) + tạo RefundRequest 100% cho trang hoàn tiền của Admin —
+    // completeRefund mới là lúc payment đổi sang 'refunded' (đồng bộ với monthly pass).
+    // Idempotent: webhook/verify có thể gọi lặp → đã có refund_request cho payment này thì bỏ qua.
+    const existingRefund = await RefundRequest.findOne({
+      where: { payment_id: payment.payment_id },
+    });
+    await sequelize.transaction(async (transaction) => {
+      if (payment.status !== 'success') {
+        await payment.update({ status: 'success', paid_at: new Date() }, { transaction });
       }
-      await payment.update({
-        status: 'refunded',
-        gateway_response: JSON.stringify({
-          ...meta,
-          refund: {
+      if (!existingRefund) {
+        await RefundRequest.create(
+          {
+            reservation_id: reservation.reservation_id,
+            payment_id: payment.payment_id,
+            user_id: reservation.user_id,
+            percent: 100,
             amount: Number(payment.amount),
-            reason: 'paid_after_cancel',
-            at: new Date().toISOString(),
-            processedManually: true,
+            status: 'pending',
+            requested_at: new Date(),
           },
-        }),
-      });
+          { transaction },
+        );
+      }
+    });
+    if (!existingRefund) {
       await logAdminAction(reservation.user_id, 'RESERVATION_REFUND_OWED', {
         reservationId: reservation.reservation_id,
         amount: Number(payment.amount),
-        note: 'Thanh toán về sau khi đặt chỗ đã hủy — cần hoàn thủ công',
+        note: 'Thanh toán về sau khi đặt chỗ đã hủy — đã tạo yêu cầu hoàn tiền',
       });
     }
     return {
@@ -432,6 +441,7 @@ export const confirmReservationAfterPayment = async (payment) => {
       payment: await payment.reload(),
       confirmed: false,
       refunded: true,
+      refundRequested: !existingRefund,
     };
   }
   if (reservation.status !== 'pending') {
@@ -551,7 +561,9 @@ export const cancelUserReservation = async (userId, reservationId) => {
   const cutoffHours = getBookingRefundCutoffHours();
   const msUntilStart = new Date(reservation.start_time).getTime() - Date.now();
   const beforeCutoff = msUntilStart >= cutoffHours * 60 * 60 * 1000;
-  let refund = { applicable: wasConfirmed, eligible: false, amount: 0, cutoffHours };
+  // reason cho FE hiển thị đúng lý do: 'not_paid' (chưa có thanh toán thành công —
+  // vd đơn seed/demo hoặc chưa trả tiền) | 'late_cancel' (sát giờ) | 'refund_created'.
+  let refund = { applicable: wasConfirmed, eligible: false, amount: 0, cutoffHours, reason: 'not_paid' };
 
   await sequelize.transaction(async (transaction) => {
     assertReservationTransition(reservation.status, 'cancelled');
@@ -608,29 +620,33 @@ export const cancelUserReservation = async (userId, reservationId) => {
         await payment.update({ status: 'failed' }, { transaction });
       } else if (payment.status === 'success') {
         if (beforeCutoff) {
-          let meta = {};
-          try {
-            meta = payment.gateway_response ? JSON.parse(payment.gateway_response) : {};
-          } catch {
-            meta = {};
-          }
-          await payment.update(
+          // Payment GIỮ 'success' (tiền chưa hoàn thật) — tạo RefundRequest cho trang
+          // hoàn tiền của Admin; completeRefund mới đổi payment sang 'refunded'
+          // (dùng chung hạ tầng với monthly pass, migration 006).
+          await RefundRequest.create(
             {
-              status: 'refunded',
-              gateway_response: JSON.stringify({
-                ...meta,
-                refund: {
-                  amount: Number(payment.amount),
-                  reason: 'user_cancel_before_cutoff',
-                  cutoffHours,
-                  at: new Date().toISOString(),
-                  processedManually: true,
-                },
-              }),
+              reservation_id: reservationId,
+              payment_id: payment.payment_id,
+              user_id: reservation.user_id,
+              percent: 100,
+              amount: Number(payment.amount),
+              status: 'pending',
+              requested_at: new Date(),
             },
             { transaction },
           );
-          refund = { applicable: true, eligible: true, amount: Number(payment.amount), cutoffHours };
+          const { bankInfoTtlDays } = getPassRefundPolicy();
+          refund = {
+            applicable: true,
+            eligible: true,
+            amount: Number(payment.amount),
+            cutoffHours,
+            bankInfoTtlDays,
+            reason: 'refund_created',
+            instructions:
+              `Bạn được hoàn ${Number(payment.amount).toLocaleString('vi-VN')}đ — vui lòng cập nhật ` +
+              `tài khoản ngân hàng trong hồ sơ trong vòng ${bankInfoTtlDays} ngày để nhận tiền.`,
+          };
         } else {
           // Hủy sát giờ → mất phí giữ chỗ (payment giữ nguyên 'success')
           refund = {
@@ -638,6 +654,7 @@ export const cancelUserReservation = async (userId, reservationId) => {
             eligible: false,
             amount: 0,
             cutoffHours,
+            reason: 'late_cancel',
             forfeitedAmount: Number(payment.amount),
           };
         }
