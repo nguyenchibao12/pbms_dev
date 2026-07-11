@@ -29,6 +29,15 @@ export const cancel = asyncHandler(async (req, res) => {
   successResponse(res, reservation, 'Reservation cancelled');
 });
 
+export const repay = asyncHandler(async (req, res) => {
+  const result = await reservationService.repayReservation(req.user.user_id, req.params.id);
+  successResponse(
+    res,
+    result,
+    result.reused ? 'Liên kết thanh toán cũ vẫn còn hiệu lực' : 'Đã tạo lại liên kết thanh toán',
+  );
+});
+
 export const listStaffUpcoming = asyncHandler(async (_req, res) => {
   const list = await reservationService.listStaffUpcomingReservations();
   successResponse(res, list);
