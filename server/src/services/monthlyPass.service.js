@@ -169,7 +169,11 @@ export const purchaseMonthlyPass = async (userId, data) => {
       lock: transaction.LOCK.UPDATE,
     });
     if (cap <= 0) {
-      throw new AppError('No pass capacity configured for this floor and vehicle type', 409, 'CONFLICT');
+      throw new AppError(
+        'Tầng/loại xe này chưa mở bán vé tháng — vui lòng chọn tầng hoặc loại xe khác',
+        409,
+        'PASS_NOT_AVAILABLE',
+      );
     }
 
     // P3-7: capacity + check trùng xét theo OVERLAP với khoảng của vé MỚI (không phải
