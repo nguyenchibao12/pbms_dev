@@ -26,6 +26,8 @@ const DEFAULT_SYSTEM = {
   booking_fee: 20000,
   monthly_pass_price: 500000,
   lost_ticket_fee: 50000,
+  // Phụ thu LỐ GIỜ: cộng thêm khi xe đỗ quá max_parking_hours (0 = không phụ thu, chỉ cảnh báo).
+  overstay_fee: 30000,
   slot_suggest_strategy: 'nearest_gate',
   suggest_score_weights: { ...DEFAULT_SCORE_WEIGHTS },
   ai_logging_enabled: true,
@@ -59,6 +61,10 @@ const envSystemDefaults = () => ({
   booking_fee: Number(process.env.BOOKING_FEE) || DEFAULT_SYSTEM.booking_fee,
   monthly_pass_price: Number(process.env.MONTHLY_PASS_PRICE) || DEFAULT_SYSTEM.monthly_pass_price,
   lost_ticket_fee: Number(process.env.LOST_TICKET_FEE) || DEFAULT_SYSTEM.lost_ticket_fee,
+  overstay_fee:
+    process.env.OVERSTAY_FEE != null && process.env.OVERSTAY_FEE !== ''
+      ? Number(process.env.OVERSTAY_FEE)
+      : DEFAULT_SYSTEM.overstay_fee,
   slot_suggest_strategy:
     process.env.SLOT_SUGGEST_STRATEGY === 'zone_balanced' ? 'zone_balanced' : 'nearest_gate',
   ai_logging_enabled: process.env.AI_LOGGING_ENABLED !== 'false',
@@ -114,6 +120,9 @@ export const getBookingFee = () => Number(getSystemSettingsSync().booking_fee);
 export const getMonthlyPassPrice = () => Number(getSystemSettingsSync().monthly_pass_price);
 
 export const getLostTicketFee = () => Number(getSystemSettingsSync().lost_ticket_fee);
+
+// Phụ thu lố giờ (>= 0). Chỉ áp khi có ngưỡng max_parking_hours và xe vượt ngưỡng.
+export const getOverstayFee = () => Math.max(0, Number(getSystemSettingsSync().overstay_fee) || 0);
 
 export const getSuggestStrategy = () => getSystemSettingsSync().slot_suggest_strategy || 'nearest_gate';
 

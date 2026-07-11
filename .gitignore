@@ -8,3 +8,9 @@ build
 server/.env
 client/.env
 client/.cert
+
+# Rác cục bộ / demo artifacts (không commit)
+server/data/
+*.sqlite
+topic8_extracted.txt
+BE-HANDOFF-GATE-KIOSK.md

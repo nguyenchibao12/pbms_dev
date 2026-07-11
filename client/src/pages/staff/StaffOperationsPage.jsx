@@ -94,6 +94,7 @@ export default function StaffOperationsPage() {
   const [coGates, setCoGates] = useState([]); // cổng OUT của tầng phiên đó
   const [coGateId, setCoGateId] = useState('');
   const [coLost, setCoLost] = useState(false); // mất vé
+  const [coOverstay, setCoOverstay] = useState(false); // phụ thu lố giờ (staff chủ động tick)
   const [coPreview, setCoPreview] = useState(null); // phí tạm tính
   const [coResult, setCoResult] = useState(null); // kết quả sau check-out
   const [coError, setCoError] = useState('');
@@ -115,6 +116,7 @@ export default function StaffOperationsPage() {
   const [boothQr, setBoothQr] = useState('');
   const [boothPlate, setBoothPlate] = useState(''); // tra theo biển số khi khách MẤT VÉ (không có QR)
   const [boothLost, setBoothLost] = useState(false);
+  const [boothOverstay, setBoothOverstay] = useState(false); // phụ thu lố giờ (staff chủ động tick)
   const [boothLooking, setBoothLooking] = useState(false);
   const [boothError, setBoothError] = useState('');
   const [boothPreview, setBoothPreview] = useState(null); // { session, fee } sau khi tra cứu
@@ -390,6 +392,7 @@ export default function StaffOperationsPage() {
     setCoSession(session);
     setCoGateId('');
     setCoLost(false);
+    setCoOverstay(false);
     setCoResult(null);
     setCoError('');
     setCoPreview(null);
@@ -417,6 +420,7 @@ export default function StaffOperationsPage() {
         sessionId: coSession.session_id,
         ...(coGateId ? { gateId: Number(coGateId) } : {}), // BE tự suy cổng OUT nếu bỏ trống
         lostTicket: coLost,
+        overstayCharge: coOverstay,
       });
       setCoResult(data.data);
       if (data.data?.barrierOpened) {
@@ -435,14 +439,14 @@ export default function StaffOperationsPage() {
 
   // Booth: tra cứu phí xe ra. Hỗ trợ QR (thường) HOẶC biển số (khi khách MẤT VÉ).
   // lookup = { qrToken } | { plateNumber } | { sessionId }. lost = tính phụ thu mất vé.
-  const lookupBooth = async (lookup, lost = boothLost) => {
+  const lookupBooth = async (lookup, lost = boothLost, over = boothOverstay) => {
     const key = (lookup.qrToken ?? lookup.plateNumber ?? lookup.sessionId ?? '').toString().trim();
     if (!key) return;
     setBoothError('');
     setBoothResult(null);
     setBoothLooking(true);
     try {
-      const { data } = await sessionsApi.previewFee({ ...lookup, lostTicket: lost });
+      const { data } = await sessionsApi.previewFee({ ...lookup, lostTicket: lost, overstayCharge: over });
       setBoothPreview(data.data);
     } catch (err) {
       setBoothPreview(null);
@@ -467,7 +471,15 @@ export default function StaffOperationsPage() {
   const toggleBoothLost = (checked) => {
     setBoothLost(checked);
     if (boothPreview?.session?.session_id) {
-      lookupBooth({ sessionId: boothPreview.session.session_id }, checked);
+      lookupBooth({ sessionId: boothPreview.session.session_id }, checked, boothOverstay);
+    }
+  };
+
+  // Toggle "phụ thu lố giờ": tra lại phí (cộng overstay_fee do Manager set) theo phiên đang xem.
+  const toggleBoothOverstay = (checked) => {
+    setBoothOverstay(checked);
+    if (boothPreview?.session?.session_id) {
+      lookupBooth({ sessionId: boothPreview.session.session_id }, boothLost, checked);
     }
   };
 
@@ -479,7 +491,7 @@ export default function StaffOperationsPage() {
     setBoothError('');
     setBoothSubmitting(true);
     try {
-      const { data } = await sessionsApi.cashCheckout({ sessionId, lostTicket: boothLost });
+      const { data } = await sessionsApi.cashCheckout({ sessionId, lostTicket: boothLost, overstayCharge: boothOverstay });
       setBoothResult(data.data);
       setBoothPreview(null);
       toast.success('Đã thu tiền mặt — barie mở');
@@ -496,6 +508,7 @@ export default function StaffOperationsPage() {
     setBoothQr('');
     setBoothPlate('');
     setBoothLost(false);
+    setBoothOverstay(false);
     setBoothPreview(null);
     setBoothResult(null);
     setBoothError('');
@@ -692,18 +705,42 @@ export default function StaffOperationsPage() {
                   <tr><td colSpan={7} className="px-4 py-10 text-center text-slate-400">Không có xe nào trong bãi</td></tr>
                 ) : (
                   active.map((s) => (
-                    <tr key={s.session_id} className="border-t border-slate-100 hover:bg-slate-50/60">
-                      <td className="px-4 py-3 font-mono font-medium text-slate-800">{s.plate_number}</td>
+                    <tr key={s.session_id} className={`border-t border-slate-100 hover:bg-slate-50/60 ${s.overstay ? 'bg-red-50/50' : ''}`}>
+                      <td className="px-4 py-3 font-mono font-medium text-slate-800">
+                        {s.plate_number}
+                        {s.overstay && (
+                          <span className="ml-2 rounded bg-red-100 px-1.5 py-0.5 text-xs font-medium text-red-700">Quá giờ</span>
+                        )}
+                      </td>
                       <td className="px-4 py-3">{s.vehicleType?.type_name || '—'}</td>
                       <td className="px-4 py-3">{s.slot?.slot_code || '—'}</td>
                       <td className="px-4 py-3 text-slate-600">{s.time_in ? new Date(s.time_in).toLocaleString('vi-VN') : '—'}</td>
-                      <td className="px-4 py-3 text-slate-600">{fmtElapsed(s.time_in)}</td>
+                      <td className="px-4 py-3 text-slate-600">
+                        {fmtElapsed(s.time_in)}
+                        {s.overstay && s.overstayHours > 0 && (
+                          <span className="ml-1 text-xs font-medium text-red-600">(+{s.overstayHours}h)</span>
+                        )}
+                      </td>
                       <td className="px-4 py-3 font-medium text-brand">
                         {fees[s.session_id] ? fmtMoney(fees[s.session_id].fee) : <span className="text-slate-400">—</span>}
                       </td>
                       <td className="space-x-3 px-4 py-3 text-right whitespace-nowrap">
                         <button type="button" onClick={() => handlePreviewFee(s)} className="font-medium text-brand hover:underline">Xem phí</button>
                         <button type="button" onClick={() => openCheckout(s)} className="font-medium text-emerald-600 hover:underline">Xe ra</button>
+                        {s.overstay && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setIncForm({ type: 'overstay', description: `Xe ${s.plate_number} đỗ quá giờ${s.overstayHours ? ` (~${s.overstayHours}h)` : ''}`, sessionId: String(s.session_id) });
+                              setIncFieldErrors({});
+                              setIncError('');
+                              setTab('incident');
+                            }}
+                            className="font-medium text-red-600 hover:underline"
+                          >
+                            Báo lố giờ
+                          </button>
+                        )}
                         <button type="button" onClick={() => handleCorrectPlate(s)} className="font-medium text-slate-500 hover:underline">Sửa biển số</button>
                       </td>
                     </tr>
@@ -849,6 +886,11 @@ export default function StaffOperationsPage() {
                       </div>
                     </div>
 
+                    {boothPreview.overstay && (
+                      <p className="rounded bg-red-50 px-2 py-1 text-xs font-medium text-red-700">
+                        ⚠ Xe {boothPreview.session?.plate_number} LỐ GIỜ{boothPreview.overstayHours > 0 ? ` (~${boothPreview.overstayHours}h)` : ''} — BẮT BUỘC thu phụ thu {fmtMoney(boothPreview.overstayFee)} (đã tính vào phí).
+                      </p>
+                    )}
                     <label className="flex items-center gap-2 text-sm text-slate-700">
                       <input
                         type="checkbox"
@@ -856,6 +898,15 @@ export default function StaffOperationsPage() {
                         onChange={(e) => toggleBoothLost(e.target.checked)}
                       />
                       Khách báo mất vé (phụ thu)
+                    </label>
+                    <label className={`flex items-center gap-2 text-sm ${boothPreview.overstayEnforced ? 'font-medium text-red-700' : 'text-slate-700'}`}>
+                      <input
+                        type="checkbox"
+                        checked={boothPreview.overstayEnforced || boothOverstay}
+                        disabled={boothPreview.overstayEnforced}
+                        onChange={(e) => toggleBoothOverstay(e.target.checked)}
+                      />
+                      Phụ thu lố giờ{boothPreview.overstayEnforced ? ' — bắt buộc' : ''}{boothPreview.overstayFee > 0 ? ` (+${fmtMoney(boothPreview.overstayFee)})` : ''}
                     </label>
 
                     <Button className="brand-gradient w-full border-0" loading={boothSubmitting} onClick={confirmBoothCash}>
@@ -1128,9 +1179,23 @@ export default function StaffOperationsPage() {
               )}
             </Field>
 
+            {coPreview?.overstay && (
+              <p className="rounded bg-red-50 px-2 py-1 text-xs font-medium text-red-700">
+                ⚠ Xe {coPreview.session?.plate_number} LỐ GIỜ{coPreview.overstayHours > 0 ? ` (~${coPreview.overstayHours}h)` : ''} — BẮT BUỘC thu phụ thu {fmtMoney(coPreview.overstayFee)} (đã tính vào phí).
+              </p>
+            )}
             <label className="flex items-center gap-2 text-sm text-slate-700">
               <input type="checkbox" checked={coLost} onChange={(e) => setCoLost(e.target.checked)} />
               Khách báo mất vé (phụ thu)
+            </label>
+            <label className={`flex items-center gap-2 text-sm ${coPreview?.overstayEnforced ? 'font-medium text-red-700' : 'text-slate-700'}`}>
+              <input
+                type="checkbox"
+                checked={coPreview?.overstayEnforced || coOverstay}
+                disabled={coPreview?.overstayEnforced}
+                onChange={(e) => setCoOverstay(e.target.checked)}
+              />
+              Phụ thu lố giờ{coPreview?.overstayEnforced ? ' — bắt buộc' : ' (giá Manager set)'}{coPreview?.overstayFee > 0 ? ` (+${fmtMoney(coPreview.overstayFee)})` : ''}
             </label>
 
             <div className="flex justify-end gap-2 pt-2">

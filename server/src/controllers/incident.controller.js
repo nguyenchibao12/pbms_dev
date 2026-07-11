@@ -23,6 +23,6 @@ export const create = asyncHandler(async (req, res) => {
 });
 
 export const updateStatus = asyncHandler(async (req, res) => {
-  const incident = await incidentService.updateIncidentStatus(req.params.id, req.body.status);
+  const incident = await incidentService.updateIncidentStatus(req.params.id, req.body.status, req.user.user_id);
   successResponse(res, incident, 'Incident status updated');
 });

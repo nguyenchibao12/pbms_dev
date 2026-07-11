@@ -24,6 +24,7 @@ export const previewFeeValidator = [
   }),
   body('lostTicket').optional().isBoolean().toBoolean(),
   body('lostTicketFee').optional().isInt({ min: 0 }),
+  body('overstayCharge').optional().isBoolean().toBoolean(),
 ];
 
 // Check-out: cần thêm cổng RA (OUT) để kiểm tra đúng tầng + ghi exit_gate_id
