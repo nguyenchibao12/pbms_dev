@@ -76,6 +76,16 @@ const Incident = sequelize.define(
       allowNull: false,
       defaultValue: 'open',
     },
+    resolved_by: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+      comment: 'Manager/Admin who resolved the incident',
+    },
+    resolved_at: {
+      type: DataTypes.DATE,
+      allowNull: true,
+      comment: 'When the incident was marked resolved',
+    },
   },
   { tableName: 'incident', timestamps: true }
 );

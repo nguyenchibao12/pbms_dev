@@ -126,13 +126,14 @@ export default function IncidentsPage() {
               <th className="px-4 py-3 font-medium">Người báo</th>
               <th className="px-4 py-3 font-medium">Liên quan</th>
               <th className="px-4 py-3 font-medium">Trạng thái</th>
+              <th className="px-4 py-3 font-medium">Người xử lý</th>
             </tr>
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={6} className="px-4 py-10 text-center text-slate-400">Đang tải...</td></tr>
+              <tr><td colSpan={7} className="px-4 py-10 text-center text-slate-400">Đang tải...</td></tr>
             ) : items.length === 0 ? (
-              <tr><td colSpan={6} className="px-4 py-10 text-center text-slate-400">Không có sự cố nào khớp bộ lọc</td></tr>
+              <tr><td colSpan={7} className="px-4 py-10 text-center text-slate-400">Không có sự cố nào khớp bộ lọc</td></tr>
             ) : (
               items.map((inc) => (
                 <tr key={inc.incident_id} className="border-b border-slate-100 last:border-0 hover:bg-slate-50/60">
@@ -156,6 +157,14 @@ export default function IncidentsPage() {
                     >
                       {STATUS_OPTIONS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
                     </select>
+                  </td>
+                  <td className="px-4 py-3 text-slate-600">
+                    {inc.status === 'resolved' && inc.resolver ? (
+                      <div>
+                        <span>{inc.resolver.full_name || inc.resolver.username}</span>
+                        {inc.resolved_at && <span className="block text-xs text-slate-400">{new Date(inc.resolved_at).toLocaleString('vi-VN')}</span>}
+                      </div>
+                    ) : <span className="text-slate-400">—</span>}
                   </td>
                 </tr>
               ))

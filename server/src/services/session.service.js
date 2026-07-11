@@ -16,7 +16,7 @@ import { validateAndNormalizePlateVN } from '../utils/plateVN.js';
 import { assertBuildingOpenForCheckIn } from '../utils/buildingHours.js';
 import { assertGateVehicleType } from '../utils/gateVehicle.js';
 import { resolveFloorGate } from '../utils/gateResolve.js';
-import { getMaxParkingHours, getLostTicketFee } from '../utils/settings.js';
+import { getMaxParkingHours, getLostTicketFee, getOverstayFee } from '../utils/settings.js';
 import { assertSessionActive, buildRevokedQrToken } from '../utils/stateGuards.js';
 import { createIncident } from './incident.service.js';
 import { parsePagination, paginatedResult } from '../utils/pagination.js';
@@ -52,9 +52,23 @@ export const listActiveSessions = async (query = {}) => {
   return paginatedResult(items, total, pagination.page, limit);
 };
 
-/** Gắn cảnh báo booking confirmed chưa liên kết với walk-in orphan */
+/** Gắn cảnh báo cho staff: LỐ GIỜ (đỗ quá ngưỡng) + booking confirmed chưa liên kết */
 const enrichActiveSessionForStaff = async (session) => {
   const row = session.toJSON();
+
+  // Cảnh báo LỐ GIỜ — CHỈ cho khách VÃNG LAI (walk-in). Đặt chỗ / vé tháng có logic khung
+  // giờ riêng (window_violation / pass window) do reservation & monthly lo, không tính ở đây.
+  const maxHours = getMaxParkingHours();
+  const isWalkIn = ['walk_in', 'auto_registered'].includes(row.session_type);
+  if (maxHours != null && isWalkIn && row.time_in) {
+    const parkedHours = (Date.now() - new Date(row.time_in).getTime()) / (1000 * 60 * 60);
+    row.overstay = parkedHours > maxHours;
+    row.overstayHours = row.overstay ? Math.floor(parkedHours - maxHours) : 0;
+  } else {
+    row.overstay = false;
+    row.overstayHours = 0;
+  }
+
   if (row.reservation_id || row.reservation?.status) return row;
   if (!['walk_in', 'auto_registered'].includes(row.session_type)) return row;
 
@@ -375,18 +389,34 @@ export const previewCheckoutFee = async (data) => {
     : 0;
   if (lostTicket) fee += lostTicketFee;
 
-  const fullSession = await getSession(session.session_id);
+  // LỐ GIỜ — phát hiện theo CHÍNH phiên (tra bằng QR/biển số → time_in), chỉ walk-in, so ngưỡng
+  // max_parking_hours (Manager set). Đã lố giờ thì BẮT BUỘC thu 100% — enforce server-side:
+  // staff bỏ tick vẫn bị cộng phụ thu (overstay_fee Manager set) để không nhầm/quên/bỏ sót.
+  // Ngoài ra staff vẫn có thể chủ động tick khi chưa cấu hình ngưỡng. Đặt chỗ / vé tháng lo khung riêng.
   const maxHours = getMaxParkingHours();
-  const overstay =
-    maxHours != null &&
-    (feeEnd.getTime() - new Date(session.time_in).getTime()) / (1000 * 60 * 60) > maxHours;
+  const isWalkIn = ['walk_in', 'auto_registered'].includes(session.session_type);
+  const parkedHours = (feeEnd.getTime() - new Date(session.time_in).getTime()) / (1000 * 60 * 60);
+  const overstay = maxHours != null && isWalkIn && parkedHours > maxHours;
+  const overstayHours = overstay ? Math.floor(parkedHours - maxHours) : 0;
+
+  // enforced = hệ thống bắt buộc thu (đã phát hiện lố giờ). charge = thực tế có cộng phụ thu.
+  const overstayEnforced = overstay;
+  const overstayCharge = overstayEnforced || Boolean(data.overstayCharge);
+  const overstayFee = overstayCharge ? getOverstayFee() : 0;
+  if (overstayCharge) fee += overstayFee;
+
+  const fullSession = await getSession(session.session_id);
 
   return {
     session: fullSession,
     fee,
     pricingRule: { unit: pricingRule.unit, baseRate: pricingRule.base_rate },
     passCovered: false,
-    overstay,
+    overstay, // đã phát hiện lố giờ (theo phiên/QR/biển số)
+    overstayHours,
+    overstayEnforced, // true = bắt buộc thu, staff không bỏ được
+    overstayCharge, // thực tế có cộng phụ thu lố giờ
+    overstayFee, // mức phụ thu đã cộng (0 nếu không thu)
     lostTicket,
     lostTicketFee: lostTicket ? lostTicketFee : 0,
   };

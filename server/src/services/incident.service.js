@@ -12,6 +12,7 @@ const incidentIncludes = [
   { association: 'slot', attributes: ['slot_id', 'slot_code'] },
   { association: 'user', attributes: ['user_id', 'full_name', 'username'] },
   { association: 'reporter', attributes: ['user_id', 'full_name', 'username'] },
+  { association: 'resolver', attributes: ['user_id', 'full_name', 'username'] },
 ];
 
 export const recordIncident = async (payload) => {
@@ -67,6 +68,27 @@ export const createIncident = async (reporterId, data) => {
   return enrichIncident(await incident.reload({ include: incidentIncludes }));
 };
 
+/**
+ * LỐ GIỜ — tự ghi sự cố khi checkout có thu phụ thu lố giờ (bay lên admin để theo dõi/xử lý).
+ * Chống TRÙNG: nếu phiên đã có incident overstay chưa 'resolved' (staff đã báo tay trước đó) → bỏ qua.
+ * Dùng recordIncident (không throw) để KHÔNG làm hỏng luồng thanh toán nếu ghi log lỗi.
+ */
+export const reportOverstayCharge = async (reporterId, { sessionId, userId, hours, fee }) => {
+  if (!sessionId) return null;
+  const existing = await Incident.findOne({
+    where: { session_id: sessionId, type: 'overstay', status: { [Op.ne]: 'resolved' } },
+  });
+  if (existing) return existing; // đã có báo cáo lố giờ đang mở → không tạo trùng
+  const hrPart = hours > 0 ? ` (~${hours}h)` : '';
+  return recordIncident({
+    type: 'overstay',
+    description: `Lố giờ khi xe ra${hrPart} — phụ thu ${fee} VND`,
+    sessionId,
+    userId: userId || null,
+    reportedBy: reporterId,
+  });
+};
+
 export const createUserFeedback = async (userId, data) => {
   if (!FEEDBACK_CATEGORIES.includes(data.category)) {
     throw new AppError('Invalid feedback category', 400, 'FEEDBACK_INVALID');
@@ -119,10 +141,19 @@ export const listIncidents = async ({
   );
 };
 
-export const updateIncidentStatus = async (id, status) => {
+export const updateIncidentStatus = async (id, status, resolverId = null) => {
   const incident = await Incident.findByPk(id);
   if (!incident) throw new AppError('Incident not found', 404, 'NOT_FOUND');
-  await incident.update({ status });
+  // Chuyển sang 'resolved' → ghi AI xử lý + lúc nào. Rời khỏi 'resolved' (mở lại) → xóa dấu xử lý.
+  const patch = { status };
+  if (status === 'resolved') {
+    patch.resolved_by = resolverId;
+    patch.resolved_at = new Date();
+  } else {
+    patch.resolved_by = null;
+    patch.resolved_at = null;
+  }
+  await incident.update(patch);
   return enrichIncident(await incident.reload({ include: incidentIncludes }));
 };
 
