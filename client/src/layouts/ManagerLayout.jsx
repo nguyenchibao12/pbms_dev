@@ -11,6 +11,7 @@ const tabs = [
   { to: '/manager/zones', label: 'Khu vực' },
   { to: '/manager/parking-slots', label: 'Chỗ đỗ' },
   { to: '/manager/gates', label: 'Cổng' },
+  { to: '/manager/settings', label: 'Cấu hình' },
 ];
 
 export default function ManagerLayout() {
