@@ -83,7 +83,6 @@ export const createParkingSlot = async (data) => {
     status,
     slot_type: data.slotType || null,
     distance_to_gate: data.distanceToGate ?? null,
-    distance_to_elevator: data.distanceToElevator ?? null,
   });
 };
 
@@ -121,8 +120,6 @@ export const updateParkingSlot = async (id, data) => {
     slot_type: data.slotType !== undefined ? data.slotType : slot.slot_type,
     distance_to_gate:
       data.distanceToGate !== undefined ? data.distanceToGate : slot.distance_to_gate,
-    distance_to_elevator:
-      data.distanceToElevator !== undefined ? data.distanceToElevator : slot.distance_to_elevator,
   });
   return getParkingSlot(id);
 };
@@ -142,8 +139,6 @@ export const bulkGenerateSlots = async (zoneId, opts, externalTransaction = null
     count,
     distanceStart = null,
     distanceStep = null,
-    distanceElevatorStart = null,
-    distanceElevatorStep = null,
     slotType = null,
   } = opts;
 
@@ -188,19 +183,12 @@ export const bulkGenerateSlots = async (zoneId, opts, externalTransaction = null
       distance = Number(distanceStart) + i * step;
     }
 
-    let elevatorDist = null;
-    if (distanceElevatorStart != null) {
-      const step = distanceElevatorStep != null ? Number(distanceElevatorStep) : 0;
-      elevatorDist = Number(distanceElevatorStart) + i * step;
-    }
-
     toCreate.push({
       zone_id: zoneId,
       slot_code: code,
       status: 'available',
       slot_type: slotType || null,
       distance_to_gate: distance,
-      distance_to_elevator: elevatorDist,
     });
   }
 

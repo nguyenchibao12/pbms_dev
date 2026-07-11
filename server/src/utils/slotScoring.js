@@ -6,7 +6,6 @@ import { getSuggestStrategy, getSuggestScoreWeights } from './settings.js';
 export const DEFAULT_SCORE_WEIGHTS = {
   gate: 1,
   zone_balance: 0.5,
-  elevator: 0.3,
   slot_type: 0.2,
   preference: 0.25,
 };
@@ -21,9 +20,9 @@ export const resolveScoreWeights = (strategy, customWeights) => {
     return { ...DEFAULT_SCORE_WEIGHTS, ...customWeights };
   }
   if (strategy === 'zone_balanced') {
-    return { gate: 0.4, zone_balance: 1, elevator: 0, slot_type: 0 };
+    return { gate: 0.4, zone_balance: 1, slot_type: 0 };
   }
-  return { gate: 1, zone_balance: 0, elevator: 0, slot_type: 0 };
+  return { gate: 1, zone_balance: 0, slot_type: 0 };
 };
 
 const computeZoneLoad = async (zoneIds) => {
@@ -67,7 +66,6 @@ export const scoreSlot = (slot, { weights, zoneLoad, vehicleTypeCode, userPrefs 
   const gateScore = normInverseDistance(slot.distance_to_gate);
   const load = zoneLoad.get(slot.zone_id) ?? 0;
   const zoneScore = 1 - load;
-  const elevatorScore = normInverseDistance(slot.distance_to_elevator);
 
   let typeScore = 1;
   if (slot.slot_type && vehicleTypeCode) {
@@ -82,7 +80,6 @@ export const scoreSlot = (slot, { weights, zoneLoad, vehicleTypeCode, userPrefs 
   const score =
     weights.gate * gateScore +
     weights.zone_balance * zoneScore +
-    weights.elevator * elevatorScore +
     weights.slot_type * typeScore +
     prefWeight * prefScore;
 
@@ -91,7 +88,6 @@ export const scoreSlot = (slot, { weights, zoneLoad, vehicleTypeCode, userPrefs 
     breakdown: {
       gate: gateScore,
       zone: zoneScore,
-      elevator: elevatorScore,
       slotType: typeScore,
       preference: prefScore,
     },
@@ -149,11 +145,10 @@ export const pickBestSlot = async (slots, { vehicleTypeId, topN = 0, userPrefs =
   };
 };
 
-export const buildScoreReason = (breakdown, { distanceToGate, distanceToElevator } = {}) => {
+export const buildScoreReason = (breakdown, { distanceToGate } = {}) => {
   const parts = [];
   if (breakdown?.gate > 0.55) parts.push('gần cổng');
   if (breakdown?.zone > 0.55) parts.push('khu ít tải');
-  if (breakdown?.elevator > 0.55) parts.push('gần thang máy');
   if (breakdown?.slotType >= 0.95) parts.push('phù hợp loại xe');
   if (breakdown?.preference >= 0.95) parts.push('khu quen thuộc');
   else if (breakdown?.preference >= 0.7) parts.push('tầng hay dùng');
@@ -161,8 +156,5 @@ export const buildScoreReason = (breakdown, { distanceToGate, distanceToElevator
 
   const dist =
     distanceToGate != null ? `~${Math.round(Number(distanceToGate))}m cổng` : null;
-  const elev =
-    distanceToElevator != null ? `~${Math.round(Number(distanceToElevator))}m thang máy` : null;
-  const distPart = [dist, elev].filter(Boolean).join(', ');
-  return distPart ? `${parts.join(', ')} (${distPart})` : parts.join(', ');
+  return dist ? `${parts.join(', ')} (${dist})` : parts.join(', ');
 };

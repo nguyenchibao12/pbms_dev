@@ -33,11 +33,6 @@ const ParkingSlot = sequelize.define(
       type: DataTypes.DECIMAL(10, 2),
       allowNull: true,
     },
-    distance_to_elevator: {
-      type: DataTypes.DECIMAL(10, 2),
-      allowNull: true,
-      comment: 'Khoảng cách tới thang máy/lối ra (m) — dùng cho AI scoring',
-    },
   },
   {
     tableName: 'parking_slot',

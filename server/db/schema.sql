@@ -144,7 +144,6 @@ CREATE TABLE `parking_slot` (
                      NOT NULL DEFAULT 'available',
   `slot_type`        VARCHAR(50)   NULL,
   `distance_to_gate`      DECIMAL(10,2) NULL,
-  `distance_to_elevator`  DECIMAL(10,2) NULL COMMENT 'Khoảng cách tới thang máy/lối ra (m)',
   `created_at`            DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at`       DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`slot_id`),

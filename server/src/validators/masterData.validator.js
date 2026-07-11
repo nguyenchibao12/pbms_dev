@@ -127,8 +127,6 @@ export const zoneValidators = {
     // Mã chỗ tự sinh theo <mã khu>-NN — không nhận codePrefix/startIndex/padding nữa.
     body('distanceStart').optional().isFloat({ min: 0 }).withMessage('distanceStart phải là số ≥ 0').toFloat(),
     body('distanceStep').optional().isFloat({ min: 0 }).withMessage('distanceStep phải là số ≥ 0').toFloat(),
-    body('distanceElevatorStart').optional().isFloat({ min: 0 }).withMessage('distanceElevatorStart phải là số ≥ 0').toFloat(),
-    body('distanceElevatorStep').optional().isFloat({ min: 0 }).withMessage('distanceElevatorStep phải là số ≥ 0').toFloat(),
     body('slotType').optional().trim().isLength({ max: 50 }).withMessage('slotType tối đa 50 ký tự'),
   ],
   create: [
@@ -181,7 +179,6 @@ export const parkingSlotValidators = {
       .withMessage('Trạng thái khi tạo chỉ nhận: available | maintenance | locked'),
     body('slotType').optional().trim().isLength({ max: 50 }).withMessage('Loại chỗ (slotType) tối đa 50 ký tự'),
     body('distanceToGate').optional().isFloat({ min: 0 }).withMessage('Khoảng cách tới cổng phải là số ≥ 0').toFloat(),
-    body('distanceToElevator').optional().isFloat({ min: 0 }).withMessage('Khoảng cách tới thang máy phải là số ≥ 0').toFloat(),
   ],
   update: [
     ...idParam,
@@ -193,7 +190,6 @@ export const parkingSlotValidators = {
       .withMessage(`Trạng thái phải là một trong: ${SLOT_STATUSES.join(', ')}`),
     body('slotType').optional().trim().isLength({ max: 50 }).withMessage('Loại chỗ (slotType) tối đa 50 ký tự'),
     body('distanceToGate').optional().isFloat({ min: 0 }).withMessage('Khoảng cách tới cổng phải là số ≥ 0').toFloat(),
-    body('distanceToElevator').optional().isFloat({ min: 0 }).withMessage('Khoảng cách tới thang máy phải là số ≥ 0').toFloat(),
   ],
 };
 

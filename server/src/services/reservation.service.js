@@ -213,8 +213,6 @@ export const previewSuggestSlot = async (data) => {
 
   const distanceToGate =
     slot.distance_to_gate != null ? Number(slot.distance_to_gate) : null;
-  const distanceToElevator =
-    slot.distance_to_elevator != null ? Number(slot.distance_to_elevator) : null;
   const topPick = meta.topCandidates?.[0];
 
   return {
@@ -226,18 +224,15 @@ export const previewSuggestSlot = async (data) => {
     },
     reason: buildScoreReason(topPick?.breakdown, {
       distanceToGate,
-      distanceToElevator,
     }),
     algorithm: meta.algorithm,
     score: meta.score,
     distanceToGate,
-    distanceToElevator,
     candidatesCount: meta.candidatesCount,
     topCandidates: (meta.topCandidates || []).map((c) => ({
       ...c,
       reason: buildScoreReason(c.breakdown, {
         distanceToGate: c.distanceToGate,
-        distanceToElevator: c.distanceToElevator,
       }),
     })),
     insights,

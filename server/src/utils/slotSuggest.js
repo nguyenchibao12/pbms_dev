@@ -17,7 +17,6 @@ const mapTopCandidate = ({ slot, score, breakdown }) => ({
   score: Math.round(score * 1000) / 1000,
   breakdown,
   distanceToGate: slot.distance_to_gate != null ? Number(slot.distance_to_gate) : null,
-  distanceToElevator: slot.distance_to_elevator != null ? Number(slot.distance_to_elevator) : null,
 });
 
 /**
