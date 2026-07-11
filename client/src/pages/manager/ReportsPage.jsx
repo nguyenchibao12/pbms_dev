@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { LayoutGrid, Car, TrendingUp, Banknote, Activity, LogIn, LogOut, RefreshCw } from 'lucide-react';
+import { LayoutGrid, Car, Clock, TrendingUp, Banknote, Activity, LogIn, LogOut, RefreshCw } from 'lucide-react';
 import { reportsApi } from '../../api/reports';
 import Card, { CardHeader } from '../../components/ui/Card';
 import StatCard from '../../components/ui/StatCard';
@@ -36,13 +36,13 @@ const METHOD_LABEL = { payos: 'PayOS (online)', cash: 'Tiền mặt', free: 'Mi�
 const rateColor = (rate) => (rate >= 80 ? 'bg-red-500' : rate >= 50 ? 'bg-amber-500' : 'bg-emerald-500');
 
 // Cơ cấu chỗ: 5 nhóm này cộng lại = tổng số chỗ (occupied+reserved+available+maintenance+locked).
-// Dùng để hiển thị cân đối, tránh đọc nhầm "đang đặt" (số CHỖ) với số lượt đặt (số đơn).
+// Ghép thành dòng phương trình cân đối dưới các thẻ, tránh đọc nhầm "đang đặt" (số CHỖ) với số lượt đặt (số đơn).
 const COMPOSITION = [
-  { key: 'occupied', label: 'Đang dùng', bar: 'bg-rose-500' },
-  { key: 'reserved', label: 'Đang đặt', bar: 'bg-amber-500' },
-  { key: 'available', label: 'Còn trống', bar: 'bg-emerald-500' },
-  { key: 'maintenance', label: 'Bảo trì', bar: 'bg-slate-400' },
-  { key: 'locked', label: 'Tạm khóa', bar: 'bg-violet-500' },
+  { key: 'occupied', label: 'Đang dùng' },
+  { key: 'reserved', label: 'Đang đặt' },
+  { key: 'available', label: 'Còn trống' },
+  { key: 'maintenance', label: 'Bảo trì' },
+  { key: 'locked', label: 'Tạm khóa' },
 ];
 
 // Khoảng ngày mặc định / preset: N ngày gần nhất tính đến hôm nay.
@@ -227,46 +227,16 @@ export default function ReportsPage() {
           {/* 1. Tình trạng bãi HIỆN TẠI (không phụ thuộc khoảng ngày) */}
           <section>
             <h2 className="mb-3 text-lg font-semibold text-slate-800">Tình trạng bãi hiện tại</h2>
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
               <StatCard label="Tỷ lệ lấp đầy" value={`${snapshot.occupancyRate}%`} sub={`${fmtNum(snapshot.inUse)}/${fmtNum(snapshot.total)} chỗ đang dùng`} icon={TrendingUp} />
               <StatCard label="Tổng số chỗ" value={fmtNum(snapshot.total)} icon={LayoutGrid} />
               <StatCard label="Đang dùng" value={fmtNum(snapshot.occupied)} icon={Car} />
+              <StatCard label="Đang đặt" value={fmtNum(snapshot.reserved)} sub="chỗ giữ cho đặt chỗ (≠ số lượt đặt)" icon={Clock} />
               <StatCard label="Còn trống" value={fmtNum(snapshot.available)} />
             </div>
-            <Card className="mt-4">
-              <CardHeader
-                title="Cơ cấu chỗ đỗ"
-                description="Năm nhóm cộng lại đúng bằng tổng số chỗ. Lưu ý: 'Đang đặt' là số CHỖ đang giữ cho đặt chỗ (mỗi chỗ có thể nhiều lượt đặt ở khung giờ khác nhau), không phải số lượt/đơn đặt."
-              />
-              <div className="mb-4 flex h-3 w-full overflow-hidden rounded-full bg-slate-100">
-                {COMPOSITION.map((c) =>
-                  snapshot[c.key] > 0 ? (
-                    <div
-                      key={c.key}
-                      className={c.bar}
-                      style={{ width: `${(snapshot[c.key] / snapshot.total) * 100}%` }}
-                      title={`${c.label}: ${fmtNum(snapshot[c.key])}`}
-                    />
-                  ) : null,
-                )}
-              </div>
-              <div className="grid grid-cols-2 gap-x-6 gap-y-2 sm:grid-cols-3">
-                {COMPOSITION.map((c) => (
-                  <div key={c.key} className="flex items-center justify-between gap-2 text-sm">
-                    <span className="flex items-center gap-2 text-slate-600">
-                      <span className={`h-2.5 w-2.5 rounded-sm ${c.bar}`} />
-                      {c.label}
-                    </span>
-                    <span className="font-semibold text-slate-800">{fmtNum(snapshot[c.key])}</span>
-                  </div>
-                ))}
-              </div>
-              <div className="mt-4 border-t border-slate-100 pt-3 text-sm text-slate-600">
-                {compParts.join(' + ') || '0'}
-                <span className="font-semibold text-slate-900"> = {fmtNum(snapshot.total)} tổng số chỗ</span>
-              </div>
-            </Card>
-
+            <p className="mt-3 text-xs text-slate-400">
+              {compParts.join(' + ') || '0'} = {fmtNum(snapshot.total)} tổng số chỗ
+            </p>
             <Card className="mt-4">
               <CardHeader title="Lấp đầy theo tầng" description="Số chỗ đang dùng trên tổng số chỗ mỗi tầng (hiện tại)." />
               {byFloor.length === 0 ? (
