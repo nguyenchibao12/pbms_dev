@@ -34,7 +34,7 @@ const Zone = sequelize.define(
       type: DataTypes.INTEGER,
       allowNull: false,
       defaultValue: 0,
-      comment: 'OR-03: số slot tối đa dành cho vé tháng trong khu',
+      comment: 'OR-03: số slot tối đa dành cho vé tháng (0 = không mở bán vé tháng ở khu này)',
     },
   },
   {

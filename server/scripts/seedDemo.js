@@ -148,15 +148,16 @@ const run = async () => {
       vehicle_type_id: null, label: `Tầng ${level} - Cổng ra`, is_active: true,
     });
 
+    // Mở bán vé tháng tường minh ~25% số slot (capacity=0 = không bán — xem passCapacity.js).
     const carZone = await Zone.create({
       floor_id: floor.floor_id, vehicle_type_id: car.vehicle_type_id,
       zone_code: `F${level}-${car.type_code}-01`, label: `Tầng ${level} - Khu ô tô`,
-      total_slots: SLOTS_PER_ZONE, monthly_pass_capacity: 0,
+      total_slots: SLOTS_PER_ZONE, monthly_pass_capacity: Math.max(1, Math.floor(SLOTS_PER_ZONE / 4)),
     });
     const bikeZone = await Zone.create({
       floor_id: floor.floor_id, vehicle_type_id: bike.vehicle_type_id,
       zone_code: `F${level}-${bike.type_code}-01`, label: `Tầng ${level} - Khu xe máy`,
-      total_slots: SLOTS_PER_ZONE, monthly_pass_capacity: 0,
+      total_slots: SLOTS_PER_ZONE, monthly_pass_capacity: Math.max(1, Math.floor(SLOTS_PER_ZONE / 4)),
     });
 
     for (let i = 1; i <= SLOTS_PER_ZONE; i++) {
@@ -193,10 +194,11 @@ const run = async () => {
     floor_id: f3.floor_id, gate_code: 'F3-OUT', direction: 'out',
     vehicle_type_id: bike.vehicle_type_id, label: 'Tầng 3 - Cổng ra', is_active: true,
   });
+  const f3TotalSlots = Math.floor(F3_AREA / 1.8);
   const f3Zone = await Zone.create({
     floor_id: f3.floor_id, vehicle_type_id: bike.vehicle_type_id,
     zone_code: `F3-${bike.type_code}-01`, label: 'Tầng 3 - Xe máy',
-    total_slots: Math.floor(F3_AREA / 1.8), monthly_pass_capacity: 0,
+    total_slots: f3TotalSlots, monthly_pass_capacity: Math.max(1, Math.floor(f3TotalSlots / 4)),
   });
   for (let i = 1; i <= 10; i++) {
     await ParkingSlot.create({

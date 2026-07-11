@@ -2,9 +2,11 @@ import { Op } from 'sequelize';
 import { Zone, ParkingSession, ParkingSlot } from '../models/index.js';
 
 /**
- * OR-03 — capacity Manager cấu hình theo zone.
- * Truyền { transaction, lock } để KHÓA các row Zone của (floor, vehicleType) khi
- * đếm-rồi-tạo vé (chống 2 request mua đồng thời cùng qua check → bán vượt suất).
+ * OR-03 — capacity vé tháng do Manager cấu hình TƯỜNG MINH theo zone.
+ * Trả về đúng tổng monthly_pass_capacity của các khu (floor, vehicleType).
+ * capacity = 0 nghĩa là "không mở bán vé tháng ở tầng/loại xe này" (KHÔNG tự suy default) —
+ * để Manager tắt bán được. Khu muốn bán phải set capacity > 0 (≤ total_slots).
+ * Truyền { transaction, lock } để KHÓA các row Zone khi đếm-rồi-tạo vé (chống bán vượt suất).
  */
 export const getPassCapacity = async (floorId, vehicleTypeId, { transaction = null, lock = null } = {}) => {
   const zones = await Zone.findAll({
@@ -12,9 +14,7 @@ export const getPassCapacity = async (floorId, vehicleTypeId, { transaction = nu
     ...(transaction ? { transaction } : {}),
     ...(lock ? { lock } : {}),
   });
-  const configured = zones.reduce((sum, z) => sum + Number(z.monthly_pass_capacity || 0), 0);
-  if (configured > 0) return configured;
-  return zones.reduce((sum, z) => sum + Math.max(1, Math.floor(z.total_slots / 4)), 0);
+  return zones.reduce((sum, z) => sum + Number(z.monthly_pass_capacity || 0), 0);
 };
 
 export const countActivePassSessionsOnFloor = async (floorId, vehicleTypeId) => {
