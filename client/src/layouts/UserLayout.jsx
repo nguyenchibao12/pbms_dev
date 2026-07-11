@@ -3,13 +3,13 @@ import { useAuth } from '../context/AuthContext';
 import { useLogout } from '../hooks/useLogout';
 import { getRoleName, roleLabels } from '../lib/auth';
 
-// Các tab khu vực Khách hàng (User) — đặt chỗ + vé tháng, theo dõi đơn/vé + hồ sơ của mình.
+// Các tab khu vực Khách hàng (User) — đặt chỗ + vé tháng, theo dõi đơn/vé của mình.
+// "Hồ sơ" không nằm ở đây mà ở cụm tài khoản trên header (cạnh tên + Đăng xuất).
 const tabs = [
   { to: '/reservations', label: 'Đơn của tôi', end: true },
   { to: '/reservations/new', label: 'Đặt chỗ mới' },
   { to: '/monthly-pass', label: 'Vé tháng của tôi', end: true },
   { to: '/monthly-pass/new', label: 'Mua vé tháng' },
-  { to: '/profile', label: 'Hồ sơ', end: true },
 ];
 
 export default function UserLayout() {
@@ -35,6 +35,16 @@ export default function UserLayout() {
 
           <div className="flex items-center gap-3">
             <span className="hidden text-sm text-slate-500 sm:inline">{user?.fullName || user?.username}</span>
+            <NavLink
+              to="/profile"
+              className={({ isActive }) =>
+                `rounded-lg px-3 py-2 text-sm font-medium ${
+                  isActive ? 'text-brand' : 'text-slate-500 hover:text-slate-800'
+                }`
+              }
+            >
+              Hồ sơ
+            </NavLink>
             <button
               onClick={logout}
               className="rounded-lg px-3 py-2 text-sm font-medium text-slate-500 hover:text-slate-800"
