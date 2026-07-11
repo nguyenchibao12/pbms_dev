@@ -108,6 +108,7 @@ Incident.belongsTo(UserAccount, { foreignKey: 'user_id', as: 'user' });
 
 UserAccount.hasMany(Incident, { foreignKey: 'reported_by', as: 'reportedIncidents' });
 Incident.belongsTo(UserAccount, { foreignKey: 'reported_by', as: 'reporter' });
+Incident.belongsTo(UserAccount, { foreignKey: 'resolved_by', as: 'resolver' });
 
 Reservation.hasMany(Incident, { foreignKey: 'reservation_id', as: 'incidents' });
 Incident.belongsTo(Reservation, { foreignKey: 'reservation_id', as: 'reservation' });

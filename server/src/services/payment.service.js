@@ -24,7 +24,7 @@ import {
   buildRevokedQrToken,
 } from '../utils/stateGuards.js';
 import { getLostTicketFee } from '../utils/settings.js';
-import { createIncident, recordIncident } from './incident.service.js';
+import { createIncident, recordIncident, reportOverstayCharge } from './incident.service.js';
 
 const paymentIncludes = [
   { association: 'session', include: [{ association: 'slot' }] },
@@ -176,6 +176,7 @@ const buildCheckoutPayload = async (staffUserId, lookup) => {
     await existingPending.update({ status: 'failed' });
   }
 
+  // preview.fee đã gồm phụ thu lố giờ (nếu bị enforce). Chỉ cộng thêm phụ thu MẤT VÉ ở đây.
   let fee = Number(preview.fee);
   if (lostTicket) {
     fee += lostTicketFee;
@@ -184,6 +185,15 @@ const buildCheckoutPayload = async (staffUserId, lookup) => {
       description: `Lost ticket at checkout — surcharge ${lostTicketFee} VND`,
       sessionId,
       userId: preview.session.user_id,
+    });
+  }
+  // LỐ GIỜ: đã thu phụ thu → tự ghi sự cố (bay lên admin), chống trùng với báo tay.
+  if (preview.overstayCharge) {
+    await reportOverstayCharge(staffUserId, {
+      sessionId,
+      userId: preview.session.user_id,
+      hours: preview.overstayHours,
+      fee: preview.overstayFee,
     });
   }
 
@@ -261,7 +271,7 @@ export const settleCashCheckout = async (staffUserId, lookup) => {
   // Chốt cổng ra (auto-resolve nếu thiếu gateId) + ghi exit_gate_id, kiểm tra đúng tầng.
   await assertAndRecordExitGate(staffUserId, preview.session, lookup.gateId);
 
-  // preview.fee đã gồm phụ thu mất vé (nếu lookup.lostTicket = true).
+  // preview.fee đã gồm phụ thu mất vé (nếu lookup.lostTicket = true) và phụ thu lố giờ (nếu bị enforce).
   const fee = Number(preview.fee);
   if (lookup.lostTicket) {
     const lostTicketFee = Number(lookup.lostTicketFee ?? getLostTicketFee());
@@ -270,6 +280,15 @@ export const settleCashCheckout = async (staffUserId, lookup) => {
       description: `Lost ticket at cash checkout — surcharge ${lostTicketFee} VND`,
       sessionId,
       userId: preview.session.user_id,
+    });
+  }
+  // LỐ GIỜ: đã thu phụ thu → tự ghi sự cố (bay lên admin), chống trùng với báo tay.
+  if (preview.overstayCharge) {
+    await reportOverstayCharge(staffUserId, {
+      sessionId,
+      userId: preview.session.user_id,
+      hours: preview.overstayHours,
+      fee: preview.overstayFee,
     });
   }
 

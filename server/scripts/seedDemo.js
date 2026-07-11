@@ -273,6 +273,28 @@ const run = async () => {
     calculated_fee: null,
   });
 
+  // --- WALK-IN đang đỗ ~3h (để test LỐ GIỜ): nếu Manager set max_parking_hours <= 3 → bị phụ thu bắt buộc ---
+  const walkSlot = await ParkingSlot.findOne({
+    where: { zone_id: f1Car.zone_id, status: 'available' },
+    order: [['slot_id', 'DESC']],
+  });
+  if (walkSlot) await walkSlot.update({ status: 'occupied' });
+  const walkQr = generateQrToken();
+  await ParkingSession.create({
+    user_id: null, // khách vãng lai, không cần tài khoản
+    gate_id: f1InGate.gate_id,
+    slot_id: walkSlot ? walkSlot.slot_id : null,
+    vehicle_type_id: car.vehicle_type_id,
+    plate_number: normalizePlateVN('51W-999.99'),
+    time_in: new Date(now.getTime() - 3 * 60 * 60 * 1000), // đỗ ~3h
+    gate_stage: 'on_floor', // đang trên tầng → sẵn sàng test check-OUT + lố giờ
+    qr_token: walkQr,
+    check_in_by: users.staff.user_id,
+    session_type: 'walk_in',
+    status: 'active',
+    calculated_fee: null,
+  });
+
   // --- 1 SLOT — NHIỀU KHUNG GIỜ khác nhau (cùng 1 chỗ, các đơn confirmed KHÔNG trùng giờ) ---
   const atHour = (base, h) => { const d = new Date(base); d.setHours(h, 0, 0, 0); return d; };
   const d1 = new Date(now.getTime() + 24 * 60 * 60 * 1000); // ngày mai

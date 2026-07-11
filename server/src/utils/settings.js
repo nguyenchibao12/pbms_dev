@@ -26,9 +26,8 @@ const DEFAULT_SYSTEM = {
   booking_fee: 20000,
   monthly_pass_price: 500000,
   lost_ticket_fee: 50000,
-  // Phụ thu quá giờ (walk-in vượt max_parking_hours) — mặc định 0 = chưa áp dụng cho tới
-  // khi Manager đặt giá. BE walk-in đọc qua getOverstayFee() khi enforce lúc checkout.
-  overstay_fee: 0,
+  // Phụ thu LỐ GIỜ: cộng thêm khi xe đỗ quá max_parking_hours (0 = không phụ thu, chỉ cảnh báo).
+  overstay_fee: 30000,
   slot_suggest_strategy: 'nearest_gate',
   suggest_score_weights: { ...DEFAULT_SCORE_WEIGHTS },
   ai_logging_enabled: true,
@@ -62,7 +61,10 @@ const envSystemDefaults = () => ({
   booking_fee: Number(process.env.BOOKING_FEE) || DEFAULT_SYSTEM.booking_fee,
   monthly_pass_price: Number(process.env.MONTHLY_PASS_PRICE) || DEFAULT_SYSTEM.monthly_pass_price,
   lost_ticket_fee: Number(process.env.LOST_TICKET_FEE) || DEFAULT_SYSTEM.lost_ticket_fee,
-  overstay_fee: Number(process.env.OVERSTAY_FEE) || DEFAULT_SYSTEM.overstay_fee,
+  overstay_fee:
+    process.env.OVERSTAY_FEE != null && process.env.OVERSTAY_FEE !== ''
+      ? Number(process.env.OVERSTAY_FEE)
+      : DEFAULT_SYSTEM.overstay_fee,
   slot_suggest_strategy:
     process.env.SLOT_SUGGEST_STRATEGY === 'zone_balanced' ? 'zone_balanced' : 'nearest_gate',
   ai_logging_enabled: process.env.AI_LOGGING_ENABLED !== 'false',
@@ -125,11 +127,8 @@ export const getMonthlyPassPrice = () => Number(getSystemSettingsSync().monthly_
 
 export const getLostTicketFee = () => Number(getSystemSettingsSync().lost_ticket_fee);
 
-/** Phụ thu quá giờ (VND). BE walk-in gọi hàm này khi enforce phụ thu lúc checkout. */
-export const getOverstayFee = () => {
-  const v = getSystemSettingsSync().overstay_fee;
-  return v != null && Number(v) >= 0 ? Number(v) : 0;
-};
+// Phụ thu lố giờ (>= 0). Chỉ áp khi có ngưỡng max_parking_hours và xe vượt ngưỡng.
+export const getOverstayFee = () => Math.max(0, Number(getSystemSettingsSync().overstay_fee) || 0);
 
 export const getSuggestStrategy = () => getSystemSettingsSync().slot_suggest_strategy || 'nearest_gate';
 

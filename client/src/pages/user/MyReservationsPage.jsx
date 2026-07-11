@@ -41,6 +41,18 @@ const formatLocation = (r) => {
 
 const isCancellable = (status) => status === 'pending' || status === 'confirmed';
 
+// QR còn mở được barie (đơn còn "sống"): confirmed = chờ vào, checked_in = xe đang trong bãi
+// nhưng vẫn phải quét chính mã đó ở cổng tầng + cổng ra khi rời bãi.
+const QR_LIVE_STATUSES = ['confirmed', 'checked_in'];
+// QR chỉ còn để tra cứu (đơn đã khép): mở ra sẽ bị cổng từ chối 409.
+const QR_HISTORY_STATUSES = ['completed', 'cancelled', 'no_show'];
+// Nhãn đè lên mã QR lịch sử cho biết vì sao nó vô hiệu.
+const QR_HISTORY_LABEL = {
+  completed: 'Đã hoàn tất',
+  cancelled: 'Đã hủy',
+  no_show: 'Không đến',
+};
+
 // BE chưa có endpoint tạo lại link thanh toán cho đơn 'pending' (khác vé tháng có /repay).
 // Đọc lại checkoutUrl đã lưu trong payment 'pending' của đơn để chuyển thẳng sang PayOS.
 // Không có link khả dụng nghĩa là link cũ đã hết hạn — khách cần đặt chỗ mới.
@@ -188,10 +200,10 @@ export default function MyReservationsPage() {
       ) : (
         <div className="space-y-3">
           {items.map((r) => {
-            const showQr =
-              r.status === 'confirmed' &&
-              r.qr_token &&
-              !String(r.qr_token).startsWith('revoked-');
+            // Token cũ (đơn hủy TRƯỚC bản BE giữ-token) bị bẻ 'revoked-…' → không render nổi QR.
+            const hasQr = r.qr_token && !String(r.qr_token).startsWith('revoked-');
+            const showQr = hasQr && QR_LIVE_STATUSES.includes(r.status);
+            const showQrHistory = hasQr && QR_HISTORY_STATUSES.includes(r.status);
             return (
               <Card key={r.reservation_id}>
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -238,25 +250,66 @@ export default function MyReservationsPage() {
                         Đã hoàn tất
                       </span>
                     )}
-                    {r.status === 'cancelled' && (
-                      <span className="text-xs text-slate-500">QR không còn hiệu lực</span>
-                    )}
                   </div>
                 </div>
 
                 {showQr && (
                   <div className="mt-4 flex flex-col items-center gap-3 border-t border-slate-100 pt-4 sm:flex-row sm:justify-between">
                     <div className="text-sm text-slate-500">
-                      <p>
-                        Đưa mã QR cho nhân viên tại cổng vào · Chỗ{' '}
-                        <strong>{r.slot?.slot_code || '—'}</strong>
-                      </p>
-                      <p className="mt-1 text-xs text-slate-400">
-                        Đến muộn quá hạn giữ chỗ có thể bị hủy (no-show)
-                      </p>
+                      {r.status === 'checked_in' ? (
+                        <>
+                          <p>
+                            Xe đang trong bãi — quét lại mã này ở <strong>cổng tầng</strong> và{' '}
+                            <strong>cổng ra</strong> khi rời bãi · Chỗ{' '}
+                            <strong>{r.slot?.slot_code || '—'}</strong>
+                          </p>
+                          <p className="mt-1 text-xs text-slate-400">
+                            Giữ sẵn mã trên điện thoại tới khi ra khỏi bãi
+                          </p>
+                        </>
+                      ) : (
+                        <>
+                          <p>
+                            Đưa mã QR cho nhân viên tại cổng vào · Chỗ{' '}
+                            <strong>{r.slot?.slot_code || '—'}</strong>
+                          </p>
+                          <p className="mt-1 text-xs text-slate-400">
+                            Đến muộn quá hạn giữ chỗ có thể bị hủy (no-show)
+                          </p>
+                        </>
+                      )}
                     </div>
                     <div className="flex flex-col items-center gap-1 rounded-lg border border-slate-200 bg-white p-2">
                       <QRCodeSVG value={r.qr_token} size={120} aria-label="Mã QR check-in" />
+                      <span
+                        className="max-w-[120px] cursor-default select-all break-all font-mono text-[10px] text-slate-400"
+                        title={r.qr_token}
+                      >
+                        {r.qr_token}
+                      </span>
+                    </div>
+                  </div>
+                )}
+
+                {showQrHistory && (
+                  <div className="mt-4 flex flex-col items-center gap-3 border-t border-slate-100 pt-4 sm:flex-row sm:justify-between">
+                    <div className="text-sm text-slate-500">
+                      <p>Mã QR chỉ để tra cứu — không còn mở được cổng.</p>
+                      <p className="mt-1 text-xs text-slate-400">
+                        Lưu lại để đối chiếu khi cần
+                      </p>
+                    </div>
+                    <div className="flex flex-col items-center gap-1 rounded-lg border border-slate-200 bg-white p-2">
+                      <div className="relative">
+                        <div className="opacity-40 grayscale">
+                          <QRCodeSVG value={r.qr_token} size={120} aria-label="Mã QR (chỉ để tra cứu)" />
+                        </div>
+                        <span className="absolute inset-0 flex items-center justify-center">
+                          <span className="rounded-md bg-slate-800/80 px-2 py-0.5 text-xs font-semibold text-white">
+                            {QR_HISTORY_LABEL[r.status]}
+                          </span>
+                        </span>
+                      </div>
                       <span
                         className="max-w-[120px] cursor-default select-all break-all font-mono text-[10px] text-slate-400"
                         title={r.qr_token}
