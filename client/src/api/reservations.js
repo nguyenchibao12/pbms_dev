@@ -16,6 +16,11 @@ export const reservationsApi = {
   // Hủy đơn (pending/confirmed) + hoàn phí theo chính sách.
   cancel: (id) => api.post(`/reservations/${id}/cancel`),
 
+  // "Trả tiếp" đơn pending: BE cấp link PayOS MỚI (hoặc tái dùng link cũ còn sống).
+  // Trả { reservation, payment, checkoutUrl, reused, alreadyPaid? }.
+  // alreadyPaid=true hoặc checkoutUrl=null ⇒ đơn đã thanh toán, BE tự xác nhận, không điều hướng.
+  repay: (id) => api.post(`/reservations/${id}/repay`),
+
   // Preview: đếm chỗ trống trong khung giờ (trước khi đặt). Tham số là query.
   // params: { floorId, vehicleTypeId, shiftId, arrivalDate, zoneId? }
   windowAvailability: (params) => api.get('/reservations/window-availability', { params }),
