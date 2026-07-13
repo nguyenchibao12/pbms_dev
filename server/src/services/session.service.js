@@ -185,6 +185,8 @@ export const hasActiveSessionForPlate = async (plateNumber) => {
 };
 
 const CHECKIN_EARLY_GRACE_MS = 15 * 60 * 1000;
+// Đơn confirmed bắt đầu trong vòng ngưỡng này → coi khách là "đến sớm cho đơn", chặn walk-in.
+const WALKIN_BLOCK_BEFORE_RESERVATION_MS = 60 * 60 * 1000;
 
 const findConfirmedReservationForPlate = async (plateNumber, at = new Date()) =>
   Reservation.findOne({
@@ -230,18 +232,24 @@ export const checkin = async (staffUserId, data) => {
     return getSession(result.session.session_id);
   }
 
-  const futureConfirmed = await Reservation.findOne({
+  // Chỉ chặn khi đơn confirmed SẮP tới giờ (trong vòng 60'): khách này là khách đến sớm
+  // cho đơn của họ → hướng sang tab "Đặt chỗ vào" (mở sớm tối đa 15'). Đơn còn XA hơn thì
+  // cho gửi walk-in bình thường — trước đây chặn MỌI đơn tương lai, khách có đơn tuần sau
+  // hôm nay không gửi xe được.
+  const nearConfirmed = await Reservation.findOne({
     where: {
       plate_number: plateNumber,
       status: 'confirmed',
-      start_time: { [Op.gt]: now },
-      end_time: { [Op.gt]: now },
+      start_time: {
+        [Op.gt]: now,
+        [Op.lte]: new Date(now.getTime() + WALKIN_BLOCK_BEFORE_RESERVATION_MS),
+      },
     },
     order: [['start_time', 'ASC']],
   });
-  if (futureConfirmed) {
+  if (nearConfirmed) {
     throw new AppError(
-      `Biển ${plateNumber} có đặt chỗ lúc ${new Date(futureConfirmed.start_time).toLocaleString('vi-VN')} — dùng tab "Đặt chỗ vào" (sớm tối đa 15 phút)`,
+      `Biển ${plateNumber} có đặt chỗ lúc ${new Date(nearConfirmed.start_time).toLocaleString('vi-VN')} — dùng tab "Đặt chỗ vào" (sớm tối đa 15 phút)`,
       409,
       'RESERVATION_NOT_OPEN',
     );
