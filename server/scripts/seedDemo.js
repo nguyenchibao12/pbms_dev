@@ -7,12 +7,17 @@
  *
  * Dùng:  npm run seed --prefix server      (hoặc: node scripts/seedDemo.js)
  *
- * Tạo: 4 user (admin/manager/staff/user, mật khẩu đều 123456), 3 loại xe (CAR/BIKE/CAR7),
+ * Tạo: 6 user (admin/manager/staff/user/user2/chuaverify, mật khẩu đều 123456), 3 loại xe (CAR/BIKE/CAR7),
  * 3 tầng — F1, F2 phân khu (zoned: 1 khu ô tô + 1 khu xe máy, 8 chỗ/khu) và F3 riêng xe máy
  * (single). Mã khu tự sinh <TẦNG>-<LOẠI XE>-<NN> (F1-CAR-01), mã chỗ tự sinh <MÃ KHU>-<NN>
  * (F1-CAR-01-01). Kèm cổng tòa nhà (IN/OUT) + cổng mỗi tầng (IN/OUT), bảng giá theo loại xe,
  * 1 đặt chỗ đã xác nhận sẵn (fallback demo reservation không cần đặt + thanh toán trực tiếp),
  * và 1 khách đặt chỗ ĐANG ĐỖ (checked_in + phiên active) để test luồng check-out.
+ *
+ * PHỦ ĐỦ LUỒNG (phần mở rộng cuối file): đơn pending (test "Trả tiếp"), 3 kiểu hoàn tiền
+ * (chờ hoàn / quá hạn STK / đã hoàn), đơn completed + no_show (QR lịch sử), đơn checked_in
+ * LỐ GIỜ khung đặt (phụ thu), vé tháng active/pending/expired, user chưa verify email,
+ * user có STK ngân hàng, 2 sự cố (open + resolved).
  */
 import dotenv from 'dotenv';
 import bcrypt from 'bcryptjs';
@@ -29,6 +34,9 @@ import {
   Reservation,
   ParkingSession,
   Payment,
+  MonthlyPass,
+  RefundRequest,
+  Incident,
 } from '../src/models/index.js';
 import { ensureRoles } from '../src/utils/ensureRoles.js';
 import { ROLES } from '../src/middleware/rbac.js';
@@ -282,7 +290,7 @@ const run = async () => {
   });
   if (walkSlot) await walkSlot.update({ status: 'occupied' });
   const walkQr = generateQrToken();
-  await ParkingSession.create({
+  const walkSession = await ParkingSession.create({
     user_id: null, // khách vãng lai, không cần tài khoản
     gate_id: f1InGate.gate_id,
     slot_id: walkSlot ? walkSlot.slot_id : null,
@@ -330,6 +338,243 @@ const run = async () => {
     multiReservations.push({ r, w });
   }
 
+  // ================= SEED MỞ RỘNG — PHỦ ĐỦ CÁC LUỒNG CÒN LẠI =================
+  // Mỗi luồng 1 biển số riêng (51F-4xxxx) để không giẫm chân các đơn demo phía trên
+  // (tránh dính chặn "đã có đơn confirmed tương lai" khi test walk-in bằng biển khác).
+
+  // --- Thêm 2 user: user2 CÓ STK (nhận hoàn tiền) + chuaverify (test chặn login) ---
+  users.user2 = await UserAccount.create({
+    username: 'user2',
+    password_hash: await hash('123456'),
+    full_name: 'Khách có STK hoàn tiền',
+    role_id: roles[ROLES.USER],
+    email: 'user2@pbms.local',
+    is_active: true,
+    email_verified: true,
+    bank_name: 'Vietcombank',
+    bank_account_number: '0071000123456',
+    bank_account_holder: 'KHACH CO STK',
+  });
+  users.chuaverify = await UserAccount.create({
+    username: 'chuaverify',
+    password_hash: await hash('123456'),
+    full_name: 'Khách chưa xác minh email',
+    role_id: roles[ROLES.USER],
+    email: 'chuaverify@pbms.local',
+    is_active: true,
+    email_verified: false, // login phải bị 403 EMAIL_NOT_VERIFIED
+  });
+
+  // Helper tạo payment tùy trạng thái (paySuccess phía trên chỉ lo case success/booking).
+  const makePayment = (fields) =>
+    Payment.create({
+      order_code: (seedOrderCode += 1),
+      amount: BOOKING_FEE,
+      method: 'payos',
+      ...fields,
+    });
+  const makeReservation = (fields) =>
+    Reservation.create({
+      user_id: users.user.user_id,
+      vehicle_type_id: car.vehicle_type_id,
+      floor_id: f1.floor_id,
+      zone_id: f1Car.zone_id,
+      reservation_type: 'standard',
+      qr_token: generateQrToken(),
+      ...fields,
+    });
+  const anySlotId = multiSlot.slot_id; // đơn đã đóng không giữ slot — chỉ cần FK hợp lệ
+  const HOUR = 60 * 60 * 1000;
+  const DAY = 24 * HOUR;
+
+  // --- (1) PENDING + payment pending (link PayOS đã chết) → test nút "Trả tiếp" ---
+  const pendSlot = await ParkingSlot.findOne({
+    where: { zone_id: f1Car.zone_id, status: 'available' }, order: [['slot_id', 'ASC']],
+  });
+  await pendSlot.update({ status: 'reserved' });
+  const pendingResv = await makeReservation({
+    slot_id: pendSlot.slot_id,
+    plate_number: normalizePlateVN('51F-40001'),
+    start_time: new Date(now.getTime() + 6 * HOUR),
+    end_time: new Date(now.getTime() + 10 * HOUR),
+    status: 'pending',
+  });
+  await makePayment({
+    reservation_id: pendingResv.reservation_id,
+    status: 'pending',
+    // orderCode không tồn tại trên PayOS → repay sẽ coi link cũ đã chết và phát link MỚI.
+    gateway_response: JSON.stringify({ checkoutUrl: 'https://pay.payos.vn/web/seed-dead-link' }),
+  });
+
+  // --- (2) CANCELLED trước cutoff → refund_request PENDING, user2 CÓ STK (admin hoàn được) ---
+  const cancEarly = await makeReservation({
+    user_id: users.user2.user_id,
+    slot_id: anySlotId,
+    plate_number: normalizePlateVN('51F-40002'),
+    start_time: new Date(now.getTime() + 2 * DAY),
+    end_time: new Date(now.getTime() + 2 * DAY + 6 * HOUR),
+    status: 'cancelled',
+  });
+  const cancEarlyPay = await makePayment({
+    reservation_id: cancEarly.reservation_id, status: 'success', paid_at: new Date(now.getTime() - 2 * HOUR),
+  });
+  await RefundRequest.create({
+    reservation_id: cancEarly.reservation_id, payment_id: cancEarlyPay.payment_id,
+    user_id: users.user2.user_id, percent: 100, amount: BOOKING_FEE,
+    status: 'pending', requested_at: new Date(now.getTime() - 1 * HOUR),
+  });
+
+  // --- (3) refund PENDING quá 7 ngày, user KHÔNG STK → job passMaintenance sẽ đánh expired ---
+  const cancStale = await makeReservation({
+    slot_id: anySlotId,
+    plate_number: normalizePlateVN('51F-40003'),
+    start_time: new Date(now.getTime() - 6 * DAY),
+    end_time: new Date(now.getTime() - 6 * DAY + 6 * HOUR),
+    status: 'cancelled',
+  });
+  const cancStalePay = await makePayment({
+    reservation_id: cancStale.reservation_id, status: 'success', paid_at: new Date(now.getTime() - 8 * DAY),
+  });
+  await RefundRequest.create({
+    reservation_id: cancStale.reservation_id, payment_id: cancStalePay.payment_id,
+    user_id: users.user.user_id, percent: 100, amount: BOOKING_FEE,
+    status: 'pending', requested_at: new Date(now.getTime() - 8 * DAY),
+  });
+
+  // --- (4) refund ĐÃ HOÀN (lịch sử trang hoàn tiền) ---
+  const cancDone = await makeReservation({
+    user_id: users.user2.user_id,
+    slot_id: anySlotId,
+    plate_number: normalizePlateVN('51F-40004'),
+    start_time: new Date(now.getTime() - 10 * DAY),
+    end_time: new Date(now.getTime() - 10 * DAY + 6 * HOUR),
+    status: 'cancelled',
+  });
+  const cancDonePay = await makePayment({
+    reservation_id: cancDone.reservation_id, status: 'refunded', paid_at: new Date(now.getTime() - 11 * DAY),
+  });
+  await RefundRequest.create({
+    reservation_id: cancDone.reservation_id, payment_id: cancDonePay.payment_id,
+    user_id: users.user2.user_id, percent: 100, amount: BOOKING_FEE,
+    status: 'refunded', requested_at: new Date(now.getTime() - 11 * DAY),
+    refunded_at: new Date(now.getTime() - 9 * DAY), refunded_by: users.admin.user_id,
+  });
+
+  // --- (5) COMPLETED — QR đơn GIỮ NGUYÊN (OR-16), QR phiên đã thu hồi khi checkout ---
+  const doneResv = await makeReservation({
+    slot_id: anySlotId,
+    plate_number: normalizePlateVN('51F-40005'),
+    start_time: new Date(now.getTime() - 1 * DAY - 4 * HOUR),
+    end_time: new Date(now.getTime() - 1 * DAY),
+    status: 'completed',
+  });
+  await paySuccess(doneResv.reservation_id);
+  const doneSession = await ParkingSession.create({
+    user_id: users.user.user_id,
+    reservation_id: doneResv.reservation_id,
+    gate_id: f1InGate.gate_id,
+    slot_id: anySlotId,
+    vehicle_type_id: car.vehicle_type_id,
+    plate_number: doneResv.plate_number,
+    time_in: new Date(now.getTime() - 1 * DAY - 4 * HOUR),
+    time_out: new Date(now.getTime() - 1 * DAY),
+    gate_stage: 'exited',
+    qr_token: `revoked-session-seed-${Date.now()}`, // checkout thật sẽ thu hồi token phiên
+    check_in_by: users.staff.user_id,
+    check_out_by: users.staff.user_id,
+    session_type: 'reservation',
+    status: 'completed',
+    calculated_fee: 60000, // 4h ô tô × 15.000đ
+  });
+  await makePayment({
+    session_id: doneSession.session_id, amount: 60000, status: 'success',
+    paid_at: new Date(now.getTime() - 1 * DAY),
+  });
+
+  // --- (6) NO_SHOW — QR đơn giữ nguyên, cổng phải chặn theo status ---
+  const noshowResv = await makeReservation({
+    slot_id: anySlotId,
+    plate_number: normalizePlateVN('51F-40006'),
+    start_time: new Date(now.getTime() - 1 * DAY - 6 * HOUR),
+    end_time: new Date(now.getTime() - 1 * DAY - 2 * HOUR),
+    status: 'no_show',
+  });
+  await paySuccess(noshowResv.reservation_id);
+
+  // --- (7) CHECKED_IN đang LỐ GIỜ khung đặt (end_time đã qua 2h) → phụ thu bắt buộc ---
+  const overSlot = await ParkingSlot.findOne({
+    where: { zone_id: f1Car.zone_id, status: 'available' }, order: [['slot_id', 'ASC']],
+  });
+  await overSlot.update({ status: 'occupied' });
+  const overResv = await makeReservation({
+    slot_id: overSlot.slot_id,
+    plate_number: normalizePlateVN('51F-40007'),
+    start_time: new Date(now.getTime() - 6 * HOUR),
+    end_time: new Date(now.getTime() - 2 * HOUR), // khung đã hết 2 tiếng mà xe chưa ra
+    status: 'checked_in',
+  });
+  await paySuccess(overResv.reservation_id);
+  const overSession = await ParkingSession.create({
+    user_id: users.user.user_id,
+    reservation_id: overResv.reservation_id,
+    gate_id: f1InGate.gate_id,
+    slot_id: overSlot.slot_id,
+    vehicle_type_id: car.vehicle_type_id,
+    plate_number: overResv.plate_number,
+    time_in: new Date(now.getTime() - 6 * HOUR),
+    gate_stage: 'on_floor',
+    qr_token: generateQrToken(),
+    check_in_by: users.staff.user_id,
+    session_type: 'reservation',
+    status: 'active',
+    calculated_fee: null,
+  });
+
+  // --- Vé tháng: ACTIVE (quét cổng được) + PENDING (test repay) + EXPIRED (cổng chặn theo status) ---
+  const passWindow = { valid_from_time: '06:00:00', valid_to_time: '22:00:00' };
+  const passActive = await MonthlyPass.create({
+    user_id: users.user.user_id, vehicle_type_id: bike.vehicle_type_id, floor_id: f3.floor_id,
+    plate_number: normalizePlateVN('51M-50001'), ...passWindow,
+    start_date: new Date(now.getTime() - 7 * DAY), end_date: new Date(now.getTime() + 23 * DAY),
+    status: 'active', qr_token: generateQrToken(),
+  });
+  await makePayment({ pass_id: passActive.pass_id, amount: 500000, status: 'success', paid_at: new Date(now.getTime() - 7 * DAY) });
+  const passPending = await MonthlyPass.create({
+    user_id: users.user2.user_id, vehicle_type_id: bike.vehicle_type_id, floor_id: f3.floor_id,
+    plate_number: normalizePlateVN('51M-50002'), ...passWindow,
+    start_date: new Date(now.getTime() + 1 * DAY), end_date: new Date(now.getTime() + 31 * DAY),
+    status: 'pending', qr_token: null, // chưa thanh toán thì chưa có QR
+  });
+  await makePayment({
+    pass_id: passPending.pass_id, amount: 500000, status: 'pending',
+    gateway_response: JSON.stringify({ checkoutUrl: 'https://pay.payos.vn/web/seed-dead-pass-link' }),
+  });
+  const passExpired = await MonthlyPass.create({
+    user_id: users.user.user_id, vehicle_type_id: bike.vehicle_type_id, floor_id: f3.floor_id,
+    plate_number: normalizePlateVN('51M-50003'), ...passWindow,
+    start_date: new Date(now.getTime() - 40 * DAY), end_date: new Date(now.getTime() - 1 * DAY),
+    status: 'expired', qr_token: generateQrToken(), // hết hạn GIỮ token — cổng chặn theo status
+  });
+  await makePayment({ pass_id: passExpired.pass_id, amount: 500000, status: 'success', paid_at: new Date(now.getTime() - 40 * DAY) });
+
+  // --- Sự cố: 1 đang mở (walk-in lố giờ) + 1 đã xử lý (có resolved_by — migration 007) ---
+  await Incident.create({
+    type: 'overstay', status: 'open',
+    session_id: walkSession.session_id,
+    slot_id: walkSession.slot_id,
+    reported_by: users.staff.user_id,
+    description: `Khách vãng lai ${walkSession.plate_number} đỗ vượt ngưỡng — chờ thu phụ thu khi ra`,
+  });
+  await Incident.create({
+    type: 'window_violation', status: 'resolved',
+    reservation_id: noshowResv.reservation_id,
+    user_id: users.user.user_id,
+    reported_by: users.staff.user_id,
+    resolved_by: users.manager.user_id,
+    resolved_at: new Date(now.getTime() - 1 * HOUR),
+    description: `Đơn ${noshowResv.plate_number} quá giờ không check-in — đã đánh no-show và nhả chỗ`,
+  });
+
   console.log('\n================ SEED DONE ================');
   console.log('Tài khoản (username / password):');
   console.log('  admin   / 123456');
@@ -348,6 +593,23 @@ const run = async () => {
   for (const { r, w } of multiReservations) {
     console.log(`  resId=${r.reservation_id} | ${w.plate} | ${w.start.toLocaleString('vi-VN')} → ${w.end.toLocaleString('vi-VN')} (${w.shift})`);
   }
+  console.log('\n--------- CÁC LUỒNG BỔ SUNG (đăng nhập user/user2 để xem) ---------');
+  console.log('Tài khoản thêm:');
+  console.log('  user2      / 123456  (CÓ STK ngân hàng → nhận hoàn tiền được)');
+  console.log('  chuaverify / 123456  (login phải bị chặn 403 EMAIL_NOT_VERIFIED)');
+  console.log('Đặt chỗ:');
+  console.log(`  PENDING  resId=${pendingResv.reservation_id} | 51F-40001 | bấm "Trả tiếp" → phải ra link PayOS MỚI (link cũ seed đã chết)`);
+  console.log(`  CANCELLED+refund PENDING resId=${cancEarly.reservation_id} | 51F-40002 | user2 có STK → admin trang Hoàn tiền bấm hoàn được`);
+  console.log(`  CANCELLED+refund QUÁ HẠN resId=${cancStale.reservation_id} | 51F-40003 | không STK, 8 ngày → job maintenance đánh expired`);
+  console.log(`  CANCELLED+refund ĐÃ HOÀN resId=${cancDone.reservation_id} | 51F-40004 | lịch sử trang hoàn tiền`);
+  console.log(`  COMPLETED resId=${doneResv.reservation_id} | 51F-40005 | QR đơn còn hiển thị dạng lịch sử, quét cổng bị chặn`);
+  console.log(`  NO_SHOW   resId=${noshowResv.reservation_id} | 51F-40006 | QR lịch sử + có incident đã xử lý kèm theo`);
+  console.log(`  LỐ GIỜ    resId=${overResv.reservation_id} | 51F-40007 | checked_in, hết khung 2h trước → checkout phải cộng phụ thu (sessionId=${overSession.session_id})`);
+  console.log('Vé tháng:');
+  console.log(`  ACTIVE  passId=${passActive.pass_id} | 51M-50001 | quét cổng tòa vào được (khung 06:00–22:00, tầng 3)`);
+  console.log(`  PENDING passId=${passPending.pass_id} | 51M-50002 | user2 — test "Trả tiếp" vé tháng`);
+  console.log(`  EXPIRED passId=${passExpired.pass_id} | 51M-50003 | còn QR nhưng cổng chặn theo status`);
+  console.log('Sự cố: 1 open (walk-in lố giờ) + 1 resolved (có người xử lý — cột migration 007)');
   console.log('==========================================\n');
   process.exit(0);
 };
