@@ -44,6 +44,9 @@ import {
 import { logAdminAction } from '../utils/auditLog.js';
 
 const CHECKIN_EARLY_GRACE_MS = 15 * 60 * 1000;
+// Phiên walk-in trẻ hơn ngưỡng này được void khi check-in đơn đặt (staff vừa nhập nhầm);
+// già hơn thì bắt checkout thu phí trước — void là mất trắng tiền gửi của cả quãng đã đỗ.
+const WALKIN_VOID_ON_CHECKIN_MAX_AGE_MS = 15 * 60 * 1000;
 // 3.4 — số ứng viên slot tối đa thử khoá khi gặp race (giới hạn row-lock giữ trong 1 transaction)
 const MAX_SLOT_LOCK_ATTEMPTS = 5;
 
@@ -564,18 +567,11 @@ export const cancelUserReservation = async (userId, reservationId) => {
     assertReservationTransition(reservation.status, 'cancelled');
 
     const { voidActiveSession } = await import('./session.service.js');
+    // CHỈ void phiên thuộc CHÍNH đơn này. Trước đây match thêm mọi phiên active cùng biển số
+    // (reservation_id null) — hủy một đơn TƯƠNG LAI là void luôn phiên walk-in ĐANG GỬI của
+    // chính chiếc xe đó: phiên mất, xe kẹt trong bãi không checkout được.
     const sessionsToVoid = await ParkingSession.findAll({
-      where: {
-        status: 'active',
-        [Op.or]: [
-          { reservation_id: reservationId },
-          {
-            plate_number: reservation.plate_number,
-            reservation_id: null,
-            session_type: { [Op.in]: ['walk_in', 'reservation'] },
-          },
-        ],
-      },
+      where: { status: 'active', reservation_id: reservationId },
       transaction,
     });
 
@@ -903,10 +899,18 @@ export const checkinReservation = async (staffUserId, data) => {
         transaction,
         lock: transaction.LOCK.UPDATE,
       });
+      // Chỉ void phiên walk-in MỚI TOANH (≤15') — case staff lỡ nhập walk-in rồi mới thấy
+      // xe có đặt chỗ. Phiên đã đỗ lâu mà void là XÓA SỔ phí gửi xe của cả quãng đó (khách
+      // gửi walk-in từ sáng, tới giờ đơn quét QR đặt chỗ → sáng thành miễn phí). Phiên cũ
+      // phải checkout thu tiền trước rồi mới check-in đơn.
+      const walkInAgeMs = locked?.time_in
+        ? timeIn.getTime() - new Date(locked.time_in).getTime()
+        : Number.POSITIVE_INFINITY;
       if (
         locked?.status === 'active' &&
         locked.session_type === 'walk_in' &&
-        !locked.reservation_id
+        !locked.reservation_id &&
+        walkInAgeMs <= WALKIN_VOID_ON_CHECKIN_MAX_AGE_MS
       ) {
         const { voidActiveSession } = await import('./session.service.js');
         await voidActiveSession(locked, transaction);
