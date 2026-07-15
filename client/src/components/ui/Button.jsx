@@ -6,6 +6,9 @@ const variants = {
   secondary: 'border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 focus-visible:ring-slate-300',
   danger: 'bg-red-600 text-white hover:bg-red-700 focus-visible:ring-red-400',
   ghost: 'text-slate-600 hover:bg-slate-100 focus-visible:ring-slate-300',
+  // Dùng trên nền tối/gradient (vd khối CTA): nút trắng chữ brand & nút viền trắng chữ trắng.
+  white: 'bg-white text-brand hover:bg-white/90 focus-visible:ring-white/50',
+  whiteOutline: 'border border-white/40 bg-transparent text-white hover:bg-white/10 focus-visible:ring-white/40',
 };
 
 const sizes = {

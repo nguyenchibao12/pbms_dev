@@ -216,13 +216,13 @@ export default function HomePage() {
           </p>
           <div className="relative mt-8 flex flex-wrap justify-center gap-3">
             <Link to={primaryTo}>
-              <Button size="lg" className="border-0 bg-white px-7 text-brand hover:bg-white/90">
+              <Button size="lg" variant="white" className="px-7 shadow-(--shadow-soft)">
                 {primaryLabel}
               </Button>
             </Link>
             {!isAuthenticated && (
               <Link to="/login">
-                <Button size="lg" variant="secondary" className="border-white/40 bg-transparent px-7 text-white hover:bg-white/10">
+                <Button size="lg" variant="whiteOutline" className="px-7">
                   Đăng nhập
                 </Button>
               </Link>
