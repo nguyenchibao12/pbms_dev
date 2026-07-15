@@ -437,7 +437,15 @@ export const verifyPaymentReturn = async (orderCode, requester = {}) => {
   if (payment.pass_id) {
     const { activatePassAfterPayment } = await import('./monthlyPass.service.js');
     const result = await activatePassAfterPayment(payment);
-    return { paid: true, type: 'monthly_pass', pass: result.pass, payment: result.payment };
+    return {
+      paid: true,
+      type: 'monthly_pass',
+      pass: result.pass,
+      payment: result.payment,
+      // Tiền về sau khi vé đã hủy/hết hạn → không kích hoạt, đã tạo yêu cầu hoàn (mirror reservation).
+      activated: result.activated !== false,
+      refunded: Boolean(result.refunded),
+    };
   }
   const result = await completeSessionAfterPayment(payment);
   return { paid: true, type: 'session', session: result.session, payment: result.payment };
