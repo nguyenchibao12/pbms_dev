@@ -1,4 +1,5 @@
-import { Zone, VehicleType } from '../models/index.js';
+import { Op } from 'sequelize';
+import { Zone, VehicleType, Floor } from '../models/index.js';
 import { AppError } from './helpers.js';
 
 /**
@@ -91,4 +92,55 @@ export const getVehicleTypeOrThrow = async (vehicleTypeId, transaction) => {
   const vt = await VehicleType.findByPk(vehicleTypeId, { transaction });
   if (!vt) throw new AppError('Vehicle type not found', 404, 'NOT_FOUND');
   return vt;
+};
+
+/**
+ * Chặn nếu ĐỔI slot_area_m2 của một loại xe khiến bất kỳ TẦNG nào (có khu dùng loại xe đó) vượt
+ * diện tích. Ràng buộc diện tích trước đây chỉ kiểm lúc tạo/sửa KHU; đổi diện tích/slot ở loại xe
+ * lại tác động ngược lên mọi khu loại đó mà không ai kiểm → có thể vỡ ràng buộc âm thầm.
+ * Tính lại từng tầng: diện tích các khu loại KHÁC (giữ nguyên) + khu loại NÀY × slot_area MỚI.
+ */
+export const assertVehicleTypeAreaFitsFloors = async (vehicleTypeId, newSlotArea, transaction) => {
+  const per = Number(newSlotArea);
+  if (!Number.isFinite(per) || per <= 0) return; // 0/none = chưa cấu hình, không ràng buộc (giữ hành vi cũ)
+
+  const zonesOfType = await Zone.findAll({
+    where: { vehicle_type_id: vehicleTypeId },
+    attributes: ['zone_id', 'floor_id', 'total_slots'],
+    transaction,
+  });
+  if (zonesOfType.length === 0) return;
+
+  const floorIds = [...new Set(zonesOfType.map((z) => z.floor_id))];
+  for (const floorId of floorIds) {
+    const floor = await Floor.findByPk(floorId, { transaction });
+    if (!floor || floor.area_m2 == null) continue; // tầng không giới hạn diện tích
+
+    // Diện tích các khu loại KHÁC trên tầng (dùng slot_area_m2 hiện tại của chúng).
+    const otherZones = await Zone.findAll({
+      where: { floor_id: floorId, vehicle_type_id: { [Op.ne]: vehicleTypeId } },
+      include: [{ association: 'vehicleType', attributes: ['slot_area_m2'] }],
+      transaction,
+    });
+    const otherArea = otherZones.reduce(
+      (sum, z) => sum + Number(z.total_slots) * slotAreaOf(z.vehicleType),
+      0,
+    );
+
+    // Diện tích các khu loại NÀY trên tầng, tính theo slot_area_m2 MỚI.
+    const thisSlots = zonesOfType
+      .filter((z) => z.floor_id === floorId)
+      .reduce((sum, z) => sum + Number(z.total_slots), 0);
+    const wanted = thisSlots * per;
+
+    if (otherArea + wanted > Number(floor.area_m2) + 1e-6) {
+      throw new AppError(
+        `Không thể đặt diện tích/slot = ${per} m²: tầng "${floor.label || floor.floor_code}" sẽ vượt ` +
+          `diện tích (cần ${(otherArea + wanted).toFixed(1)} m² > ${Number(floor.area_m2).toFixed(1)} m²). ` +
+          `Giảm số slot của các khu loại xe này ở tầng đó trước.`,
+        409,
+        'CONFLICT',
+      );
+    }
+  }
 };

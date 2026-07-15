@@ -1,6 +1,14 @@
 import { Op } from 'sequelize';
 import sequelize from '../config/db.js';
-import { ParkingSlot, ParkingSession, Payment, Zone, Floor } from '../models/index.js';
+import {
+  ParkingSlot,
+  ParkingSession,
+  Payment,
+  Zone,
+  Floor,
+  Reservation,
+  MonthlyPass,
+} from '../models/index.js';
 import { AppError } from '../utils/helpers.js';
 
 const parseDateRange = (from, to) => {
@@ -34,6 +42,41 @@ const sessionIncludeForFloor = async (floorId) => {
   if (!floorId) return [];
   const slotWhere = await slotWhereForFloor(floorId);
   return [{ association: 'slot', attributes: [], required: true, where: slotWhere }];
+};
+
+/**
+ * Where-fragment lọc Payment theo TẦNG cho các query doanh thu. Một payment thuộc tầng nếu
+ * nguồn của nó nằm trên tầng đó: phiên gửi (session → slot → zone.floor_id), đặt chỗ
+ * (reservation.floor_id) hoặc vé tháng (monthly_pass.floor_id). Không truyền floorId → {}
+ * (toàn bãi, giữ nguyên hành vi cũ). Có floorId nhưng không payment nào khớp → chặn cứng
+ * payment_id = -1 (khớp rỗng, cùng cách slotWhereForFloor trả zone_id = -1).
+ */
+const paymentWhereForFloor = async (floorId) => {
+  if (!floorId) return {};
+
+  const zones = await Zone.findAll({ where: { floor_id: floorId }, attributes: ['zone_id'] });
+  const zoneIds = zones.map((z) => z.zone_id);
+
+  const [sessions, reservations, passes] = await Promise.all([
+    zoneIds.length
+      ? ParkingSession.findAll({
+          attributes: ['session_id'],
+          include: [
+            { association: 'slot', attributes: [], required: true, where: { zone_id: { [Op.in]: zoneIds } } },
+          ],
+        })
+      : [],
+    Reservation.findAll({ where: { floor_id: floorId }, attributes: ['reservation_id'] }),
+    MonthlyPass.findAll({ where: { floor_id: floorId }, attributes: ['pass_id'] }),
+  ]);
+
+  const or = [];
+  if (sessions.length) or.push({ session_id: { [Op.in]: sessions.map((s) => s.session_id) } });
+  if (reservations.length) or.push({ reservation_id: { [Op.in]: reservations.map((r) => r.reservation_id) } });
+  if (passes.length) or.push({ pass_id: { [Op.in]: passes.map((p) => p.pass_id) } });
+
+  if (or.length === 0) return { payment_id: -1 };
+  return { [Op.or]: or };
 };
 
 export const getOccupancy = async (floorId = null) => {
@@ -78,6 +121,9 @@ export const getOccupancy = async (floorId = null) => {
 export const getOverviewReport = async ({ from, to, floorId = null }) => {
   const { fromDate, toDate } = parseDateRange(from, to);
   const sessionInclude = await sessionIncludeForFloor(floorId);
+  // Doanh thu cũng phải lọc theo tầng cho khớp phần occupancy/traffic (trước đây revenue bỏ
+  // qua floorId → báo cáo 1 tầng lại hiện doanh thu toàn bãi).
+  const paymentWhere = await paymentWhereForFloor(floorId);
 
   const occupancy = await getOccupancy(floorId);
 
@@ -86,6 +132,7 @@ export const getOverviewReport = async ({ from, to, floorId = null }) => {
       where: {
         status: 'success',
         paid_at: { [Op.between]: [fromDate, toDate] },
+        ...paymentWhere,
       },
     })) || 0;
 
@@ -108,6 +155,7 @@ export const getOverviewReport = async ({ from, to, floorId = null }) => {
     where: {
       status: 'success',
       paid_at: { [Op.between]: [fromDate, toDate] },
+      ...paymentWhere,
     },
     group: [sequelize.literal('type')],
     raw: true,
@@ -123,6 +171,7 @@ export const getOverviewReport = async ({ from, to, floorId = null }) => {
     where: {
       status: 'success',
       paid_at: { [Op.between]: [fromDate, toDate] },
+      ...paymentWhere,
     },
     group: ['method'],
     raw: true,
@@ -146,6 +195,7 @@ export const getOverviewReport = async ({ from, to, floorId = null }) => {
     where: {
       status: 'success',
       paid_at: { [Op.between]: [fromDate, toDate] },
+      ...paymentWhere,
     },
     group: [sequelize.fn('DATE', sequelize.col('paid_at'))],
     order: [[sequelize.fn('DATE', sequelize.col('paid_at')), 'ASC']],

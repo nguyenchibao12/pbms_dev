@@ -22,6 +22,7 @@ import {
 } from '../utils/settings.js';
 import { parsePagination, findAndPaginate } from '../utils/pagination.js';
 import { recordPassWindowViolation } from './incident.service.js';
+import { logAdminAction } from '../utils/auditLog.js';
 
 const passIncludes = [
   { association: 'floor' },
@@ -385,6 +386,52 @@ export const activatePassAfterPayment = async (payment) => {
 
   const pass = await MonthlyPass.findByPk(payment.pass_id);
   if (!pass) throw new AppError('Monthly pass not found', 404, 'NOT_FOUND');
+
+  // Tiền về SAU khi vé đã bị hủy/hết hạn (job passMaintenance hủy pending quá TTL, hoặc user
+  // hủy pending rồi mới trả) → KHÔNG hồi sinh vé. Payment giữ 'success' (tiền ĐÃ về thật) +
+  // tạo RefundRequest 100% cho trang hoàn tiền của Admin — completeRefund mới đổi payment sang
+  // 'refunded'. Đối xứng với confirmReservationAfterPayment (nhánh cancelled). Nếu KHÔNG xử lý,
+  // activate sẽ ném CONFLICT, tiền kẹt mà không có yêu cầu hoàn nào → mất tiền âm thầm.
+  // Idempotent: webhook/verify có thể gọi lặp → đã có refund_request cho payment này thì bỏ qua.
+  if (pass.status === 'cancelled' || pass.status === 'expired') {
+    const existingRefund = await RefundRequest.findOne({
+      where: { payment_id: payment.payment_id },
+    });
+    await sequelize.transaction(async (transaction) => {
+      if (payment.status !== 'success') {
+        await payment.update({ status: 'success', paid_at: new Date() }, { transaction });
+      }
+      if (!existingRefund) {
+        await RefundRequest.create(
+          {
+            pass_id: pass.pass_id,
+            payment_id: payment.payment_id,
+            user_id: pass.user_id,
+            percent: 100,
+            amount: Number(payment.amount),
+            status: 'pending',
+            requested_at: new Date(),
+          },
+          { transaction },
+        );
+      }
+    });
+    if (!existingRefund) {
+      await logAdminAction(pass.user_id, 'PASS_REFUND_OWED', {
+        passId: pass.pass_id,
+        amount: Number(payment.amount),
+        note: 'Thanh toán về sau khi vé tháng đã hủy/hết hạn — đã tạo yêu cầu hoàn tiền',
+      });
+    }
+    return {
+      pass: await getPass(pass.pass_id),
+      payment: await payment.reload(),
+      activated: false,
+      refunded: true,
+      refundRequested: !existingRefund,
+    };
+  }
+
   if (pass.status !== 'pending') {
     throw new AppError(`Pass is not pending (current: ${pass.status})`, 409, 'CONFLICT');
   }
@@ -423,7 +470,8 @@ export const checkinWithPass = async (pass, { gateId = null } = {}) => {
   }
 
   // Chống 2 phiên cho cùng 1 xe: biển của vé đang có phiên active (vd walk-in tạo ở
-  // booth ngoài khung giờ) → không tạo thêm phiên pass.
+  // booth ngoài khung giờ) → không tạo thêm phiên pass. Pre-check nhanh (khỏi gợi ý slot nếu
+  // xe đã trong bãi); chống RACE quét-2-lần thì re-check trong transaction dưới (khoá row vé).
   const existingForPlate = await ParkingSession.findOne({
     where: { plate_number: pass.plate_number, status: 'active' },
   });
@@ -438,6 +486,17 @@ export const checkinWithPass = async (pass, { gateId = null } = {}) => {
 
   const qrToken = generateQrToken();
   const session = await sequelize.transaction(async (transaction) => {
+    // Khoá row vé: 2 lần quét CÙNG vé phải xếp hàng (như purchaseMonthlyPass khoá Zone). Sau khi
+    // giành được khoá, re-check phiên active của biển — thấy được phiên vừa COMMIT bởi request
+    // song song → chặn tạo phiên thứ 2 cho cùng 1 vé/biển.
+    await MonthlyPass.findByPk(pass.pass_id, { transaction, lock: transaction.LOCK.UPDATE });
+    const raceDup = await ParkingSession.findOne({
+      where: { plate_number: pass.plate_number, status: 'active' },
+      transaction,
+    });
+    if (raceDup) {
+      throw new AppError('Xe đã có phiên đang gửi — không thể mở cổng vào lần nữa.', 409, 'ALREADY_PARKED');
+    }
     await lockSlotOccupied(slot.slot_id, transaction);
     return ParkingSession.create(
       {

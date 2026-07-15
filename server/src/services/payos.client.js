@@ -28,10 +28,17 @@ export const getPayOSClient = () => {
   return payosClient;
 };
 
+// orderCode PayOS: số nguyên dương DUY NHẤT (cột payment.order_code BIGINT unique).
+// mốc-thời-gian(ms) × 1000 + rand(0..999), kèm mốc đơn điệu bảo đảm KHÔNG trùng trong cùng tiến
+// trình dù nhiều đơn trong 1 ms. Trần an toàn: Date.now()×1000 ≈ 1.7e15 < 9_007_199_254_740_991
+// (Number.MAX_SAFE_INTEGER = trần orderCode PayOS). Bản cũ Date.now() % 1e9 LẶP LẠI mỗi ~11.5
+// ngày (dễ đụng unique) và rand đơn thuần vẫn trùng 1/1000 khi trùng ms.
+let lastOrderCode = 0;
 export const generateOrderCode = () => {
-  const timePart = Date.now() % 1_000_000_000;
-  const randPart = Math.floor(Math.random() * 1000);
-  return timePart * 1000 + randPart;
+  const base = Date.now() * 1000 + Math.floor(Math.random() * 1000);
+  const code = base > lastOrderCode ? base : lastOrderCode + 1;
+  lastOrderCode = code;
+  return code;
 };
 
 export const createPayOSPaymentLink = async ({ orderCode, amount, description, returnUrl, cancelUrl }) => {
