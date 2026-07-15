@@ -112,11 +112,6 @@ export default function HomePage() {
                 {primaryLabel}
               </Button>
             </Link>
-            <a href="#features">
-              <Button size="lg" variant="secondary" className="px-7">
-                Khám phá tính năng
-              </Button>
-            </a>
           </div>
 
           {/* Stats */}
