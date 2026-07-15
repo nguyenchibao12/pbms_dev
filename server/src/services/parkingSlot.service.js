@@ -93,6 +93,16 @@ export const updateParkingSlot = async (id, data) => {
   // Chuyển chỗ sang khu khác → mã chỗ sinh lại theo mã khu đích (mã không nhập tự do).
   let newSlotCode = slot.slot_code;
   if (data.zoneId && Number(data.zoneId) !== slot.zone_id) {
+    // Chỗ đang có xe (occupied) hoặc đang giữ (reserved) mà đổi khu → phiên/đơn đang gắn chỗ
+    // này sẽ lệch tầng (cổng tầng/RA báo wrong_floor, barrier không mở → khách kẹt). Chặn như
+    // deleteParkingSlot. Chờ xe ra / hủy giữ chỗ rồi mới chuyển.
+    if (slot.status === 'occupied' || slot.status === 'reserved') {
+      throw new AppError(
+        'Không thể chuyển khu cho chỗ đang có xe hoặc đang được giữ. Chờ xe ra / hủy giữ chỗ trước.',
+        409,
+        'CONFLICT',
+      );
+    }
     const targetZone = await Zone.findByPk(data.zoneId);
     if (!targetZone) throw new AppError('Zone not found', 404, 'NOT_FOUND');
 
