@@ -86,7 +86,7 @@ export default function HomePage() {
   return (
     <>
       {/* HERO */}
-      <section className="relative overflow-hidden">
+      <section id="top" className="relative overflow-hidden">
         <div className="pointer-events-none absolute inset-0 -z-10">
           <div className="absolute -top-32 left-1/2 h-72 w-[40rem] -translate-x-1/2 rounded-full bg-brand/10 blur-3xl" />
           <div className="absolute right-0 top-24 h-64 w-64 rounded-full bg-accent/10 blur-3xl" />
@@ -173,7 +173,7 @@ export default function HomePage() {
           {features.map((f) => (
             <div
               key={f.title}
-              className="group rounded-2xl border border-slate-200 bg-surface-raised p-6 shadow-(--shadow-card) transition-all hover:-translate-y-1 hover:shadow-(--shadow-soft)"
+              className="rounded-2xl border border-slate-200 bg-surface-raised p-6 shadow-(--shadow-card)"
             >
               <div className="brand-gradient flex h-12 w-12 items-center justify-center rounded-xl text-white">
                 <Icon path={f.icon} />
