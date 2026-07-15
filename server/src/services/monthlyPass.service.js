@@ -470,7 +470,8 @@ export const checkinWithPass = async (pass, { gateId = null } = {}) => {
   }
 
   // Chống 2 phiên cho cùng 1 xe: biển của vé đang có phiên active (vd walk-in tạo ở
-  // booth ngoài khung giờ) → không tạo thêm phiên pass.
+  // booth ngoài khung giờ) → không tạo thêm phiên pass. Pre-check nhanh (khỏi gợi ý slot nếu
+  // xe đã trong bãi); chống RACE quét-2-lần thì re-check trong transaction dưới (khoá row vé).
   const existingForPlate = await ParkingSession.findOne({
     where: { plate_number: pass.plate_number, status: 'active' },
   });
@@ -485,6 +486,17 @@ export const checkinWithPass = async (pass, { gateId = null } = {}) => {
 
   const qrToken = generateQrToken();
   const session = await sequelize.transaction(async (transaction) => {
+    // Khoá row vé: 2 lần quét CÙNG vé phải xếp hàng (như purchaseMonthlyPass khoá Zone). Sau khi
+    // giành được khoá, re-check phiên active của biển — thấy được phiên vừa COMMIT bởi request
+    // song song → chặn tạo phiên thứ 2 cho cùng 1 vé/biển.
+    await MonthlyPass.findByPk(pass.pass_id, { transaction, lock: transaction.LOCK.UPDATE });
+    const raceDup = await ParkingSession.findOne({
+      where: { plate_number: pass.plate_number, status: 'active' },
+      transaction,
+    });
+    if (raceDup) {
+      throw new AppError('Xe đã có phiên đang gửi — không thể mở cổng vào lần nữa.', 409, 'ALREADY_PARKED');
+    }
     await lockSlotOccupied(slot.slot_id, transaction);
     return ParkingSession.create(
       {
