@@ -1,14 +1,16 @@
-import { Outlet, Link, NavLink } from 'react-router-dom';
+import { Outlet, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useLogout } from '../hooks/useLogout';
 import { getRoleName, getHomePathForRole } from '../lib/auth';
 import Button from '../components/ui/Button';
 
+// Neo tới các section trong HomePage (MainLayout chỉ bọc trang "/"). Dùng <a href> để cuộn
+// thật tới section — React Router <NavLink> tới hash KHÔNG tự cuộn.
 const navItems = [
-  { to: '/', label: 'Trang chủ', end: true },
-  { to: '/#features', label: 'Tính năng' },
-  { to: '/#how', label: 'Cách hoạt động' },
-  { to: '/#contact', label: 'Liên hệ' },
+  { href: '#top', label: 'Trang chủ' },
+  { href: '#features', label: 'Tính năng' },
+  { href: '#how', label: 'Cách hoạt động' },
+  { href: '#contact', label: 'Liên hệ' },
 ];
 
 function BrandMark() {
@@ -37,18 +39,13 @@ export default function MainLayout() {
 
           <nav className="hidden items-center gap-1 md:flex">
             {navItems.map((item) => (
-              <NavLink
-                key={item.to}
-                to={item.to}
-                end={item.end}
-                className={({ isActive }) =>
-                  `rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
-                    isActive ? 'text-brand' : 'text-slate-600 hover:text-brand'
-                  }`
-                }
+              <a
+                key={item.href}
+                href={item.href}
+                className="rounded-lg px-3 py-2 text-sm font-medium text-slate-600 transition-colors hover:text-brand"
               >
                 {item.label}
-              </NavLink>
+              </a>
             ))}
           </nav>
 
