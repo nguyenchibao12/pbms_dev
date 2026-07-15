@@ -1,6 +1,7 @@
 import { Op } from 'sequelize';
 import { VehicleType, Zone, PricingRule } from '../models/index.js';
 import { AppError } from '../utils/helpers.js';
+import { assertVehicleTypeAreaFitsFloors } from '../utils/floorCapacity.js';
 
 // Mã loại xe luôn lưu CHỮ HOA để nhất quán (CAR, BIKE, CAR7...) và tránh trùng do khác hoa/thường.
 const normalizeTypeCode = (code) => code?.trim().toUpperCase();
@@ -41,10 +42,17 @@ export const updateVehicleType = async (id, data) => {
     if (existing) throw new AppError('Type code already exists', 409, 'CONFLICT');
   }
 
+  // Đổi diện tích/slot có thể làm các khu đang dùng loại xe này vượt diện tích tầng. Chỉ cần
+  // kiểm khi TĂNG (giảm luôn vừa). Chặn trước khi lưu để không vỡ ràng buộc âm thầm.
+  const newSlotArea = data.slotAreaM2 ?? type.slot_area_m2;
+  if (data.slotAreaM2 != null && Number(newSlotArea) > Number(type.slot_area_m2)) {
+    await assertVehicleTypeAreaFitsFloors(type.vehicle_type_id, Number(newSlotArea));
+  }
+
   await type.update({
     type_name: data.typeName ?? type.type_name,
     type_code: typeCode ?? type.type_code,
-    slot_area_m2: data.slotAreaM2 ?? type.slot_area_m2,
+    slot_area_m2: newSlotArea,
   });
   return type;
 };
