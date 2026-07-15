@@ -22,6 +22,7 @@ import {
 } from '../utils/settings.js';
 import { parsePagination, findAndPaginate } from '../utils/pagination.js';
 import { recordPassWindowViolation } from './incident.service.js';
+import { logAdminAction } from '../utils/auditLog.js';
 
 const passIncludes = [
   { association: 'floor' },
@@ -385,6 +386,52 @@ export const activatePassAfterPayment = async (payment) => {
 
   const pass = await MonthlyPass.findByPk(payment.pass_id);
   if (!pass) throw new AppError('Monthly pass not found', 404, 'NOT_FOUND');
+
+  // Tiền về SAU khi vé đã bị hủy/hết hạn (job passMaintenance hủy pending quá TTL, hoặc user
+  // hủy pending rồi mới trả) → KHÔNG hồi sinh vé. Payment giữ 'success' (tiền ĐÃ về thật) +
+  // tạo RefundRequest 100% cho trang hoàn tiền của Admin — completeRefund mới đổi payment sang
+  // 'refunded'. Đối xứng với confirmReservationAfterPayment (nhánh cancelled). Nếu KHÔNG xử lý,
+  // activate sẽ ném CONFLICT, tiền kẹt mà không có yêu cầu hoàn nào → mất tiền âm thầm.
+  // Idempotent: webhook/verify có thể gọi lặp → đã có refund_request cho payment này thì bỏ qua.
+  if (pass.status === 'cancelled' || pass.status === 'expired') {
+    const existingRefund = await RefundRequest.findOne({
+      where: { payment_id: payment.payment_id },
+    });
+    await sequelize.transaction(async (transaction) => {
+      if (payment.status !== 'success') {
+        await payment.update({ status: 'success', paid_at: new Date() }, { transaction });
+      }
+      if (!existingRefund) {
+        await RefundRequest.create(
+          {
+            pass_id: pass.pass_id,
+            payment_id: payment.payment_id,
+            user_id: pass.user_id,
+            percent: 100,
+            amount: Number(payment.amount),
+            status: 'pending',
+            requested_at: new Date(),
+          },
+          { transaction },
+        );
+      }
+    });
+    if (!existingRefund) {
+      await logAdminAction(pass.user_id, 'PASS_REFUND_OWED', {
+        passId: pass.pass_id,
+        amount: Number(payment.amount),
+        note: 'Thanh toán về sau khi vé tháng đã hủy/hết hạn — đã tạo yêu cầu hoàn tiền',
+      });
+    }
+    return {
+      pass: await getPass(pass.pass_id),
+      payment: await payment.reload(),
+      activated: false,
+      refunded: true,
+      refundRequested: !existingRefund,
+    };
+  }
+
   if (pass.status !== 'pending') {
     throw new AppError(`Pass is not pending (current: ${pass.status})`, 409, 'CONFLICT');
   }
