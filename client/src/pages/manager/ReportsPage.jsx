@@ -246,8 +246,10 @@ export default function ReportsPage() {
           <section>
             <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
               <h2 className="text-lg font-semibold text-slate-800">Doanh thu</h2>
+              {/* BE đã lọc doanh thu theo floorId — nhãn phải khớp, không ghi cứng "toàn bãi". */}
               <span className="text-xs text-slate-400">
-                {fmtPeriod(report.period?.from)} – {fmtPeriod(report.period?.to)} · toàn bãi
+                {fmtPeriod(report.period?.from)} – {fmtPeriod(report.period?.to)}
+                {floorId ? ' · theo tầng đã chọn' : ' · toàn bãi'}
               </span>
             </div>
             <div className="grid gap-4 sm:grid-cols-3">
