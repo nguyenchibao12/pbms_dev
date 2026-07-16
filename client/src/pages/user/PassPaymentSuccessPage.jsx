@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { CheckCircle2, QrCode, Clock } from 'lucide-react';
+import { CheckCircle2, QrCode, Clock, AlertTriangle } from 'lucide-react';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
 import Spinner from '../../components/ui/Spinner';
@@ -14,6 +14,7 @@ export default function PassPaymentSuccessPage() {
   const [searchParams] = useSearchParams();
   const orderCode = searchParams.get('orderCode');
   // verifying: đang hỏi server · active: đã kích hoạt · pending: chưa xác nhận được
+  // · refunded: tiền về NHƯNG vé đã bị hủy/hết hạn trước đó → BE không kích hoạt, đã tạo yêu cầu hoàn 100%
   const [state, setState] = useState(orderCode ? 'verifying' : 'pending');
 
   useEffect(() => {
@@ -22,7 +23,13 @@ export default function PassPaymentSuccessPage() {
     const verify = async () => {
       try {
         const { data } = await paymentsApi.verify(orderCode);
-        if (active) setState(data.data?.paid ? 'active' : 'pending');
+        if (!active) return;
+        const info = data.data || {};
+        if (!info.paid) setState('pending');
+        // Không được báo "kích hoạt thành công" chỉ vì paid — vé có thể đã bị job hủy khi
+        // khách để pending quá lâu rồi mới trả tiền. BE trả activated/refunded để phân biệt.
+        else if (info.refunded || info.activated === false) setState('refunded');
+        else setState('active');
       } catch {
         if (active) setState('pending');
       }
@@ -61,6 +68,37 @@ export default function PassPaymentSuccessPage() {
           <div className="mt-6 flex justify-center">
             <Link to="/monthly-pass">
               <Button className="w-full sm:w-auto">Về vé tháng của tôi</Button>
+            </Link>
+          </div>
+        </Card>
+      </div>
+    );
+  }
+
+  // Tiền đã về nhưng vé đã bị hủy/hết hạn trước khi thanh toán tới — vé KHÔNG kích hoạt.
+  // BE đã tự tạo yêu cầu hoàn 100% cho Admin; user cần có STK trong hồ sơ để nhận hoàn.
+  if (state === 'refunded') {
+    return (
+      <div className="mx-auto max-w-md py-6">
+        <Card className="text-center">
+          <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-amber-100">
+            <AlertTriangle className="h-9 w-9 text-amber-600" />
+          </div>
+          <h1 className="text-xl font-bold text-slate-800">Vé đã bị hủy trước khi thanh toán tới</h1>
+          <p className="mt-2 text-sm text-slate-600">
+            Vé tháng đã bị hủy hoặc hết hạn trước khi hệ thống nhận được thanh toán nên không thể
+            kích hoạt. Khoản tiền sẽ được hoàn 100% — vui lòng cập nhật tài khoản ngân hàng trong hồ
+            sơ để nhận hoàn tiền.
+          </p>
+          {orderCode && <p className="mt-3 text-xs text-slate-400">Mã giao dịch: #{orderCode}</p>}
+          <div className="mt-6 flex flex-col gap-2 sm:flex-row sm:justify-center">
+            <Link to="/profile">
+              <Button className="w-full sm:w-auto">Cập nhật tài khoản nhận hoàn</Button>
+            </Link>
+            <Link to="/monthly-pass">
+              <Button variant="secondary" className="w-full sm:w-auto">
+                Về vé tháng của tôi
+              </Button>
             </Link>
           </div>
         </Card>
