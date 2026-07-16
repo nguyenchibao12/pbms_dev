@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { CheckCircle2, QrCode, Clock } from 'lucide-react';
+import { CheckCircle2, QrCode, Clock, AlertTriangle } from 'lucide-react';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
 import Spinner from '../../components/ui/Spinner';
@@ -14,6 +14,7 @@ export default function PaymentSuccessPage() {
   const [searchParams] = useSearchParams();
   const orderCode = searchParams.get('orderCode');
   // verifying: đang hỏi server · confirmed: đã xác nhận · pending: chưa xác nhận được
+  // · refunded: tiền về NHƯNG đơn đã bị hủy trước đó → BE không hồi sinh đơn, đã tạo yêu cầu hoàn 100%
   const [state, setState] = useState(orderCode ? 'verifying' : 'pending');
 
   useEffect(() => {
@@ -22,7 +23,13 @@ export default function PaymentSuccessPage() {
     const verify = async () => {
       try {
         const { data } = await paymentsApi.verify(orderCode);
-        if (active) setState(data.data?.paid ? 'confirmed' : 'pending');
+        if (!active) return;
+        const info = data.data || {};
+        if (!info.paid) setState('pending');
+        // Không được báo "xác nhận thành công" chỉ vì paid — đơn có thể đã bị hủy (job quá hạn
+        // 15 phút / user tự hủy) rồi tiền mới về. BE trả refunded để phân biệt.
+        else if (info.refunded) setState('refunded');
+        else setState('confirmed');
       } catch {
         if (active) setState('pending');
       }
@@ -61,6 +68,37 @@ export default function PaymentSuccessPage() {
           <div className="mt-6 flex justify-center">
             <Link to="/reservations">
               <Button className="w-full sm:w-auto">Về đơn của tôi</Button>
+            </Link>
+          </div>
+        </Card>
+      </div>
+    );
+  }
+
+  // Tiền đã về nhưng đơn đã bị hủy trước khi thanh toán tới — đơn KHÔNG được hồi sinh.
+  // BE đã tự tạo yêu cầu hoàn 100% cho Admin; user cần có STK trong hồ sơ để nhận hoàn.
+  if (state === 'refunded') {
+    return (
+      <div className="mx-auto max-w-md py-6">
+        <Card className="text-center">
+          <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-amber-100">
+            <AlertTriangle className="h-9 w-9 text-amber-600" />
+          </div>
+          <h1 className="text-xl font-bold text-slate-800">Đơn đã bị hủy trước khi thanh toán tới</h1>
+          <p className="mt-2 text-sm text-slate-600">
+            Đơn đặt chỗ đã bị hủy trước khi hệ thống nhận được thanh toán nên không thể xác nhận.
+            Khoản tiền sẽ được hoàn 100% — vui lòng cập nhật tài khoản ngân hàng trong hồ sơ để nhận
+            hoàn tiền.
+          </p>
+          {orderCode && <p className="mt-3 text-xs text-slate-400">Mã giao dịch: #{orderCode}</p>}
+          <div className="mt-6 flex flex-col gap-2 sm:flex-row sm:justify-center">
+            <Link to="/profile">
+              <Button className="w-full sm:w-auto">Cập nhật tài khoản nhận hoàn</Button>
+            </Link>
+            <Link to="/reservations">
+              <Button variant="secondary" className="w-full sm:w-auto">
+                Về đơn của tôi
+              </Button>
             </Link>
           </div>
         </Card>
