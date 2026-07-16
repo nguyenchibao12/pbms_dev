@@ -440,6 +440,31 @@ export default function StaffOperationsPage() {
     }
   };
 
+  // Tick "mất vé"/"phụ thu lố giờ" ở modal Xe ra: tra LẠI phí ngay để "Phí tạm tính" khớp
+  // đúng số sẽ thu khi xác nhận (đồng bộ hành vi với tab Thu tiền mặt). Lỗi tra lại thì giữ
+  // preview cũ — phí thật vẫn do BE tính lúc check-out.
+  const refreshCoPreview = async (lost, over) => {
+    if (!coSession) return;
+    try {
+      const { data } = await sessionsApi.previewFee({
+        sessionId: coSession.session_id,
+        lostTicket: lost,
+        overstayCharge: over,
+      });
+      setCoPreview(data.data);
+    } catch {
+      // giữ preview cũ
+    }
+  };
+  const toggleCoLost = (checked) => {
+    setCoLost(checked);
+    refreshCoPreview(checked, coOverstay);
+  };
+  const toggleCoOverstay = (checked) => {
+    setCoOverstay(checked);
+    refreshCoPreview(coLost, checked);
+  };
+
   const handleCheckout = async (e) => {
     e.preventDefault();
     setCoError('');
@@ -1265,7 +1290,7 @@ export default function StaffOperationsPage() {
               </p>
             )}
             <label className="flex items-center gap-2 text-sm text-slate-700">
-              <input type="checkbox" checked={coLost} onChange={(e) => setCoLost(e.target.checked)} />
+              <input type="checkbox" checked={coLost} onChange={(e) => toggleCoLost(e.target.checked)} />
               Khách báo mất vé (phụ thu)
             </label>
             <label className={`flex items-center gap-2 text-sm ${coPreview?.overstayEnforced ? 'font-medium text-red-700' : 'text-slate-700'}`}>
@@ -1273,7 +1298,7 @@ export default function StaffOperationsPage() {
                 type="checkbox"
                 checked={coPreview?.overstayEnforced || coOverstay}
                 disabled={coPreview?.overstayEnforced}
-                onChange={(e) => setCoOverstay(e.target.checked)}
+                onChange={(e) => toggleCoOverstay(e.target.checked)}
               />
               Phụ thu lố giờ{coPreview?.overstayEnforced ? ' — bắt buộc' : ' (giá Manager set)'}{coPreview?.overstayFee > 0 ? ` (+${fmtMoney(coPreview.overstayFee)})` : ''}
             </label>

@@ -36,7 +36,7 @@ const FIELD_LABEL = {
 
 // Mô tả chi tiết thân thiện từ JSON BE lưu — thay cho "targetUserId=5, fields=[...]".
 const describe = (action, raw) => {
-  let d = {};
+  let d;
   try { d = raw ? JSON.parse(raw) : {}; } catch { return String(raw || '—'); }
   const who = d.targetUsername || d.username || (d.targetUserId ? `#${d.targetUserId}` : '—');
   if (action === 'user.create') {
