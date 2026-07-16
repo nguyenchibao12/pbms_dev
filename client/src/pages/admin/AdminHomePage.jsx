@@ -3,8 +3,11 @@ import { useAuth } from '../../context/AuthContext';
 import Card from '../../components/ui/Card';
 
 // Trang tổng quan khu Quản trị (Admin) — điểm vào, dẫn tới các mục con.
+// Thứ tự khớp tab trong AdminLayout.
 const sections = [
   { to: '/admin/users', title: 'Quản lý người dùng', desc: 'Tạo, khóa/mở, đổi vai trò tài khoản người dùng.' },
+  { to: '/admin/incidents', title: 'Quản lý sự cố', desc: 'Xem sự cố nhân viên báo & cập nhật trạng thái xử lý.' },
+  { to: '/admin/refunds', title: 'Hoàn tiền', desc: 'Xử lý yêu cầu hoàn tiền hủy vé tháng / đặt chỗ.' },
   { to: '/admin/audit-logs', title: 'Nhật ký hệ thống', desc: 'Xem lịch sử thao tác (lọc + phân trang).' },
 ];
 
