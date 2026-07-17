@@ -1,3 +1,4 @@
+import { Op } from 'sequelize';
 import sequelize from '../config/db.js';
 import { Floor, Zone, Gate, ParkingSlot, VehicleType } from '../models/index.js';
 import { AppError } from '../utils/helpers.js';
@@ -5,11 +6,29 @@ import { bulkGenerateSlots, resyncZoneSlotCodes } from './parkingSlot.service.js
 import {
   maxSlotsForArea,
   assertZoneFitsFloorArea,
+  assertFloorAreaMonotonic,
   computeFloorAreaUsed,
   getVehicleTypeOrThrow,
   slotAreaOf,
 } from '../utils/floorCapacity.js';
 import { buildZoneCode } from '../utils/zoneCode.js';
+
+/**
+ * Mỗi cao độ chỉ được một tầng. floor_code unique nhưng floor_level thì không, nên trước đây
+ * tạo được 2 tầng cùng ở cao độ 2 — tòa nhà không có hình dạng xác định để ràng buộc diện tích.
+ */
+const assertFloorLevelFree = async (floorLevel, { excludeFloorId } = {}, transaction) => {
+  const where = { floor_level: Number(floorLevel) };
+  if (excludeFloorId) where.floor_id = { [Op.ne]: Number(excludeFloorId) };
+  const dup = await Floor.findOne({ where, transaction });
+  if (dup) {
+    throw new AppError(
+      `Đã có tầng ở cao độ ${floorLevel} ("${dup.label || dup.floor_code}"). Mỗi cao độ chỉ một tầng.`,
+      409,
+      'CONFLICT',
+    );
+  }
+};
 
 export const listFloors = async () =>
   Floor.findAll({ order: [['floor_level', 'ASC']] });
@@ -41,6 +60,9 @@ export const createFloor = async (data) => {
 
   const layoutMode = data.layoutMode === 'single' ? 'single' : 'zoned';
   const areaM2 = data.areaM2 != null ? Number(data.areaM2) : null;
+
+  await assertFloorLevelFree(data.floorLevel);
+  await assertFloorAreaMonotonic({ floorLevel: data.floorLevel, areaM2 });
 
   // Lv2 — tầng phân khu: chỉ tạo tầng, khu thêm sau (createZone).
   if (layoutMode === 'zoned') {
@@ -159,9 +181,20 @@ export const updateFloor = async (id, data) => {
     }
   }
 
+  const newLevel = data.floorLevel ?? floor.floor_level;
+  if (Number(newLevel) !== floor.floor_level) {
+    await assertFloorLevelFree(newLevel, { excludeFloorId: floor.floor_id });
+  }
+  // Đổi diện tích HOẶC dời cao độ đều có thể phá luật "không tăng khi lên cao" → kiểm giá trị SAU khi ghi.
+  await assertFloorAreaMonotonic({
+    floorLevel: newLevel,
+    areaM2: newArea,
+    excludeFloorId: floor.floor_id,
+  });
+
   await floor.update({
     floor_code: data.floorCode ?? floor.floor_code,
-    floor_level: data.floorLevel ?? floor.floor_level,
+    floor_level: newLevel,
     label: data.label ?? floor.label,
     area_m2: newArea,
     vehicle_type_id: newVehicleTypeId,
@@ -227,6 +260,12 @@ export const quickSetupFloor = async (payload) => {
     if (existing) throw new AppError('Floor code already exists', 409, 'CONFLICT');
 
     const floorArea = floorData.areaM2 != null ? Number(floorData.areaM2) : null;
+    await assertFloorLevelFree(floorData.floorLevel, {}, transaction);
+    await assertFloorAreaMonotonic(
+      { floorLevel: floorData.floorLevel, areaM2: floorArea },
+      transaction,
+    );
+
     const floor = await Floor.create(
       {
         floor_code: floorData.floorCode,
@@ -366,15 +405,27 @@ export const cloneFloor = async (sourceFloorId, payload) => {
 
   const { floorCode, floorLevel, label } = payload;
 
-  return sequelize.transaction(async (transaction) => {
+  const created = await sequelize.transaction(async (transaction) => {
     const existing = await Floor.findOne({ where: { floor_code: floorCode }, transaction });
     if (existing) throw new AppError('Floor code already exists', 409, 'CONFLICT');
 
+    await assertFloorLevelFree(floorLevel, {}, transaction);
+    await assertFloorAreaMonotonic(
+      { floorLevel, areaM2: source.area_m2 },
+      transaction,
+    );
+
+    // Nhân bản = giữ NGUYÊN cấu hình tầng nguồn. Trước đây chỉ copy code/level/label, bỏ sót
+    // area_m2 → tầng clone thành NULL = KHÔNG giới hạn diện tích, thoát mọi ràng buộc sức chứa
+    // dù các khu vẫn được copy y hệt. layout_mode/vehicle_type_id cũng vậy (single hóa thành zoned).
     const newFloor = await Floor.create(
       {
         floor_code: floorCode,
         floor_level: floorLevel,
         label,
+        layout_mode: source.layout_mode,
+        vehicle_type_id: source.vehicle_type_id,
+        area_m2: source.area_m2,
       },
       { transaction },
     );
@@ -430,6 +481,10 @@ export const cloneFloor = async (sourceFloorId, payload) => {
       );
     }
 
-    return getFloor(newFloor.floor_id);
+    return newFloor;
   });
+
+  // getFloor đọc bằng connection khác nên KHÔNG thấy row chưa commit → gọi trong transaction
+  // là 404 rồi rollback (clone hỏng hoàn toàn). Chỉ đọc lại sau khi transaction đã commit.
+  return getFloor(created.floor_id);
 };
