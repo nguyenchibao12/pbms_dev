@@ -8,8 +8,10 @@
  * Dùng:  npm run seed --prefix server      (hoặc: node scripts/seedDemo.js)
  *
  * Tạo: 6 user (admin/manager/staff/user/user2/chuaverify, mật khẩu đều 123456), 3 loại xe (CAR/BIKE/CAR7),
- * 3 tầng — F1, F2 phân khu (zoned: 1 khu ô tô + 1 khu xe máy, 8 chỗ/khu) và F3 riêng xe máy
- * (single). Mã khu tự sinh <TẦNG>-<LOẠI XE>-<NN> (F1-CAR-01), mã chỗ tự sinh <MÃ KHU>-<NN>
+ * 4 tầng — B1 (hầm), F1, F2 phân khu (zoned: 1 khu ô tô + 1 khu xe máy, 8 chỗ/khu) và F3 riêng
+ * xe máy (single). Diện tích sàn theo luật "không tăng khi lên cao" (assertFloorAreaMonotonic):
+ * B1 1200 ≥ F1 1000 = F2 1000 ≥ F3 800 m² — hầm rộng nhất, tháp thu nhỏ dần, như tòa nhà thật.
+ * Mã khu tự sinh <TẦNG>-<LOẠI XE>-<NN> (F1-CAR-01), mã chỗ tự sinh <MÃ KHU>-<NN>
  * (F1-CAR-01-01). Kèm cổng tòa nhà (IN/OUT) + cổng mỗi tầng (IN/OUT), bảng giá theo loại xe,
  * 1 đặt chỗ đã xác nhận sẵn (fallback demo reservation không cần đặt + thanh toán trực tiếp),
  * và 1 khách đặt chỗ ĐANG ĐỖ (checked_in + phiên active) để test luồng check-out.
@@ -46,6 +48,10 @@ import { normalizePlateVN } from '../src/utils/plateVN.js';
 dotenv.config();
 
 const SLOTS_PER_ZONE = 8;
+// Diện tích sàn (m²). Đi từ dưới lên phải KHÔNG TĂNG — xem assertFloorAreaMonotonic:
+// hầm đào rộng hơn tháp, các tầng tháp bằng nhau rồi thu nhỏ dần. Tầng bãi xe thực tế
+// ~1.000–5.000 m²/tầng; các khu seed chỉ dùng ~214 m² nên còn nhiều chỗ trống để demo thêm khu.
+const FLOOR_AREA = { B1: 1200, F1: 1000, F2: 1000, F3: 800 };
 const BOOKING_FEE = 20000; // khớp default booking_fee trong utils/settings.js
 const hash = (pw) => bcrypt.hash(pw, 10);
 
@@ -133,38 +139,35 @@ const run = async () => {
   });
 
   // --- Tầng + khu + chỗ + cổng tầng ---------------------------------------
-  const floors = [];
-  for (const level of [1, 2]) {
-    // Lv2 — tầng phân khu (zoned): khu ô tô + khu xe máy. area_m2 đủ chứa cả 2 khu.
+  // Lv2 — tầng phân khu (zoned): khu ô tô + khu xe máy. area_m2 đủ chứa cả 2 khu.
+  const createZonedFloor = async ({ code, level, label, areaM2 }) => {
     const floor = await Floor.create({
-      floor_code: `F${level}`,
+      floor_code: code,
       floor_level: level,
-      label: `Tầng ${level}`,
+      label,
       layout_mode: 'zoned',
       vehicle_type_id: null,
-      // Tầng bãi xe thực tế ~1.000–5.000 m²/tầng. Để 1.000: 2 khu seed dùng 214.4 m²,
-      // còn ~785 m² trống → đủ chỗ thêm khu / sinh nhiều chỗ (demo bulk) cho "ra dáng".
-      area_m2: 1000,
+      area_m2: areaM2,
     });
 
     await Gate.create({
-      floor_id: floor.floor_id, gate_code: `F${level}-IN`, direction: 'in',
-      vehicle_type_id: null, label: `Tầng ${level} - Cổng vào`, is_active: true,
+      floor_id: floor.floor_id, gate_code: `${code}-IN`, direction: 'in',
+      vehicle_type_id: null, label: `${label} - Cổng vào`, is_active: true,
     });
     await Gate.create({
-      floor_id: floor.floor_id, gate_code: `F${level}-OUT`, direction: 'out',
-      vehicle_type_id: null, label: `Tầng ${level} - Cổng ra`, is_active: true,
+      floor_id: floor.floor_id, gate_code: `${code}-OUT`, direction: 'out',
+      vehicle_type_id: null, label: `${label} - Cổng ra`, is_active: true,
     });
 
     // Mở bán vé tháng tường minh ~25% số slot (capacity=0 = không bán — xem passCapacity.js).
     const carZone = await Zone.create({
       floor_id: floor.floor_id, vehicle_type_id: car.vehicle_type_id,
-      zone_code: `F${level}-${car.type_code}-01`, label: `Tầng ${level} - Khu ô tô`,
+      zone_code: `${code}-${car.type_code}-01`, label: `${label} - Khu ô tô`,
       total_slots: SLOTS_PER_ZONE, monthly_pass_capacity: Math.max(1, Math.floor(SLOTS_PER_ZONE / 4)),
     });
     const bikeZone = await Zone.create({
       floor_id: floor.floor_id, vehicle_type_id: bike.vehicle_type_id,
-      zone_code: `F${level}-${bike.type_code}-01`, label: `Tầng ${level} - Khu xe máy`,
+      zone_code: `${code}-${bike.type_code}-01`, label: `${label} - Khu xe máy`,
       total_slots: SLOTS_PER_ZONE, monthly_pass_capacity: Math.max(1, Math.floor(SLOTS_PER_ZONE / 4)),
     });
 
@@ -179,13 +182,25 @@ const run = async () => {
       });
     }
 
-    floors.push({ floor, carZone, bikeZone });
+    return { floor, carZone, bikeZone };
+  };
+
+  // Hầm B1 — rộng nhất tòa nhà (đào hầm rộng hơn tháp là hợp lệ: luật chỉ cấm TĂNG khi lên cao).
+  await createZonedFloor({ code: 'B1', level: -1, label: 'Hầm B1', areaM2: FLOOR_AREA.B1 });
+
+  // floors[0] = F1 — phần demo bên dưới (đặt chỗ, phiên đang đỗ) bám vào tầng này.
+  const floors = [];
+  for (const level of [1, 2]) {
+    floors.push(await createZonedFloor({
+      code: `F${level}`, level, label: `Tầng ${level}`, areaM2: FLOOR_AREA[`F${level}`],
+    }));
   }
-  console.log(`• ${floors.length} tầng (zoned), mỗi tầng 2 khu × ${SLOTS_PER_ZONE} chỗ, cổng tòa + cổng tầng`);
+  console.log(`• Hầm B1 + ${floors.length} tầng (zoned), mỗi tầng 2 khu × ${SLOTS_PER_ZONE} chỗ, cổng tòa + cổng tầng`);
 
   // --- Tầng SINGLE (Lv1: cả tầng 1 loại xe — xe máy) ----------------------
-  // Khu mặc định total_slots = floor(area / slot_area) = floor(120 / 1.8) = 66.
-  const F3_AREA = 120;
+  // Tầng trên cùng, hẹp hơn F2 (tháp thu nhỏ dần) nhưng vẫn là sàn thật ~800 m².
+  // Khu mặc định total_slots = floor(area / slot_area) = floor(800 / 1.8) = 444.
+  const F3_AREA = FLOOR_AREA.F3;
   const f3 = await Floor.create({
     floor_code: 'F3',
     floor_level: 3,
