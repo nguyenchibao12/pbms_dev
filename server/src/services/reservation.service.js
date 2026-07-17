@@ -34,11 +34,7 @@ import { recordWrongFloorIncident, recordIncident } from './incident.service.js'
 import { validateAndNormalizePlateVN } from '../utils/plateVN.js';
 import { assertGateVehicleType } from '../utils/gateVehicle.js';
 import { resolveFloorGate } from '../utils/gateResolve.js';
-import {
-  assertReservationTransition,
-  assertReservationQrUsable,
-  CHECKIN_EARLY_GRACE_MS,
-} from '../utils/stateGuards.js';
+import { assertReservationTransition, assertReservationQrUsable } from '../utils/stateGuards.js';
 import { resolveShiftWindow } from '../utils/shifts.js';
 import {
   getBookingFee as getBookingFeeFromSettings,
@@ -49,8 +45,7 @@ import {
 } from '../utils/settings.js';
 import { logAdminAction } from '../utils/auditLog.js';
 
-// CHECKIN_EARLY_GRACE_MS (BR-31) giờ import từ stateGuards — nguồn duy nhất, dùng chung
-// với luồng điều hướng walk-in bên session.service.
+const CHECKIN_EARLY_GRACE_MS = 15 * 60 * 1000;
 // Phiên walk-in trẻ hơn ngưỡng này được void khi check-in đơn đặt (staff vừa nhập nhầm);
 // già hơn thì bắt checkout thu phí trước — void là mất trắng tiền gửi của cả quãng đã đỗ.
 const WALKIN_VOID_ON_CHECKIN_MAX_AGE_MS = 15 * 60 * 1000;
