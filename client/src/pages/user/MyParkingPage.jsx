@@ -10,6 +10,7 @@ import Badge from '../../components/ui/Badge';
 import EmptyState from '../../components/ui/EmptyState';
 import { TableSkeleton } from '../../components/ui/Skeleton';
 import { ErrorAlert } from '../../components/ui/Field';
+import { formatFloorLabel } from '../../lib/floor';
 
 const fmtMoney = (v) => `${Number(v || 0).toLocaleString('vi-VN')} ₫`;
 
@@ -32,7 +33,7 @@ const fmtElapsed = (timeIn) => {
 const formatLocation = (s) => {
   const floor = s.slot?.zone?.floor?.label || s.slot?.zone?.floor?.floor_code;
   const parts = [
-    floor && `Tầng ${floor}`,
+    floor && formatFloorLabel(floor),
     s.slot?.zone?.label && `Khu ${s.slot.zone.label}`,
     s.slot?.slot_code && `Chỗ ${s.slot.slot_code}`,
   ].filter(Boolean);

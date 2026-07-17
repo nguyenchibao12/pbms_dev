@@ -12,6 +12,7 @@ import { TableSkeleton } from '../../components/ui/Skeleton';
 import { ErrorAlert } from '../../components/ui/Field';
 import Modal, { ModalActions } from '../../components/ui/Modal';
 import { toast } from '../../components/ui/toast';
+import { formatFloorLabel } from '../../lib/floor';
 
 // Ngày hiệu lực lưu dạng DATEONLY 'YYYY-MM-DD' → 'DD/MM/YYYY' (không lệ thuộc múi giờ).
 const fmtDate = (value) => {
@@ -182,7 +183,7 @@ export default function MyMonthlyPassesPage() {
                     </div>
                     <p className="text-sm text-slate-600">
                       {pass.vehicleType?.type_name ? `${pass.vehicleType.type_name} · ` : ''}
-                      Tầng {pass.floor?.label || pass.floor?.floor_code || '—'}
+                      {formatFloorLabel(pass.floor?.label || pass.floor?.floor_code) || '—'}
                     </p>
                     <p className="text-sm text-slate-500">
                       {fmtDate(pass.start_date)} → {fmtDate(pass.end_date)}

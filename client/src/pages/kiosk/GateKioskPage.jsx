@@ -4,6 +4,7 @@ import { Camera } from 'lucide-react';
 import { kioskApi } from '../../api/kiosk';
 import { inputClass } from '../../components/ui/Input';
 import QrScanner from '../../components/QrScanner';
+import { formatFloorLabel } from '../../lib/floor';
 
 // Màn kiosk PUBLIC gắn trên cổng (không đăng nhập, xác thực bằng kiosk key).
 // Khách áp/nhập mã QR -> cổng tự quyết: mở barie (OPEN) hoặc yêu cầu thanh toán online
@@ -228,7 +229,7 @@ export default function GateKioskPage() {
               <div className="mx-auto mt-5 max-w-sm rounded-2xl bg-white/15 px-6 py-4">
                 <p className="text-base text-emerald-50">Mời tới chỗ đỗ đã giữ</p>
                 <p className="mt-1 text-3xl font-extrabold tracking-wide">
-                  {spot.floor ? `Tầng ${spot.floor} · ` : ''}Chỗ {spot.slotCode}
+                  {spot.floor ? `${formatFloorLabel(spot.floor)} · ` : ''}Chỗ {spot.slotCode}
                 </p>
               </div>
             )}
