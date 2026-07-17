@@ -47,6 +47,23 @@ export const getPaymentByOrderCode = async (orderCode) => {
   return payment;
 };
 
+/**
+ * ⭐ TRÁI TIM CỦA VIỆC "CHỐT PHIÊN" — nơi DUY NHẤT trong cả hệ thống ghi `time_out`.
+ *
+ * MỌI đường trả tiền đều đổ về đây, không đường nào tự chốt phiên lấy:
+ *   · tiền mặt tại quầy  → `settleCashCheckout`   ─┐
+ *   · PayOS (user/kiosk) → `verifyPaymentReturn`  ─┼→ completeSessionAfterPayment
+ *   · webhook PayOS      → `handleWebhook`        ─┘
+ * Vì sao gom một chỗ: chốt phiên gồm 6 việc phải xảy ra CÙNG NHAU (ghi time_out, nhả slot, đổi
+ * status, thu hồi QR, đánh payment success, đóng đặt chỗ). Để mỗi luồng tự làm thì sớm muộn cũng
+ * có luồng làm thiếu một bước — và lệch giữa các luồng cùng bản chất chính là chỗ bug hay đẻ ra.
+ *
+ * IDEMPOTENT (gọi lại nhiều lần vẫn an toàn) — bắt buộc, vì cùng một lần trả tiền có thể kích hoạt
+ * nhiều đường một lúc: webhook PayOS bắn về, kiosk đang poll `payment-status`, và trình duyệt user
+ * cũng redirect kèm orderCode. Ai tới trước chốt phiên; người tới sau rơi vào nhánh dưới đây và
+ * nhận `alreadyCompleted: true` + `barrierOpened: true` — KHÔNG ném lỗi: khách đã trả tiền rồi thì
+ * việc đúng là MỞ BARIE, không phải báo "phiên đã đóng".
+ */
 export const completeSessionAfterPayment = async (payment, staffUserId = null) => {
   if (payment.status === 'success') {
     const session = await getSession(payment.session_id);
@@ -58,6 +75,11 @@ export const completeSessionAfterPayment = async (payment, staffUserId = null) =
   assertSessionActive(session);
 
   // time_out chốt theo mốc rời tầng (cổng tầng OUT) nếu có — khớp với phí đã tính.
+  //
+  // Vì sao KHÔNG lấy `new Date()` khi đã có `left_floor_at`: khách rời tầng lúc 10:00, xuống tới
+  // cổng tòa/quầy trả tiền lúc 10:07. Lấy giờ hiện tại là tính thêm 7 phút xếp hàng — mà quãng đó
+  // xe đã không còn chiếm chỗ nào. Phí phải khớp ĐÚNG con số đã báo cho khách lúc preview, không
+  // thì trả tiền xong nhìn hóa đơn lại thấy khác.
   const timeOut = session.left_floor_at ? new Date(session.left_floor_at) : new Date();
   assertSessionCheckoutTime(session.time_in, timeOut);
   const fee = Number(payment.amount);

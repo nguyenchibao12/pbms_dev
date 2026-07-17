@@ -345,6 +345,14 @@ export const checkin = async (staffUserId, data) => {
   return getSession(session.session_id);
 };
 
+// ── CỬA sang PAYMENT ────────────────────────────────────────────────────────────────────────────
+// Hai hàm dưới KHÔNG chứa logic — chỉ chuyển tiếp sang payment.service. Giữ chúng ở đây để route
+// `/sessions/checkout` và `/sessions/cash-checkout` gọi đúng "phiên", còn việc thu tiền vẫn nằm
+// trọn trong Payment (mọi đường tiền cuối cùng đều về `completeSessionAfterPayment`).
+//
+// `await import(...)` ĐỘNG chứ không import tĩnh ở đầu file là CỐ Ý: payment.service đã import
+// ngược lại file này (nó cần `getSession`) ⇒ import tĩnh hai chiều tạo VÒNG LẶP import, một trong
+// hai module sẽ thấy `undefined` lúc nạp. Nạp trễ (lúc gọi hàm) thì cả hai đã nạp xong, hết vòng.
 export const checkout = async (staffUserId, data) => {
   const { initiateSessionCheckout } = await import('./payment.service.js');
   return initiateSessionCheckout(staffUserId, data);
@@ -378,9 +386,18 @@ const detectReservationOverstay = async (session, feeEnd) => {
   return { overstay: true, overstayHours: Math.floor(overMs / (1000 * 60 * 60)) };
 };
 
+/**
+ * XEM TRƯỚC phí — tính tiền nhưng KHÔNG thu, không đụng vào phiên.
+ *
+ * Tách hẳn khỏi đường thu tiền để staff/kiosk báo số cho khách trước khi khách quyết trả tiền mặt
+ * hay quét PayOS. Con số ở đây phải KHỚP con số lúc chốt thật, nên cả hai cùng dùng `feeCalc` và
+ * cùng lấy mốc `left_floor_at` — xem `completeSessionAfterPayment`.
+ */
 export const previewCheckoutFee = async (data) => {
   let session;
 
+  // Nhận DIỆN phiên theo 2 kiểu vì thực tế khách cầm 2 loại QR khác nhau: khách vãng lai cầm QR
+  // PHIÊN (phát lúc vào), khách đặt chỗ cầm QR ĐƠN ĐẶT (có từ lúc đặt, trước khi có phiên nào).
   if (data.sessionId) {
     session = await ParkingSession.findByPk(data.sessionId);
   } else if (data.qrToken) {
