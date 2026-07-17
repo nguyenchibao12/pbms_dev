@@ -12,11 +12,19 @@ import Field, { ErrorAlert } from '../../components/ui/Field';
 import { inputClass } from '../../components/ui/Input';
 import { toast } from '../../components/ui/toast';
 
-const todayStr = () => {
-  const d = new Date();
+const toDateStr = (d) => {
   const mm = String(d.getMonth() + 1).padStart(2, '0');
   const dd = String(d.getDate()).padStart(2, '0');
   return `${d.getFullYear()}-${mm}-${dd}`;
+};
+
+const todayStr = () => toDateStr(new Date());
+
+// yyyy-MM-dd của (hôm nay + n ngày).
+const addDaysStr = (n) => {
+  const d = new Date();
+  d.setDate(d.getDate() + n);
+  return toDateStr(d);
 };
 
 const emptyForm = { plateNumber: '', vehicleTypeId: '', floorId: '', arrivalDate: todayStr(), shiftId: '' };
@@ -37,7 +45,11 @@ export default function ReservePage() {
   const [availLoading, setAvailLoading] = useState(false);
   const [availError, setAvailError] = useState('');
 
-  const patchForm = (patch) => setForm((f) => ({ ...f, ...patch }));
+  // Đổi bất kỳ trường nào → xóa lỗi submit cũ (ô đỏ) để không treo thông báo lỗi lỗi thời.
+  const patchForm = (patch) => {
+    setError('');
+    setForm((f) => ({ ...f, ...patch }));
+  };
 
   const loadMeta = useCallback(async () => {
     setMetaLoading(true);
@@ -252,6 +264,9 @@ export default function ReservePage() {
                 className={inputClass}
                 value={form.arrivalDate}
                 min={todayStr()}
+                // Trần đặt trước 3 ngày — khớp BE booking_max_advance_days (Settings Nhóm C).
+                // Hardcode vì GET /settings/system chỉ Manager/Admin đọc được, user FE không lấy qua API.
+                max={addDaysStr(3)}
                 onChange={(e) => patchForm({ arrivalDate: e.target.value })}
               />
             </Field>
@@ -303,7 +318,7 @@ export default function ReservePage() {
             type="submit"
             className="w-full"
             loading={submitting}
-            disabled={metaLoading || !canBook}
+            disabled={metaLoading || !canBook || availLoading || Boolean(availError)}
           >
             <CalendarPlus className="h-4 w-4" />
             Đặt chỗ &amp; thanh toán
