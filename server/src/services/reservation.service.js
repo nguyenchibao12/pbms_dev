@@ -39,6 +39,8 @@ import { resolveShiftWindow } from '../utils/shifts.js';
 import {
   getBookingFee as getBookingFeeFromSettings,
   getBookingRefundCutoffHours,
+  getBookingMaxAdvanceDays,
+  getBookingMaxDurationHours,
   getPassRefundPolicy,
 } from '../utils/settings.js';
 import { logAdminAction } from '../utils/auditLog.js';
@@ -111,6 +113,17 @@ const assertBookableWindow = (startTime, endTime, shiftId) => {
     }
   } else if (startTime < now) {
     throw new AppError('startTime must be in the future', 400, 'VALIDATION_ERROR');
+  }
+  // R1 — trần cửa sổ đặt chỗ (Settings Nhóm C): slot bị giam `reserved` ngay từ lúc tạo đơn,
+  // không trần thì một đơn 20k giam slot vật lý nhiều tuần. Dùng `>` để đơn chạm trần đúng
+  // 24h tròn vẫn QUA. Đặt theo CA (shiftId) cũng đi qua đây nên trần tự áp.
+  const maxAdvanceDays = getBookingMaxAdvanceDays();
+  if (startTime.getTime() - now.getTime() > maxAdvanceDays * 24 * 60 * 60 * 1000) {
+    throw new AppError(`Chỉ được đặt trước tối đa ${maxAdvanceDays} ngày`, 400, 'VALIDATION_ERROR');
+  }
+  const maxDurationHours = getBookingMaxDurationHours();
+  if (endTime.getTime() - startTime.getTime() > maxDurationHours * 60 * 60 * 1000) {
+    throw new AppError(`Mỗi đơn đặt chỗ tối đa ${maxDurationHours} giờ`, 400, 'VALIDATION_ERROR');
   }
 };
 
