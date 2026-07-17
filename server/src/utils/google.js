@@ -30,8 +30,7 @@ export const verifyGoogleIdToken = async (idToken) => {
   let ticket;
   try {
     ticket = await c.verifyIdToken({ idToken, audience: getClientId() });
-  } catch (err) {
-    console.error('[google] verifyIdToken failed:', err?.message || err);
+  } catch {
     throw new AppError('Google token không hợp lệ hoặc đã hết hạn', 401, 'GOOGLE_TOKEN_INVALID');
   }
   const p = ticket.getPayload();

@@ -165,21 +165,6 @@
         }
       }
     },
-    "/api/auth/google-test": {
-      "get": {
-        "tags": [
-          "Auth"
-        ],
-        "summary": "Trang test đăng nhập Google (chỉ dev — 404 ở production)",
-        "description": "",
-        "responses": {
-          "200": {
-            "description": "OK"
-          }
-        },
-        "security": []
-      }
-    },
     "/api/auth/forgot-password": {
       "post": {
         "tags": [
@@ -336,41 +321,6 @@
             "description": ""
           }
         }
-      },
-      "patch": {
-        "tags": [
-          "Auth"
-        ],
-        "summary": "Cập nhật hồ sơ (họ tên, SĐT, tài khoản ngân hàng nhận hoàn tiền)",
-        "description": "",
-        "parameters": [
-          {
-            "name": "authorization",
-            "in": "header",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "default": {
-            "description": ""
-          }
-        },
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "example": {
-                "fullName": "Nguyễn Văn A",
-                "phone": "0912345678",
-                "bankName": "Vietcombank",
-                "bankAccountNumber": "0123456789",
-                "bankAccountHolder": "NGUYEN VAN A"
-              }
-            }
-          }
-        }
       }
     },
     "/api/vehicle-types/": {
@@ -391,7 +341,7 @@
           "Vehicle Types"
         ],
         "summary": "Thêm loại xe (Manager)",
-        "description": "typeCode tự chuyển CHỮ HOA. slotAreaM2 = diện tích 1 chỗ (m², gộp lối đi) — dùng tính sức chứa tầng theo diện tích.",
+        "description": "",
         "responses": {
           "default": {
             "description": ""
@@ -403,8 +353,7 @@
             "application/json": {
               "example": {
                 "typeName": "Ô tô",
-                "typeCode": "CAR",
-                "slotAreaM2": 12.5
+                "typeCode": "CAR"
               }
             }
           }
@@ -439,7 +388,7 @@
           "Vehicle Types"
         ],
         "summary": "Sửa loại xe (Manager)",
-        "description": "Mọi field optional. typeCode tự chuyển CHỮ HOA.",
+        "description": "",
         "parameters": [
           {
             "name": "id",
@@ -460,9 +409,7 @@
           "content": {
             "application/json": {
               "example": {
-                "typeName": "Xe máy",
-                "typeCode": "BIKE",
-                "slotAreaM2": 2.5
+                "typeName": "Xe máy"
               }
             }
           }
@@ -509,7 +456,7 @@
           "Floors"
         ],
         "summary": "Thêm tầng (Manager)",
-        "description": "layoutMode: zoned (nhiều khu) hoặc single (cả tầng 1 loại xe — cần vehicleTypeId, tự tạo 1 khu mặc định). areaM2 = diện tích tầng (m²).",
+        "description": "",
         "responses": {
           "default": {
             "description": ""
@@ -522,9 +469,7 @@
               "example": {
                 "floorCode": "B3",
                 "floorLevel": -3,
-                "label": "Hầm B3",
-                "layoutMode": "zoned",
-                "areaM2": 800
+                "label": "Hầm B3"
               }
             }
           }
@@ -537,7 +482,7 @@
           "Floors"
         ],
         "summary": "Thiết lập nhanh tầng (Manager) — floor + zone + slot + cổng",
-        "description": "Mã khu (zoneCode) do hệ thống TỰ SINH theo <TẦNG>-<LOẠI XE>-<NN>, không cần gửi lên. floor.areaM2 = diện tích tầng (m²) để kiểm soát sức chứa.",
+        "description": "",
         "responses": {
           "default": {
             "description": ""
@@ -551,14 +496,15 @@
                 "floor": {
                   "floorCode": "B3",
                   "floorLevel": -3,
-                  "label": "Hầm B3",
-                  "areaM2": 800
+                  "label": "Hầm B3"
                 },
                 "zones": [
                   {
                     "vehicleTypeId": 1,
+                    "zoneCode": "B3-A",
                     "label": "Khu A ô tô",
                     "slotCount": 40,
+                    "codePrefix": "A-",
                     "monthlyPassCapacity": 10,
                     "distanceStart": 10,
                     "distanceStep": 5
@@ -622,8 +568,7 @@
           "content": {
             "application/json": {
               "example": {
-                "label": "Hầm B3 mới",
-                "areaM2": 900
+                "label": "Hầm B3 mới"
               }
             }
           }
@@ -715,8 +660,8 @@
         "tags": [
           "Zones"
         ],
-        "summary": "Thêm khu (Manager) — mã khu tự sinh theo <TẦNG>-<LOẠI XE>-<NN>",
-        "description": "Mã khu do hệ thống tự sinh (không cần gửi). monthlyPassCapacity phải ≤ totalSlots. Thường tạo khu với totalSlots = 0 rồi thêm chỗ qua POST /zones/{id}/slots/bulk.",
+        "summary": "Thêm khu (Manager)",
+        "description": "",
         "responses": {
           "default": {
             "description": ""
@@ -729,43 +674,12 @@
               "example": {
                 "floorId": 1,
                 "vehicleTypeId": 1,
-                "label": "Khu ô tô tầng 1",
+                "zoneCode": "B1-A",
+                "label": "Khu A",
                 "totalSlots": 0,
-                "monthlyPassCapacity": 0
+                "monthlyPassCapacity": 5
               }
             }
-          }
-        }
-      }
-    },
-    "/api/zones/next-code": {
-      "get": {
-        "tags": [
-          "Zones"
-        ],
-        "summary": "Xem trước mã khu sẽ sinh (theo tầng + loại xe)",
-        "description": "",
-        "parameters": [
-          {
-            "name": "floorId",
-            "in": "query",
-            "required": true,
-            "schema": {
-              "type": "integer"
-            }
-          },
-          {
-            "name": "vehicleTypeId",
-            "in": "query",
-            "required": true,
-            "schema": {
-              "type": "integer"
-            }
-          }
-        ],
-        "responses": {
-          "default": {
-            "description": ""
           }
         }
       }
@@ -798,7 +712,7 @@
           "Zones"
         ],
         "summary": "Sửa khu (Manager)",
-        "description": "Mã khu không sửa tay (tự sinh). monthlyPassCapacity phải ≤ totalSlots của khu.",
+        "description": "",
         "parameters": [
           {
             "name": "id",
@@ -819,8 +733,8 @@
           "content": {
             "application/json": {
               "example": {
-                "label": "Khu ô tô tầng 1 (đổi tên)",
-                "monthlyPassCapacity": 3
+                "label": "Khu A mới",
+                "monthlyPassCapacity": 8
               }
             }
           }
@@ -854,8 +768,8 @@
         "tags": [
           "Zones"
         ],
-        "summary": "Sinh nhiều chỗ cho khu (Manager) — mã chỗ tự sinh <mã khu>-NN",
-        "description": "Mã chỗ tự sinh nối tiếp theo <mã khu>-NN (không gửi codePrefix). Chỉ tạo tối đa (total_slots − số chỗ hiện có); phần vượt trả về cappedOut.",
+        "summary": "Sinh nhiều chỗ cho khu (Manager)",
+        "description": "",
         "parameters": [
           {
             "name": "id",
@@ -877,6 +791,7 @@
             "application/json": {
               "example": {
                 "count": 20,
+                "codePrefix": "A-",
                 "distanceStart": 10,
                 "distanceStep": 5
               }
@@ -912,8 +827,8 @@
         "tags": [
           "Parking Slots"
         ],
-        "summary": "Thêm chỗ (Manager) — mã chỗ tự sinh theo <mã khu>-NN",
-        "description": "Mã chỗ do hệ thống sinh (không gửi slotCode). Khu phải còn trống (used < total_slots).",
+        "summary": "Thêm chỗ (Manager)",
+        "description": "",
         "responses": {
           "default": {
             "description": ""
@@ -925,33 +840,10 @@
             "application/json": {
               "example": {
                 "zoneId": 1,
+                "slotCode": "A-01",
                 "distanceToGate": 10
               }
             }
-          }
-        }
-      }
-    },
-    "/api/parking-slots/next-code": {
-      "get": {
-        "tags": [
-          "Parking Slots"
-        ],
-        "summary": "Xem trước mã chỗ sẽ sinh cho khu",
-        "description": "",
-        "parameters": [
-          {
-            "name": "zoneId",
-            "in": "query",
-            "required": true,
-            "schema": {
-              "type": "integer"
-            }
-          }
-        ],
-        "responses": {
-          "default": {
-            "description": ""
           }
         }
       }
@@ -984,7 +876,7 @@
           "Parking Slots"
         ],
         "summary": "Sửa chỗ — gồm đổi status (Manager)",
-        "description": "Mã chỗ không sửa tay; nếu chuyển khu (zoneId) mã sẽ sinh lại theo mã khu mới.",
+        "description": "",
         "parameters": [
           {
             "name": "id",
@@ -1086,47 +978,6 @@
         "security": []
       }
     },
-    "/api/gates/kiosk-list": {
-      "get": {
-        "tags": [
-          "Gates"
-        ],
-        "summary": "Kiosk — danh sách cổng (header X-Kiosk-Key, không cần đăng nhập)",
-        "description": "",
-        "responses": {
-          "default": {
-            "description": ""
-          }
-        },
-        "security": []
-      }
-    },
-    "/api/gates/payment-status": {
-      "get": {
-        "tags": [
-          "Gates"
-        ],
-        "summary": "Kiosk — chốt phiên sau khi trả PayOS online (header X-Kiosk-Key)",
-        "description": "",
-        "parameters": [
-          {
-            "name": "orderCode",
-            "in": "query",
-            "required": true,
-            "description": "Mã đơn PayOS",
-            "schema": {
-              "type": "integer"
-            }
-          }
-        ],
-        "responses": {
-          "default": {
-            "description": ""
-          }
-        },
-        "security": []
-      }
-    },
     "/api/gates/": {
       "get": {
         "tags": [
@@ -1167,7 +1018,7 @@
             "application/json": {
               "example": {
                 "floorId": 1,
-                "gateCode": "F1-IN-CAR",
+                "gateCode": "B1-IN-CAR",
                 "direction": "in",
                 "vehicleTypeId": 1,
                 "label": "Cổng vào ô tô"
@@ -1536,101 +1387,6 @@
         "responses": {
           "default": {
             "description": ""
-          }
-        }
-      }
-    },
-    "/api/admin/refunds/": {
-      "get": {
-        "tags": [
-          "Refunds"
-        ],
-        "summary": "Danh sách yêu cầu hoàn tiền hủy vé tháng (Admin)",
-        "description": "",
-        "parameters": [
-          {
-            "name": "page",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "limit",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "status",
-            "in": "query",
-            "description": "pending | refunded | expired",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "default": {
-            "description": ""
-          }
-        }
-      }
-    },
-    "/api/admin/refunds/{id}/remind": {
-      "post": {
-        "tags": [
-          "Refunds"
-        ],
-        "summary": "Gửi email nhắc user cập nhật tài khoản ngân hàng (Admin)",
-        "description": "Chỉ dùng khi user CHƯA có STK. Email kèm link tới trang profile để cập nhật.",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "default": {
-            "description": ""
-          }
-        }
-      }
-    },
-    "/api/admin/refunds/{id}/complete": {
-      "post": {
-        "tags": [
-          "Refunds"
-        ],
-        "summary": "Đánh dấu đã chuyển khoản hoàn tiền (Admin)",
-        "description": "Admin chuyển khoản TAY xong mới bấm. Yêu cầu user đã có STK. Payment gốc chuyển refunded.",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "default": {
-            "description": ""
-          }
-        },
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "example": {
-                "note": "CK Vietcombank 06/07 mã GD 12345"
-              }
-            }
           }
         }
       }
@@ -2200,30 +1956,6 @@
         }
       }
     },
-    "/api/reservations/{id}/repay": {
-      "post": {
-        "tags": [
-          "Reservations"
-        ],
-        "summary": "Trả tiếp phí giữ chỗ cho đơn pending (User) — tạo lại link PayOS",
-        "description": "",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "default": {
-            "description": ""
-          }
-        }
-      }
-    },
     "/api/monthly-passes/": {
       "post": {
         "tags": [
@@ -2247,57 +1979,6 @@
                 "startDate": "2026-07-01"
               }
             }
-          }
-        }
-      },
-      "get": {
-        "tags": [
-          "Monthly Passes"
-        ],
-        "summary": "Danh sách vé tháng (Staff/Manager) — lọc status/tầng/biển số",
-        "description": "",
-        "parameters": [
-          {
-            "name": "page",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "limit",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "status",
-            "in": "query",
-            "description": "pending | active | expired | cancelled",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "floorId",
-            "in": "query",
-            "schema": {
-              "type": "integer"
-            }
-          },
-          {
-            "name": "plate",
-            "in": "query",
-            "description": "Tìm gần đúng theo biển số",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "default": {
-            "description": ""
           }
         }
       }
@@ -2338,54 +2019,6 @@
             "required": true,
             "schema": {
               "type": "integer"
-            }
-          }
-        ],
-        "responses": {
-          "default": {
-            "description": ""
-          }
-        }
-      }
-    },
-    "/api/monthly-passes/{id}/cancel": {
-      "post": {
-        "tags": [
-          "Monthly Passes"
-        ],
-        "summary": "Hủy vé tháng (User, chủ vé) — tính % hoàn theo chính sách",
-        "description": "Trước ngày hiệu lực hoàn 100%; 3 ngày đầu 70%; tới hết nửa thời hạn 50%; quá nửa không hoàn. Có tiền hoàn → tạo yêu cầu hoàn tiền cho Admin xử lý (cần user cập nhật STK trong hạn).",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "default": {
-            "description": ""
-          }
-        }
-      }
-    },
-    "/api/monthly-passes/{id}/repay": {
-      "post": {
-        "tags": [
-          "Monthly Passes"
-        ],
-        "summary": "Lấy lại link thanh toán cho vé pending (User, chủ vé)",
-        "description": "Link PayOS cũ còn hiệu lực thì trả lại; hết hiệu lực thì đánh dấu payment cũ failed và sinh link + payment mới. Trả về { checkoutUrl, reused }.",
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
             }
           }
         ],
@@ -2670,50 +2303,6 @@
             "application/json": {
               "example": {
                 "status": "resolved"
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/settings/system": {
-      "get": {
-        "tags": [
-          "Settings"
-        ],
-        "summary": "Đọc cấu hình hệ thống (Manager/Admin)",
-        "description": "",
-        "responses": {
-          "default": {
-            "description": ""
-          }
-        }
-      },
-      "patch": {
-        "tags": [
-          "Settings"
-        ],
-        "summary": "Cập nhật cấu hình hệ thống (Manager/Admin)",
-        "description": "",
-        "responses": {
-          "default": {
-            "description": ""
-          }
-        },
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "example": {
-                "booking_fee": 20000,
-                "monthly_pass_price": 500000,
-                "lost_ticket_fee": 50000,
-                "overstay_fee": 30000,
-                "max_parking_hours": 24,
-                "pass_refund_trial_days": 3,
-                "pass_refund_trial_percent": 70,
-                "pass_refund_half_term_percent": 50,
-                "pass_refund_bank_info_ttl_days": 7
               }
             }
           }
