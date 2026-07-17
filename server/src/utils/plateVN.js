@@ -34,10 +34,17 @@ const PATTERNS = [
     re: new RegExp(`^(\\d{2})[-]?(${L})(\\d)[/.-]?(\\d{3})\\.?(\\d{2})$`),
     normalize: ([, prov, series, digit, a, b]) => `${prov}${series}${digit}-${a}.${b}`,
   },
+  {
+    // Xe máy seri chữ + số, 4 SỐ (biển cũ): 82-H3 9423 -> 82H3-9423
+    // Trước đây lọt khe: pattern "seri chữ+số" ở trên bắt buộc 5 số, còn pattern "4 số" bên trên
+    // lại chỉ nhận seri TOÀN CHỮ (29A-1234) → biển xe máy đời cũ (seri chữ+số + 4 số) bị từ chối.
+    re: new RegExp(`^(\\d{2})[-]?(${L})(\\d)[/.-]?(\\d{4})$`),
+    normalize: ([, prov, series, digit, num]) => `${prov}${series}${digit}-${num}`,
+  },
 ];
 
 export const PLATE_VN_HINT =
-  'Định dạng VN: 30A-123.45 (ô tô), 30AB-123.45 (2025), 51F-12345, 59F1-345.67 (xe máy)';
+  'Định dạng VN: 30A-123.45 (ô tô), 30AB-123.45 (2025), 51F-12345, 59F1-345.67 / 82H3-9423 (xe máy)';
 
 export function cleanPlateInput(input) {
   return String(input || '')
@@ -76,7 +83,7 @@ export function validateAndNormalizePlateVN(input) {
   return {
     valid: false,
     normalized: '',
-    error: 'Biển số không đúng định dạng VN. VD: 30A-123.45, 30AB-123.45, 51F-12345',
+    error: 'Biển số không đúng định dạng VN. VD: 30A-123.45, 30AB-123.45, 51F-12345, 82H3-9423 (xe máy)',
   };
 }
 
