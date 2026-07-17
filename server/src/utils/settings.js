@@ -38,6 +38,11 @@ const DEFAULT_SYSTEM = {
   booking_pending_ttl_minutes: 15,
   // Đặt chỗ confirmed quá end_time + ngần này (phút) mà không check-in → no_show + nhả slot (3.3)
   booking_no_show_grace_minutes: 15,
+  // Trần cửa sổ đặt chỗ (R1): slot bị giam `reserved` NGAY từ lúc tạo đơn (slotSuggest.js) và đơn
+  // confirmed giam thẳng tới end_time → cho đặt càng xa / đơn càng dài thì slot chết càng lâu chỉ để
+  // thu booking_fee, walk-in không dùng được. 24h đủ cho ca qua đêm.
+  booking_max_advance_days: 3,
+  booking_max_duration_hours: 24,
   // Hủy vé tháng (P3-8): % hoàn theo mốc — trước start_date 100%; 3 ngày đầu hiệu lực 70%;
   // tới hết NỬA thời hạn 50%; quá nửa 0%. Deadline user cập nhật STK để nhận hoàn (ngày).
   pass_refund_trial_days: 3,
@@ -82,6 +87,14 @@ const envSystemDefaults = () => ({
     process.env.BOOKING_NO_SHOW_GRACE_MINUTES !== ''
       ? Number(process.env.BOOKING_NO_SHOW_GRACE_MINUTES)
       : DEFAULT_SYSTEM.booking_no_show_grace_minutes,
+  booking_max_advance_days:
+    process.env.BOOKING_MAX_ADVANCE_DAYS != null && process.env.BOOKING_MAX_ADVANCE_DAYS !== ''
+      ? Number(process.env.BOOKING_MAX_ADVANCE_DAYS)
+      : DEFAULT_SYSTEM.booking_max_advance_days,
+  booking_max_duration_hours:
+    process.env.BOOKING_MAX_DURATION_HOURS != null && process.env.BOOKING_MAX_DURATION_HOURS !== ''
+      ? Number(process.env.BOOKING_MAX_DURATION_HOURS)
+      : DEFAULT_SYSTEM.booking_max_duration_hours,
   // Chính sách hoàn tiền vé tháng (Nhóm B) — đưa vào cache để GET /settings/system trả về
   // cho FE đổ form. getPassRefundPolicy() vẫn có fallback riêng nên an toàn hai chiều.
   pass_refund_trial_days: DEFAULT_SYSTEM.pass_refund_trial_days,
@@ -157,6 +170,23 @@ export const getBookingPendingTtlMinutes = () => {
 export const getBookingNoShowGraceMinutes = () => {
   const v = getSystemSettingsSync().booking_no_show_grace_minutes;
   return v != null && v >= 0 ? Number(v) : DEFAULT_SYSTEM.booking_no_show_grace_minutes;
+};
+
+/**
+ * R1 — trần cửa sổ đặt chỗ, dùng trong `assertBookableWindow` (reservation.service.js).
+ * Chỉ nhận số > 0: 0/âm/rác ⇒ rơi về mặc định, KHÔNG bao giờ thành "không giới hạn" (đặt trước 0 ngày
+ * là chặn sạch mọi đơn — fail-closed sai hướng). Muốn nới thì đặt số to.
+ * Env override: BOOKING_MAX_ADVANCE_DAYS / BOOKING_MAX_DURATION_HOURS — nhớ `clearSettingsCache()`
+ * sau khi đổi env (env chỉ đọc lúc dựng cache, không đọc mỗi lần gọi getter).
+ */
+export const getBookingMaxAdvanceDays = () => {
+  const v = getSystemSettingsSync().booking_max_advance_days;
+  return v != null && v > 0 ? Number(v) : DEFAULT_SYSTEM.booking_max_advance_days;
+};
+
+export const getBookingMaxDurationHours = () => {
+  const v = getSystemSettingsSync().booking_max_duration_hours;
+  return v != null && v > 0 ? Number(v) : DEFAULT_SYSTEM.booking_max_duration_hours;
 };
 
 /** P3-8 — chính sách hoàn tiền hủy vé tháng (đọc từ settings, có default). */
