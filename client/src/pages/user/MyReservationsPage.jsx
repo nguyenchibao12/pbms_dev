@@ -356,11 +356,25 @@ export default function MyReservationsPage() {
           />
         }
       >
-        <p className="text-sm text-slate-600">
-          {cancelTarget?.status === 'pending'
-            ? 'Bỏ giữ chỗ này? Bạn chưa thanh toán nên không bị tính phí — chỗ sẽ được trả lại bãi.'
-            : 'Hủy đặt chỗ đã thanh toán? Phí giữ chỗ được hoàn theo chính sách (hủy sát giờ vào có thể không được hoàn). Chỗ sẽ được trả lại bãi.'}
-        </p>
+        {/* Cutoff hoàn phí = booking_refund_cutoff_hours (mặc định 1 giờ, chỉ chỉnh qua env,
+            KHÔNG nằm trong whitelist Settings) → cố định, hardcode "1 giờ" ở text mô tả là đủ.
+            Số tiền hoàn CHÍNH XÁC vẫn do BE trả trong response hủy (xem handleCancel). */}
+        {cancelTarget?.status === 'pending' ? (
+          <p className="text-sm text-slate-600">
+            Bỏ giữ chỗ này? Bạn chưa thanh toán nên không bị tính phí — chỗ sẽ được trả lại bãi.
+          </p>
+        ) : (
+          <div className="space-y-3 text-sm text-slate-600">
+            <p>Hủy đặt chỗ đã thanh toán? Mã QR sẽ ngừng hiệu lực. Chính sách hoàn phí giữ chỗ:</p>
+            <ul className="space-y-1 rounded-lg bg-slate-50 px-4 py-3 text-slate-600">
+              <li>· Hủy trước giờ vào <strong>từ 1 giờ trở lên</strong>: <strong>hoàn 100%</strong> phí giữ chỗ</li>
+              <li>· Trong vòng <strong>1 giờ</strong> trước giờ vào: <strong>không hoàn</strong></li>
+            </ul>
+            <p className="text-xs text-slate-400">
+              Chỗ sẽ được trả lại bãi. Số tiền hoàn chính xác hiển thị sau khi xác nhận hủy.
+            </p>
+          </div>
+        )}
       </Modal>
     </div>
   );
