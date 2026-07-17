@@ -4,6 +4,7 @@ import { QRCodeSVG } from 'qrcode.react';
 import { CalendarPlus, RefreshCw, MapPin, CheckCircle2, CreditCard } from 'lucide-react';
 import { reservationsApi } from '../../api/reservations';
 import { formatShiftLabel } from '../../lib/shifts';
+import { formatFloorLabel } from '../../lib/floor';
 import PageHeader from '../../components/ui/PageHeader';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
@@ -32,7 +33,7 @@ const fmtDateTime = (value) => {
 const formatLocation = (r) => {
   const floor = r.floor?.label || r.floor?.floor_code;
   const parts = [
-    floor && `Tầng ${floor}`,
+    floor && formatFloorLabel(floor),
     r.zone?.zone_code && `Khu ${r.zone.zone_code}`,
     r.slot?.slot_code && `Chỗ ${r.slot.slot_code}`,
   ].filter(Boolean);
