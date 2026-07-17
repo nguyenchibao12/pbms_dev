@@ -88,6 +88,60 @@ export const assertZoneFitsFloorArea = async (
   }
 };
 
+/**
+ * Chặn nếu diện tích các tầng vô lý về hình khối: đi từ DƯỚI LÊN TRÊN, diện tích sàn
+ * KHÔNG ĐƯỢC TĂNG (hầm ≥ trệt ≥ tầng trên). Trước đây mỗi tầng đặt area_m2 độc lập, không ai
+ * so với tầng khác → F1=500 / F2=5000 / F3=80 vẫn qua, tòa nhà "phình giữa" không tồn tại thật.
+ * Đào thêm hầm rộng ra vẫn OK (hầm ở dưới nên được phép ≥); tháp thu nhỏ dần cũng OK.
+ *
+ * Tầng area_m2 = NULL (legacy, không giới hạn) bỏ qua ở cả hai phía — không có số để so.
+ * Chỉ so với tầng LIỀN KỀ có diện tích: mọi đường ghi tầng đều gọi hàm này nên luật đúng
+ * theo quy nạp (dãy đang không tăng + chèn 1 phần tử vừa 2 hàng xóm = vẫn không tăng).
+ *
+ * @param cand         { floorLevel, areaM2, excludeFloorId } — giá trị SAU khi ghi
+ * @param transaction
+ */
+export const assertFloorAreaMonotonic = async (
+  { floorLevel, areaM2, excludeFloorId } = {},
+  transaction,
+) => {
+  if (areaM2 == null) return;
+  const area = Number(areaM2);
+  const level = Number(floorLevel);
+  const notSelf = excludeFloorId ? { floor_id: { [Op.ne]: Number(excludeFloorId) } } : {};
+  const hasArea = { area_m2: { [Op.not]: null } };
+
+  const below = await Floor.findOne({
+    where: { ...notSelf, ...hasArea, floor_level: { [Op.lt]: level } },
+    order: [['floor_level', 'DESC']],
+    transaction,
+  });
+  if (below && area > Number(below.area_m2) + 1e-6) {
+    throw new AppError(
+      `Tầng ở cao độ ${level} (${area.toFixed(1)} m²) rộng hơn tầng dưới ` +
+        `"${below.label || below.floor_code}" (${Number(below.area_m2).toFixed(1)} m²). ` +
+        `Diện tích sàn không được tăng khi lên cao.`,
+      409,
+      'CONFLICT',
+    );
+  }
+
+  const above = await Floor.findOne({
+    where: { ...notSelf, ...hasArea, floor_level: { [Op.gt]: level } },
+    order: [['floor_level', 'ASC']],
+    transaction,
+  });
+  if (above && Number(above.area_m2) > area + 1e-6) {
+    throw new AppError(
+      `Tầng ở cao độ ${level} (${area.toFixed(1)} m²) hẹp hơn tầng trên ` +
+        `"${above.label || above.floor_code}" (${Number(above.area_m2).toFixed(1)} m²). ` +
+        `Diện tích sàn không được tăng khi lên cao.`,
+      409,
+      'CONFLICT',
+    );
+  }
+};
+
 export const getVehicleTypeOrThrow = async (vehicleTypeId, transaction) => {
   const vt = await VehicleType.findByPk(vehicleTypeId, { transaction });
   if (!vt) throw new AppError('Vehicle type not found', 404, 'NOT_FOUND');
