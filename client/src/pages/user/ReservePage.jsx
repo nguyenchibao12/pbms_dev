@@ -20,13 +20,6 @@ const toDateStr = (d) => {
 
 const todayStr = () => toDateStr(new Date());
 
-// yyyy-MM-dd của (hôm nay + n ngày).
-const addDaysStr = (n) => {
-  const d = new Date();
-  d.setDate(d.getDate() + n);
-  return toDateStr(d);
-};
-
 const emptyForm = { plateNumber: '', vehicleTypeId: '', floorId: '', arrivalDate: todayStr(), shiftId: '' };
 
 export default function ReservePage() {
@@ -264,9 +257,9 @@ export default function ReservePage() {
                 className={inputClass}
                 value={form.arrivalDate}
                 min={todayStr()}
-                // Trần đặt trước 3 ngày — khớp BE booking_max_advance_days (Settings Nhóm C).
-                // Hardcode vì GET /settings/system chỉ Manager/Admin đọc được, user FE không lấy qua API.
-                max={addDaysStr(3)}
+                // KHÔNG hardcode trần đặt trước: BE (assertBookableWindow) tự chặn theo
+                // booking_max_advance_days (Manager chỉnh được) và trả message đúng số ngày thật.
+                // Chọn ngày quá trần → ô "chỗ trống" hiện thông báo BE, nút đặt chỗ bị khóa (availError).
                 onChange={(e) => patchForm({ arrivalDate: e.target.value })}
               />
             </Field>
