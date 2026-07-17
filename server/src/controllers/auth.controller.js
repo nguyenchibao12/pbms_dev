@@ -64,6 +64,13 @@ export const resendVerification = asyncHandler(async (req, res) => {
   successResponse(res, null, message);
 });
 
+// message được nội suy thẳng vào HTML — escape để lỗi bất ngờ (vd chứa ký tự < >) không
+// thành markup sống trên trang.
+const escapeHtml = (value) =>
+  String(value).replace(/[&<>"']/g, (c) => (
+    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+  ));
+
 // Trang HTML hiển thị khi user BẤM link trong email (request GET). Trả HTML thay vì JSON.
 const verifyResultPage = (ok, message) => `<!doctype html>
 <html lang="vi"><head><meta charset="utf-8">
@@ -72,7 +79,7 @@ const verifyResultPage = (ok, message) => `<!doctype html>
 <body style="font-family:Arial,sans-serif;display:flex;min-height:100vh;align-items:center;justify-content:center;margin:0;background:#f1f5f9">
   <div style="background:#fff;padding:32px 40px;border-radius:12px;box-shadow:0 4px 20px rgba(0,0,0,.08);max-width:420px;text-align:center">
     <div style="font-size:48px">${ok ? '✅' : '❌'}</div>
-    <h2 style="color:${ok ? '#16a34a' : '#dc2626'};margin:12px 0">${message}</h2>
+    <h2 style="color:${ok ? '#16a34a' : '#dc2626'};margin:12px 0">${escapeHtml(message)}</h2>
     <p style="color:#64748b">Bạn có thể đóng tab này và đăng nhập vào PBMS.</p>
   </div>
 </body></html>`;
