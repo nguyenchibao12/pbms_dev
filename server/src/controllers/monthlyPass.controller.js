@@ -55,3 +55,8 @@ export const getCapacity = asyncHandler(async (req, res) => {
   const used = await monthlyPassService.countPassCapacityUsage(floorId, vehicleTypeId);
   successResponse(res, { total, used, available: Math.max(0, total - used) });
 });
+
+// Chính sách hoàn tiền hủy vé — cho FE hiện đúng % ở modal hủy (thay vì hardcode). Đọc, không nhạy cảm.
+export const getRefundPolicy = asyncHandler(async (req, res) => {
+  successResponse(res, monthlyPassService.getRefundPolicy());
+});
