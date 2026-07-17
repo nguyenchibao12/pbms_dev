@@ -47,7 +47,13 @@ export const getPaymentByOrderCode = async (orderCode) => {
   return payment;
 };
 
+/**
+ * ⭐ Nơi DUY NHẤT ghi `time_out`. Mọi đường tiền (tiền mặt · PayOS · webhook) đều đổ về đây, vì chốt
+ * phiên gồm 6 việc phải xảy ra cùng nhau — để mỗi luồng tự làm là sớm muộn có luồng làm thiếu bước.
+ */
 export const completeSessionAfterPayment = async (payment, staffUserId = null) => {
+  // IDEMPOTENT: webhook + kiosk poll + redirect user có thể cùng gọi. Ai tới sau nhận
+  // alreadyCompleted — KHÔNG ném lỗi: khách trả tiền rồi thì việc đúng là mở barie.
   if (payment.status === 'success') {
     const session = await getSession(payment.session_id);
     return { barrierOpened: true, session, payment, alreadyCompleted: true };
@@ -58,6 +64,7 @@ export const completeSessionAfterPayment = async (payment, staffUserId = null) =
   assertSessionActive(session);
 
   // time_out chốt theo mốc rời tầng (cổng tầng OUT) nếu có — khớp với phí đã tính.
+  // Lấy new Date() là tính cả 7' xếp hàng trả tiền, mà quãng đó xe đã không chiếm chỗ nào.
   const timeOut = session.left_floor_at ? new Date(session.left_floor_at) : new Date();
   assertSessionCheckoutTime(session.time_in, timeOut);
   const fee = Number(payment.amount);

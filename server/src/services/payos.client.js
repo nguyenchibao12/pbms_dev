@@ -70,6 +70,10 @@ export const getPayOSPaymentInfo = async (orderCode) => {
  * Bắt buộc trước khi phát link mới cho cùng một đơn: hai link cùng sống = khách có thể trả
  * tiền HAI LẦN cho một chỗ đỗ. Đơn đã CANCELLED/PAID sẵn thì PayOS ném lỗi — người gọi tự xử.
  */
+/**
+ * HỦY THẬT link PayOS. Đánh `status='failed'` trong DB mình là CHƯA ĐỦ — link cũ vẫn sống ở PayOS,
+ * 2 link cùng sống = THU TIỀN 2 LẦN. Hàm có thể ném → bên gọi phải fail-closed (xem repayMonthlyPass).
+ */
 export const cancelPayOSPaymentLink = async (orderCode, reason = 'Khách tạo lại liên kết thanh toán') => {
   const payos = getPayOSClient();
   return payos.paymentRequests.cancel(Number(orderCode), reason);

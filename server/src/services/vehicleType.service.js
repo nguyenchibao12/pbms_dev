@@ -25,6 +25,8 @@ export const createVehicleType = async (data) => {
   return VehicleType.create({
     type_name: data.typeName,
     type_code: typeCode,
+    // 0 = CHƯA cấu hình (không phải "chiếm 0 m²"): vẫn tạo được, nhưng mọi phép tính sức chứa sẽ
+    // ném 400 bắt cập nhật trước (xem maxSlotsForArea) — cho tạo trước, khai diện tích sau.
     slot_area_m2: data.slotAreaM2 ?? 0,
   });
 };
@@ -61,6 +63,8 @@ export const deleteVehicleType = async (id) => {
   const type = await VehicleType.findByPk(id);
   if (!type) throw new AppError('Vehicle type not found', 404, 'NOT_FOUND');
 
+  // Chặn ở tầng nghiệp vụ chứ không phó mặc FK (FK ném SQL thô → khách nhận 500). Đếm cả bảng giá:
+  // xóa loại xe còn bảng giá là phiên xe loại đó hết đường tính tiền.
   const zoneCount = await Zone.count({ where: { vehicle_type_id: id } });
   const ruleCount = await PricingRule.count({ where: { vehicle_type_id: id } });
   if (zoneCount > 0 || ruleCount > 0) {

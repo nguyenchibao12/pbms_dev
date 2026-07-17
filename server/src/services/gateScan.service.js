@@ -240,12 +240,17 @@ const buildingExit = async (ref, gate) => {
  * Quét QR tại một cổng → tự quyết hành động theo (cổng tòa/tầng) + (in/out).
  * Trả { action: OPEN | PAYMENT_REQUIRED, stage, ... }.
  */
+/**
+ * Điều phối máy trạng thái cổng — 2 câu hỏi (tòa/tầng × vào/ra) ra 4 nhánh dưới.
+ * Phiên đi đúng thứ tự checked_in → in_building → on_floor → left_floor → exited; nhảy cóc né phí bị chặn.
+ */
 export const scanGate = async ({ qrToken, gateId }) => {
   const gate = await Gate.findByPk(gateId);
   if (!gate || !gate.is_active) {
     throw new AppError('Cổng không tồn tại hoặc đang bảo trì', 404, 'NOT_FOUND');
   }
-  const isBuilding = gate.floor_id == null;
+  const isBuilding = gate.floor_id == null;            // NULL = cổng cấp TÒA (không phải "chưa gán tầng")
+  // QR có thể là phiên / đơn đặt chỗ / vé tháng → chuẩn hóa về 1 "ref" để 4 nhánh khỏi tự phân loại.
   const ref = await resolveQr(qrToken);
 
   if (gate.direction === 'in') {

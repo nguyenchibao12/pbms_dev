@@ -74,11 +74,17 @@ export const remindBankInfo = async (refundId) => {
 };
 
 /** Admin đã chuyển khoản tay → chốt refunded (+ payment gốc 'refunded'). */
+/**
+ * Admin bấm "Đã chuyển khoản". PayOS KHÔNG có API refund nên tiền phải chuyển TAY — hàm này chỉ
+ * GHI NHẬN việc đó. Là bước cuối, không thể lùi, nên chặn kỹ trước khi đánh dấu.
+ */
 export const completeRefund = async (adminId, refundId, { note } = {}) => {
   const refund = await getRefund(refundId);
-  if (refund.status !== 'pending') {
+  if (refund.status !== 'pending') {                  // chặn bấm 2 lần / hoàn cho đơn đã expired
     throw new AppError(`Yêu cầu không còn chờ xử lý (hiện tại: ${refund.status})`, 409, 'CONFLICT');
   }
+  // Không có STK mà đánh 'refunded' là mất dấu vĩnh viễn: đơn rời khỏi danh sách chờ mà tiền
+  // chưa hề tới tay khách, không ai còn nhìn thấy để sửa.
   if (!refund.user?.bank_account_number) {
     throw new AppError('User chưa cập nhật tài khoản ngân hàng — chưa thể hoàn tiền', 409, 'CONFLICT');
   }

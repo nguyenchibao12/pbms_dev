@@ -26,7 +26,8 @@ export const getGate = async (id) => {
   return gate;
 };
 
-// Mỗi phạm vi (1 tầng, hoặc cấp tòa nhà = floor_id NULL) chỉ được 1 cổng IN + 1 cổng OUT.
+// Mỗi phạm vi (1 tầng, hoặc cấp tòa nhà = floor_id NULL) chỉ được 1 cổng IN + 1 cổng OUT:
+// gateScan suy "xe đang ở đâu" từ cổng vừa quét, 2 cổng OUT cùng tầng thì câu đó có 2 đáp án.
 const assertSingleDirectionGate = async (floorId, direction, excludeGateId = null) => {
   if (!direction) return;
   const existing = await Gate.findOne({ where: { floor_id: floorId, direction } });

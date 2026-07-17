@@ -3,29 +3,26 @@ import { Zone, VehicleType, Floor } from '../models/index.js';
 import { AppError } from './helpers.js';
 
 /**
- * Sức chứa tầng tính theo DIỆN TÍCH.
- *
- * Mỗi loại xe chiếm diện tích khác nhau (VehicleType.slot_area_m2, đã gộp lối đi),
- * nên không đếm "số slot" chung mà quy về m²:
- *   diện tích đã dùng của tầng = Σ (zone.total_slots × loạiXe.slot_area_m2)
- * Ràng buộc: diện tích đã dùng ≤ floor.area_m2 (nếu floor có đặt area_m2).
+ * Sức chứa tầng theo DIỆN TÍCH: Σ(zone.total_slots × slot_area_m2) ≤ area_m2. NULL = KHÔNG GIỚI HẠN.
+ * `assertZoneFitsFloorArea` kiểm TRONG 1 tầng; `assertFloorAreaMonotonic` kiểm GIỮA các tầng.
  */
 
+// Bọc Number() vì DB trả DECIMAL dạng CHUỖI ("25.00"); `?? 0` tránh undefined.
 export const slotAreaOf = (vehicleType) => Number(vehicleType?.slot_area_m2 ?? 0);
 
 /** Số slot tối đa của 1 loại xe vừa trong một diện tích cho trước. */
 export const maxSlotsForArea = (areaM2, slotAreaM2) => {
   const area = Number(areaM2);
   const per = Number(slotAreaM2);
-  if (!Number.isFinite(area) || area <= 0) return 0;
-  if (!Number.isFinite(per) || per <= 0) {
-    throw new AppError(
+  if (!Number.isFinite(area) || area <= 0) return 0;   // không có diện tích → 0 chỗ (KHÔNG ném lỗi)
+  if (!Number.isFinite(per) || per <= 0) {             // loại xe chưa cấu hình slot_area_m2 → 400
+    throw new AppError(                                //   (0 = "chưa cấu hình", xem vehicleType.service)
       'Loại xe chưa cấu hình diện tích slot (slot_area_m2). Cập nhật loại xe trước.',
       400,
       'VALIDATION_ERROR',
     );
   }
-  return Math.floor(area / per);
+  return Math.floor(area / per);                       // tròn XUỐNG: 800/1.8 = 444.4 → 444 chỗ
 };
 
 /**
@@ -37,11 +34,13 @@ export const computeFloorAreaUsed = async (floorId, { excludeZoneId } = {}, tran
   const zones = await Zone.findAll({
     where: { floor_id: floorId },
     include: [{ association: 'vehicleType', attributes: ['vehicle_type_id', 'slot_area_m2'] }],
-    transaction,
+    transaction,                                       // kèm loại xe để biết m²/chỗ của từng khu
   });
   let areaUsed = 0;
   for (const z of zones) {
+    // Bỏ khu ĐANG SỬA ra, không thì nó tự cộng bản cũ của mình vào → sửa gì cũng báo vượt.
     if (excludeZoneId && z.zone_id === Number(excludeZoneId)) continue;
+    // total_slots = SỨC CHỨA khai báo, không phải slot đã tạo thật — chỗ chưa sinh vẫn "xí" diện tích.
     areaUsed += Number(z.total_slots) * slotAreaOf(z.vehicleType);
   }
   return areaUsed;
@@ -63,10 +62,10 @@ export const assertZoneFitsFloorArea = async (
   { excludeZoneId } = {},
   transaction,
 ) => {
-  if (floor.area_m2 == null) return; // không giới hạn diện tích
+  if (floor.area_m2 == null) return;                   // tầng không đặt diện tích → bỏ qua (linh hoạt)
   const floorArea = Number(floor.area_m2);
   const slotArea = slotAreaOf(vehicleType);
-  if (slotArea <= 0) {
+  if (slotArea <= 0) {                                 // loại xe chưa có m²/chỗ → không tính được
     throw new AppError(
       `Loại xe "${vehicleType.type_name}" chưa cấu hình diện tích slot (slot_area_m2).`,
       400,
@@ -75,11 +74,12 @@ export const assertZoneFitsFloorArea = async (
   }
 
   const usedByOthers = await computeFloorAreaUsed(floor.floor_id, { excludeZoneId }, transaction);
-  const wanted = Number(totalSlots) * slotArea;
+  const wanted = Number(totalSlots) * slotArea;        // khu này muốn chiếm thêm bao nhiêu m²
+  // +1e-6: đệm sai số số thực (JS: 8 × 1.8 = 14.400000000000002) → 300.0 không bị coi là > 300.
   if (usedByOthers + wanted > floorArea + 1e-6) {
-    const free = Math.max(floorArea - usedByOthers, 0);
-    const fitSlots = Math.floor(free / slotArea);
-    throw new AppError(
+    const free = Math.max(floorArea - usedByOthers, 0);  // còn trống bao nhiêu m²
+    const fitSlots = Math.floor(free / slotArea);        // ...nhét được thêm mấy slot loại này
+    throw new AppError(                                  // lỗi nói luôn cách sửa, không bắt tự tính
       `Vượt diện tích tầng: cần ${wanted.toFixed(1)} m² nhưng chỉ còn ${free.toFixed(1)}/${floorArea.toFixed(1)} m² ` +
         `(tối đa ${fitSlots} slot loại "${vehicleType.type_name}").`,
       409,
@@ -89,34 +89,27 @@ export const assertZoneFitsFloorArea = async (
 };
 
 /**
- * Chặn nếu diện tích các tầng vô lý về hình khối: đi từ DƯỚI LÊN TRÊN, diện tích sàn
- * KHÔNG ĐƯỢC TĂNG (hầm ≥ trệt ≥ tầng trên). Trước đây mỗi tầng đặt area_m2 độc lập, không ai
- * so với tầng khác → F1=500 / F2=5000 / F3=80 vẫn qua, tòa nhà "phình giữa" không tồn tại thật.
- * Đào thêm hầm rộng ra vẫn OK (hầm ở dưới nên được phép ≥); tháp thu nhỏ dần cũng OK.
- *
- * Tầng area_m2 = NULL (legacy, không giới hạn) bỏ qua ở cả hai phía — không có số để so.
- * Chỉ so với tầng LIỀN KỀ có diện tích: mọi đường ghi tầng đều gọi hàm này nên luật đúng
- * theo quy nạp (dãy đang không tăng + chèn 1 phần tử vừa 2 hàng xóm = vẫn không tăng).
- *
- * @param cand         { floorLevel, areaM2, excludeFloorId } — giá trị SAU khi ghi
- * @param transaction
+ * Đi từ DƯỚI LÊN, diện tích sàn KHÔNG ĐƯỢC TĂNG (hầm ≥ trệt ≥ tầng trên) — chặn tòa nhà "phình giữa".
+ * Chỉ so tầng LIỀN KỀ: mọi đường ghi tầng đều gọi hàm này nên dãy luôn đúng luật (quy nạp).
  */
 export const assertFloorAreaMonotonic = async (
   { floorLevel, areaM2, excludeFloorId } = {},
   transaction,
 ) => {
-  if (areaM2 == null) return;
+  if (areaM2 == null) return;                          // tầng NULL = không giới hạn → không có số để so
   const area = Number(areaM2);
   const level = Number(floorLevel);
+  // Đang SỬA tầng này → loại nó ra, không thì nó tự so với chính mình (bản cũ).
   const notSelf = excludeFloorId ? { floor_id: { [Op.ne]: Number(excludeFloorId) } } : {};
+  // Op.not = IS NOT NULL. Dùng nhầm Op.ne thì SQL ra `x != NULL` (không bao giờ đúng) → guard tê liệt.
   const hasArea = { area_m2: { [Op.not]: null } };
 
-  const below = await Floor.findOne({
+  const below = await Floor.findOne({                  // tầng liền kề phía DƯỚI (có đặt diện tích)
     where: { ...notSelf, ...hasArea, floor_level: { [Op.lt]: level } },
-    order: [['floor_level', 'DESC']],
+    order: [['floor_level', 'DESC']],                  // DESC ⇒ lấy tầng cao nhất trong các tầng thấp hơn
     transaction,
   });
-  if (below && area > Number(below.area_m2) + 1e-6) {
+  if (below && area > Number(below.area_m2) + 1e-6) {  // mình RỘNG hơn tầng dưới ⇒ phình ra ⇒ chặn
     throw new AppError(
       `Tầng ở cao độ ${level} (${area.toFixed(1)} m²) rộng hơn tầng dưới ` +
         `"${below.label || below.floor_code}" (${Number(below.area_m2).toFixed(1)} m²). ` +
@@ -126,12 +119,14 @@ export const assertFloorAreaMonotonic = async (
     );
   }
 
-  const above = await Floor.findOne({
+  // Phải kiểm CẢ phía trên vì tầng mới có thể CHÈN VÀO GIỮA: chèn tầng hẹp xuống dưới tầng rộng
+  // cũng là phình lên trên, chỉ kiểm phía dưới sẽ lọt.
+  const above = await Floor.findOne({                  // tầng liền kề phía TRÊN
     where: { ...notSelf, ...hasArea, floor_level: { [Op.gt]: level } },
-    order: [['floor_level', 'ASC']],
+    order: [['floor_level', 'ASC']],                   // ASC ⇒ lấy tầng thấp nhất trong các tầng cao hơn
     transaction,
   });
-  if (above && Number(above.area_m2) > area + 1e-6) {
+  if (above && Number(above.area_m2) > area + 1e-6) {  // tầng trên rộng hơn MÌNH ⇒ cũng phình ⇒ chặn
     throw new AppError(
       `Tầng ở cao độ ${level} (${area.toFixed(1)} m²) hẹp hơn tầng trên ` +
         `"${above.label || above.floor_code}" (${Number(above.area_m2).toFixed(1)} m²). ` +

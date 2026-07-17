@@ -15,6 +15,10 @@ const incidentIncludes = [
   { association: 'resolver', attributes: ['user_id', 'full_name', 'username'] },
 ];
 
+/**
+ * Ghi sự cố "nền" — KHÔNG BAO GIỜ ném lỗi (catch nuốt, trả null). Đây là ghi vết phụ, hỏng nó
+ * không được phép làm hỏng nghiệp vụ chính đang gọi nó (quét cổng, thu tiền...).
+ */
 export const recordIncident = async (payload) => {
   try {
     return await Incident.create({
@@ -144,7 +148,8 @@ export const listIncidents = async ({
 export const updateIncidentStatus = async (id, status, resolverId = null) => {
   const incident = await Incident.findByPk(id);
   if (!incident) throw new AppError('Incident not found', 404, 'NOT_FOUND');
-  // Chuyển sang 'resolved' → ghi AI xử lý + lúc nào. Rời khỏi 'resolved' (mở lại) → xóa dấu xử lý.
+  // Chuyển sang 'resolved' → ghi AI xử lý + lúc nào. Rời khỏi 'resolved' (mở lại) → xóa dấu xử lý,
+  // không thì sự cố mở lại vẫn mang tên người xử lý cũ → sổ audit nói sai.
   const patch = { status };
   if (status === 'resolved') {
     patch.resolved_by = resolverId;

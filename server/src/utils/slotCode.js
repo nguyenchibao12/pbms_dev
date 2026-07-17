@@ -9,6 +9,9 @@ import { ParkingSlot } from '../models/index.js';
  *
  * Mã do hệ thống sinh hoàn toàn (không nhập tự do) nên luôn duy nhất trong khu
  * (khớp unique index zone_id + slot_code) và mang nghĩa toàn cục.
+ *
+ * Mã chỗ ĐẺ RA TỪ mã khu ⇒ đổi mã khu phải sinh lại mã chỗ con (`resyncZoneSlotCodes`).
+ * Đó là cái giá của "mã có nghĩa"; bù lại nhìn F1-CAR-01-07 là biết ngay ở đâu, khỏi tra DB.
  */
 
 export const slotCodePrefix = (zone) => `${zone.zone_code}-`;
@@ -28,6 +31,7 @@ export const maxSlotNumber = async (zone, { transaction } = {}) => {
     const m = /-(\d+)$/.exec(r.slot_code); // lấy NN ở cuối mã
     if (m) max = Math.max(max, Number(m[1]));
   }
+  // MAX chứ không COUNT: xóa chỗ giữa (-02) rồi tạo mới thì count+1 sẽ đụng mã đang có.
   return max;
 };
 

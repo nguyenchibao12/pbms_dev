@@ -145,6 +145,10 @@ export const releaseSlotIfOccupied = async (slotId, transaction) => {
   return true;
 };
 
+/**
+ * Giữ chỗ: available → reserved. `lock: true` (SELECT..FOR UPDATE) là bắt buộc — không khóa thì 2
+ * request cùng đọc thấy 'available' rồi cùng giữ ⇒ 2 khách một chỗ. Khóa buộc request 2 xếp hàng.
+ */
 export const lockSlotReserved = async (slotId, transaction) => {
   const slot = await ParkingSlot.findByPk(slotId, { transaction, lock: true });
   if (!slot) throw new AppError('Parking slot not found', 404, 'NOT_FOUND');
@@ -155,6 +159,8 @@ export const lockSlotReserved = async (slotId, transaction) => {
       'CONFLICT',
     );
   }
+  // Đã check status ở trên rồi vẫn gọi assertSlotTransition: guard chung DV-08 là nguồn sự thật
+  // duy nhất về chuyển trạng thái, mọi đường đổi status đều phải qua nó (xem stateGuards.js).
   assertSlotTransition(slot.status, 'reserved');
   await slot.update({ status: 'reserved' }, { transaction });
   return slot;

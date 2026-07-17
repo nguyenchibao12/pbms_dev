@@ -25,11 +25,14 @@ export const buildZoneCode = async (floor, vehicleType, opts = {}) => {
   };
   if (excludeZoneId) where.zone_id = { [Op.ne]: excludeZoneId };
 
+  // excludeZoneId: đang SỬA khu này → loại nó khỏi danh sách "anh em", không thì nó tự đếm mình.
   const siblings = await Zone.findAll({ where, attributes: ['zone_code'], transaction });
   let max = 0;
   for (const z of siblings) {
     const m = /-(\d+)$/.exec(z.zone_code); // lấy NN ở cuối mã
     if (m) max = Math.max(max, Number(m[1]));
   }
+  // MAX+1 chứ không count+1: có 01/02/03 rồi xóa 02 thì count+1 = 03 → đụng mã đang tồn tại.
+  // MAX+1 ⇒ số thứ tự không tái sử dụng, mã cũ đã dán ở bãi không "hồi sinh" trỏ sang khu khác.
   return `${prefix}-${String(max + 1).padStart(2, '0')}`;
 };
