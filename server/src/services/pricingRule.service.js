@@ -6,6 +6,14 @@ const ruleIncludes = [
 ];
 
 // Hai khoảng [aFrom, aTo] và [bFrom, bTo] giao nhau (effective_to = null nghĩa là vô hạn).
+//
+// Mẹo kinh điển: thay vì liệt kê 4 kiểu chồng nhau (a trùm b, b trùm a, a lấn đầu b, a lấn đuôi b),
+// LẬT NGƯỢC lại — hai khoảng KHÔNG giao nhau chỉ khi một cái kết thúc trước khi cái kia bắt đầu:
+//     không giao  ⇔  aEnd < bStart  HOẶC  bEnd < aStart
+// Phủ định hai vế là ra đúng một dòng dưới đây. Ngắn hơn và không sót ca nào.
+//
+// `Infinity` cho effective_to = null: bảng giá chưa có ngày kết thúc = còn hiệu lực mãi. Dùng
+// Infinity thay vì một ngày xa (2099) để không có "hạn ngầm" chờ sẵn ngày vỡ.
 const periodsOverlap = (aFrom, aTo, bFrom, bTo) => {
   const aStart = new Date(aFrom).getTime();
   const aEnd = aTo ? new Date(aTo).getTime() : Infinity;
@@ -73,6 +81,9 @@ export const updatePricingRule = async (id, data) => {
   }
 
   const effectiveFrom = data.effectiveFrom ?? rule.effective_from;
+  // CỐ Ý dùng `!== undefined` chứ KHÔNG dùng `??` như dòng trên: ở đây `null` là giá trị THẬT
+  // ("bỏ ngày kết thúc → hiệu lực vô hạn"). Nếu viết `data.effectiveTo ?? rule.effective_to` thì
+  // client gửi null sẽ bị nuốt, rơi về giá trị cũ ⇒ không bao giờ mở vô hạn được.
   const effectiveTo = data.effectiveTo !== undefined ? data.effectiveTo : rule.effective_to;
   if (effectiveTo && new Date(effectiveFrom) >= new Date(effectiveTo)) {
     throw new AppError('effectiveFrom must be before effectiveTo', 400, 'VALIDATION_ERROR');

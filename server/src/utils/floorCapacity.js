@@ -9,11 +9,25 @@ import { AppError } from './helpers.js';
  * nên không đếm "số slot" chung mà quy về m²:
  *   diện tích đã dùng của tầng = Σ (zone.total_slots × loạiXe.slot_area_m2)
  * Ràng buộc: diện tích đã dùng ≤ floor.area_m2 (nếu floor có đặt area_m2).
+ *
+ * ── HAI TẦNG RÀNG BUỘC, ĐỪNG LẪN (hay bị hỏi vặn) ────────────────────────────
+ *  1. `assertZoneFitsFloorArea`   — kiểm TRONG một tầng: các khu có vừa sàn tầng đó không.
+ *  2. `assertFloorAreaMonotonic`  — kiểm GIỮA các tầng: cả tòa nhà có hình khối hợp lý không.
+ * Cái (1) đúng KHÔNG suy ra cái (2): từng tầng vừa sàn của nó nhưng ghép lại vẫn có thể ra
+ * tòa nhà phình giữa (F1=500, F2=5000). Đó là lý do (2) phải tồn tại riêng.
+ *
+ * ── `area_m2 = NULL` CÓ NGHĨA, không phải "chưa nhập" ─────────────────────────
+ * NULL = KHÔNG GIỚI HẠN diện tích (tầng legacy). Nên quên copy cột này khi nhân bản tầng
+ * không phải là mất data — mà là ÂM THẦM TẮT cả ràng buộc sức chứa của tầng đó.
  */
 
 export const slotAreaOf = (vehicleType) => Number(vehicleType?.slot_area_m2 ?? 0);
 
-/** Số slot tối đa của 1 loại xe vừa trong một diện tích cho trước. */
+/**
+ * Số slot tối đa của 1 loại xe vừa trong một diện tích cho trước.
+ * Làm tròn XUỐNG (`floor`): 800 m² / 1.8 m² mỗi xe máy = 444.4 → 444 chỗ. Không thể có 0.4 chỗ,
+ * và làm tròn LÊN sẽ hứa nhiều hơn sàn chứa được.
+ */
 export const maxSlotsForArea = (areaM2, slotAreaM2) => {
   const area = Number(areaM2);
   const per = Number(slotAreaM2);
@@ -41,7 +55,11 @@ export const computeFloorAreaUsed = async (floorId, { excludeZoneId } = {}, tran
   });
   let areaUsed = 0;
   for (const z of zones) {
+    // excludeZoneId: đang SỬA khu này → tính diện tích "các khu KHÁC" để so với kích thước MỚI
+    // của nó. Không loại ra thì nó tự cộng bản cũ của mình vào → sửa gì cũng báo vượt diện tích.
     if (excludeZoneId && z.zone_id === Number(excludeZoneId)) continue;
+    // total_slots (SỨC CHỨA khai báo) chứ không phải số slot THẬT đã tạo: chỗ chưa sinh vẫn đã
+    // "xí" diện tích, không thì Manager khai 100 slot rồi sinh dần sẽ vượt sàn lúc nào không hay.
     areaUsed += Number(z.total_slots) * slotAreaOf(z.vehicleType);
   }
   return areaUsed;
@@ -76,7 +94,11 @@ export const assertZoneFitsFloorArea = async (
 
   const usedByOthers = await computeFloorAreaUsed(floor.floor_id, { excludeZoneId }, transaction);
   const wanted = Number(totalSlots) * slotArea;
+  // +1e-6 = "đệm" sai số số thực: 8 khu × 1.8 m² trong JS ra 14.400000000000002, không có đệm thì
+  // 300.0 bị coi là > 300 và Manager bị chặn oan ở đúng ca vừa khít.
   if (usedByOthers + wanted > floorArea + 1e-6) {
+    // Lỗi nói luôn "còn bao nhiêu m² / nhét được mấy slot" thay vì chỉ báo "vượt": Manager sửa được
+    // ngay mà không phải tự bấm máy tính.
     const free = Math.max(floorArea - usedByOthers, 0);
     const fitSlots = Math.floor(free / slotArea);
     throw new AppError(

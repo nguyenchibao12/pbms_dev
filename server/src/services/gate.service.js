@@ -27,6 +27,14 @@ export const getGate = async (id) => {
 };
 
 // Mỗi phạm vi (1 tầng, hoặc cấp tòa nhà = floor_id NULL) chỉ được 1 cổng IN + 1 cổng OUT.
+//
+// Vì sao phải ràng buộc: `gateResolve`/`gateScan` suy ra "xe đang ở đâu" từ cổng vừa quét. Hai cổng
+// OUT cùng một tầng thì câu "xe ra tầng nào" có 2 đáp án ⇒ máy trạng thái phiên (checked_in →
+// in_building → on_floor → left_floor → exited) mất mốc, phí tính tới `left_floor_at` sai theo.
+//
+// `floor_id = NULL` KHÔNG phải "chưa gán tầng" mà là CẤP TÒA NHÀ (cổng ngoài cùng). Đây cũng là
+// một phạm vi hợp lệ nên nó cũng chỉ được 1 IN + 1 OUT — `where: { floor_id: null }` khớp đúng các
+// cổng tòa nhà với nhau, không đụng cổng tầng.
 const assertSingleDirectionGate = async (floorId, direction, excludeGateId = null) => {
   if (!direction) return;
   const existing = await Gate.findOne({ where: { floor_id: floorId, direction } });
