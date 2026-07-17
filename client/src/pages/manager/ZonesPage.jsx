@@ -148,10 +148,23 @@ export default function ZonesPage() {
   // Số slot loại đang chọn còn vừa được vào diện tích trống của tầng.
   const selectedVehicleType = vehicleTypes.find((t) => String(t.vehicle_type_id) === String(form.vehicleTypeId));
   const slotArea = selectedVehicleType ? Number(selectedVehicleType.slot_area_m2) : 0;
-  const freeSlotHint =
-    floorCapacity && floorCapacity.areaFreeM2 != null && slotArea > 0
-      ? Math.floor(floorCapacity.areaFreeM2 / slotArea)
+  // Khi SỬA: total mới THAY THẾ total cũ → phần diện tích khu này đang chiếm phải được
+  // cộng lại vào "còn trống" (BE cũng excludeZoneId như vậy). Footprint tính theo loại xe
+  // HIỆN TẠI của khu (dấu chân cũ), chỉ cộng khi vẫn đang ở đúng tầng cũ; còn quy ra slot
+  // thì chia theo loại xe ĐANG CHỌN trên form (slotArea).
+  const editingOldType = editing
+    ? vehicleTypes.find((t) => String(t.vehicle_type_id) === String(editing.vehicle_type_id))
+    : null;
+  const editingFootprint =
+    editing && String(form.floorId) === String(editing.floor_id)
+      ? Number(editing.total_slots) * (Number(editingOldType?.slot_area_m2) || 0)
+      : 0;
+  const areaFree =
+    floorCapacity && floorCapacity.areaFreeM2 != null
+      ? Number(floorCapacity.areaFreeM2) + editingFootprint
       : null;
+  const areaFreeDisplay = areaFree != null ? Math.round(areaFree * 10) / 10 : null;
+  const freeSlotHint = areaFree != null && slotArea > 0 ? Math.floor(areaFree / slotArea) : null;
 
   // Khu mặc định của tầng single: khóa Tầng + Loại xe, chỉ cho sửa slot & vé tháng.
   // Đổi loại xe phải làm ở trang Tầng (BE quản loại xe theo tầng).
@@ -266,7 +279,7 @@ export default function ZonesPage() {
             error={fieldErrors.totalSlots}
             hint={
               freeSlotHint != null
-                ? `Diện tích tầng còn trống ~${floorCapacity.areaFreeM2} m² → tối đa ${freeSlotHint} slot loại này`
+                ? `Diện tích tầng còn trống ~${areaFreeDisplay} m² → tối đa ${freeSlotHint} slot loại này`
                 : undefined
             }
           >
