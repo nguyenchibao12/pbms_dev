@@ -533,6 +533,10 @@ export const checkinWithPass = async (pass, { gateId = null } = {}) => {
   return session;
 };
 
+// Chính sách hoàn tiền hiện hành (đọc từ settings) — cho FE hiện đúng số ở modal hủy vé, thay vì
+// hardcode mốc cũ. Qua service để controller không phải import util thẳng (giữ controller→service).
+export const getRefundPolicy = () => getPassRefundPolicy();
+
 /**
  * P3-8 — % hoàn tiền theo chính sách (đã chốt với nhóm):
  * - Chưa tới ngày hiệu lực (hủy trước start_date): 100%
