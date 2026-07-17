@@ -52,11 +52,18 @@ const MAX_SLOT_LOCK_ATTEMPTS = 5;
 
 const reservationIncludes = [
   { association: 'slot', include: [{ association: 'zone', include: [{ association: 'floor' }] }] },
+  // floor/zone top-level TRÙNG với slot.zone.floor nhưng CỐ Ý giữ cả hai: trang user đọc
+  // r.floor/r.zone, trang staff đọc slot.zone.floor — bỏ bên nào cũng vỡ FE.
   { association: 'floor' },
   { association: 'zone' },
   { association: 'vehicleType' },
   { association: 'user', attributes: ['user_id', 'full_name', 'username', 'email'] },
-  { association: 'payments' },
+  // KHÔNG trả gateway_response/gateway_transaction_id: đó là JSON PayOS nội bộ (số tài khoản
+  // nhận tiền của merchant, checkoutUrl cũ…) — user không cần và không nên thấy.
+  {
+    association: 'payments',
+    attributes: ['payment_id', 'order_code', 'amount', 'status', 'method', 'paid_at', 'created_at'],
+  },
 ];
 
 export const getBookingFee = () => getBookingFeeFromSettings();
@@ -660,9 +667,6 @@ export const cancelUserReservation = async (userId, reservationId) => {
   return result;
 };
 
-/** @deprecated alias */
-export const cancelPendingReservation = cancelUserReservation;
-
 /**
  * Lấy lại link thanh toán phí giữ chỗ cho đơn pending (khách tắt tab PayOS giữa chừng).
  * Đối xứng với repayMonthlyPass: link cũ còn PENDING trên PayOS → trả lại (không đẻ giao dịch
@@ -699,12 +703,13 @@ export const repayReservation = async (userId, reservationId) => {
     }
 
     // Link cũ còn sống → trả lại chính nó, không đẻ giao dịch thừa.
+    // (Không trả field `payment` riêng — reservation.payments đã chứa đúng row đó, trả thêm
+    // là lặp dữ liệu; FE chỉ dùng checkoutUrl/reused/alreadyPaid.)
     if (info?.status === 'PENDING') {
       const stored = JSON.parse(oldPayment.gateway_response || '{}');
       if (stored.checkoutUrl) {
         return {
           reservation: await getReservation(reservation.reservation_id),
-          payment: oldPayment,
           checkoutUrl: stored.checkoutUrl,
           reused: true,
         };
@@ -717,7 +722,6 @@ export const repayReservation = async (userId, reservationId) => {
       await confirmReservationAfterPayment(oldPayment);
       return {
         reservation: await getReservation(reservation.reservation_id),
-        payment: await Payment.findByPk(oldPayment.payment_id),
         checkoutUrl: null,
         alreadyPaid: true,
         reused: false,
@@ -757,7 +761,7 @@ export const repayReservation = async (userId, reservationId) => {
       returnUrl: `${process.env.CLIENT_URL}/reservations`,
       cancelUrl: `${process.env.CLIENT_URL}/reservations`,
     });
-    const payment = await Payment.create({
+    await Payment.create({
       reservation_id: reservation.reservation_id,
       order_code: orderCode,
       amount,
@@ -768,7 +772,6 @@ export const repayReservation = async (userId, reservationId) => {
     });
     return {
       reservation: await getReservation(reservation.reservation_id),
-      payment,
       checkoutUrl: payosResult.checkoutUrl,
       reused: false,
     };
