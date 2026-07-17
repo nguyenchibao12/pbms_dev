@@ -89,8 +89,11 @@ export const assertZoneFitsFloorArea = async (
 };
 
 /**
- * Đi từ DƯỚI LÊN, diện tích sàn KHÔNG ĐƯỢC TĂNG (hầm ≥ trệt ≥ tầng trên) — chặn tòa nhà "phình giữa".
- * Chỉ so tầng LIỀN KỀ: mọi đường ghi tầng đều gọi hàm này nên dãy luôn đúng luật (quy nạp).
+ * Luật: CÀNG XA MẶT ĐẤT DIỆN TÍCH CÀNG KHÔNG ĐƯỢC LỚN HƠN — chặn tòa nhà "phình". Tầng nổi (level ≥ 0)
+ * và hầm (level < 0) là HAI chuỗi RIÊNG, không ràng buộc chéo: hầm nhỏ hơn tháp (hầm một phần) là kiểu
+ * xây có thật — phần trệt không nằm trên hầm thì nằm trên nền móng. Nổi: lên cao không rộng ra
+ * (F1≥F2≥F3). Hầm: đào sâu không rộng ra (B1≥B2≥B3). Chỉ so tầng liền kề (quy nạp, vì mọi đường ghi
+ * tầng đều gọi hàm này).
  */
 export const assertFloorAreaMonotonic = async (
   { floorLevel, areaM2, excludeFloorId } = {},
@@ -99,38 +102,49 @@ export const assertFloorAreaMonotonic = async (
   if (areaM2 == null) return;                          // tầng NULL = không giới hạn → không có số để so
   const area = Number(areaM2);
   const level = Number(floorLevel);
+  const isBasement = level < 0;                        // hầm và nổi/trệt là 2 chuỗi tách nhau tại mặt đất
   // Đang SỬA tầng này → loại nó ra, không thì nó tự so với chính mình (bản cũ).
   const notSelf = excludeFloorId ? { floor_id: { [Op.ne]: Number(excludeFloorId) } } : {};
   // Op.not = IS NOT NULL. Dùng nhầm Op.ne thì SQL ra `x != NULL` (không bao giờ đúng) → guard tê liệt.
   const hasArea = { area_m2: { [Op.not]: null } };
+  // Giữ trong CÙNG chuỗi: hầm chỉ so hầm (<0), nổi/trệt chỉ so nổi/trệt (≥0).
+  const sameSide = isBasement ? { [Op.lt]: 0 } : { [Op.gte]: 0 };
 
-  const below = await Floor.findOne({                  // tầng liền kề phía DƯỚI (có đặt diện tích)
-    where: { ...notSelf, ...hasArea, floor_level: { [Op.lt]: level } },
-    order: [['floor_level', 'DESC']],                  // DESC ⇒ lấy tầng cao nhất trong các tầng thấp hơn
+  // Hàng xóm GẦN mặt đất hơn: nổi = level nhỏ hơn (tầng dưới), hầm = level lớn hơn (hầm nông hơn).
+  const inner = await Floor.findOne({
+    where: {
+      ...notSelf, ...hasArea,
+      [Op.and]: [{ floor_level: sameSide }, { floor_level: isBasement ? { [Op.gt]: level } : { [Op.lt]: level } }],
+    },
+    order: [['floor_level', isBasement ? 'ASC' : 'DESC']],   // lấy tầng SÁT mình nhất về phía mặt đất
     transaction,
   });
-  if (below && area > Number(below.area_m2) + 1e-6) {  // mình RỘNG hơn tầng dưới ⇒ phình ra ⇒ chặn
+  if (inner && area > Number(inner.area_m2) + 1e-6) {  // mình rộng hơn tầng gần mặt đất hơn ⇒ phình ⇒ chặn
     throw new AppError(
-      `Tầng ở cao độ ${level} (${area.toFixed(1)} m²) rộng hơn tầng dưới ` +
-        `"${below.label || below.floor_code}" (${Number(below.area_m2).toFixed(1)} m²). ` +
-        `Diện tích sàn không được tăng khi lên cao.`,
+      `Tầng ở cao độ ${level} (${area.toFixed(1)} m²) rộng hơn ` +
+        `${isBasement ? 'hầm nông hơn' : 'tầng dưới'} "${inner.label || inner.floor_code}" ` +
+        `(${Number(inner.area_m2).toFixed(1)} m²). ` +
+        `${isBasement ? 'Hầm đào sâu không được rộng hơn hầm nông.' : 'Diện tích sàn không được tăng khi lên cao.'}`,
       409,
       'CONFLICT',
     );
   }
 
-  // Phải kiểm CẢ phía trên vì tầng mới có thể CHÈN VÀO GIỮA: chèn tầng hẹp xuống dưới tầng rộng
-  // cũng là phình lên trên, chỉ kiểm phía dưới sẽ lọt.
-  const above = await Floor.findOne({                  // tầng liền kề phía TRÊN
-    where: { ...notSelf, ...hasArea, floor_level: { [Op.gt]: level } },
-    order: [['floor_level', 'ASC']],                   // ASC ⇒ lấy tầng thấp nhất trong các tầng cao hơn
+  // Phải kiểm CẢ hàng xóm XA mặt đất hơn vì tầng mới có thể CHÈN VÀO GIỮA (chèn tầng rộng vào giữa sẽ lọt).
+  const outer = await Floor.findOne({
+    where: {
+      ...notSelf, ...hasArea,
+      [Op.and]: [{ floor_level: sameSide }, { floor_level: isBasement ? { [Op.lt]: level } : { [Op.gt]: level } }],
+    },
+    order: [['floor_level', isBasement ? 'DESC' : 'ASC']],   // lấy tầng SÁT mình nhất về phía xa mặt đất
     transaction,
   });
-  if (above && Number(above.area_m2) > area + 1e-6) {  // tầng trên rộng hơn MÌNH ⇒ cũng phình ⇒ chặn
+  if (outer && Number(outer.area_m2) > area + 1e-6) {  // tầng xa mặt đất hơn rộng hơn mình ⇒ cũng phình ⇒ chặn
     throw new AppError(
-      `Tầng ở cao độ ${level} (${area.toFixed(1)} m²) hẹp hơn tầng trên ` +
-        `"${above.label || above.floor_code}" (${Number(above.area_m2).toFixed(1)} m²). ` +
-        `Diện tích sàn không được tăng khi lên cao.`,
+      `Tầng ở cao độ ${level} (${area.toFixed(1)} m²) hẹp hơn ` +
+        `${isBasement ? 'hầm sâu hơn' : 'tầng trên'} "${outer.label || outer.floor_code}" ` +
+        `(${Number(outer.area_m2).toFixed(1)} m²). ` +
+        `${isBasement ? 'Hầm đào sâu không được rộng hơn hầm nông.' : 'Diện tích sàn không được tăng khi lên cao.'}`,
       409,
       'CONFLICT',
     );

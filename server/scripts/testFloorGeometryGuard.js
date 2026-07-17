@@ -32,7 +32,7 @@ const mk = (suffix) => { const c = `G${uniq}${suffix}`; codes.push(c); return c;
 let vtId = null;
 
 const run = async () => {
-  // Trần diện tích của test = tầng CAO NHẤT đang có diện tích (seed: F3 = 120 m²).
+  // Trần cho chuỗi NỔI của test = tầng nổi cao nhất đang có diện tích (seed: F3 = 800 m²).
   const top = await Floor.findOne({
     where: { area_m2: { [Op.not]: null } },
     order: [['floor_level', 'DESC']],
@@ -137,6 +137,40 @@ const run = async () => {
     floorCode: mk('J'), floorLevel: 97, label: 'Geo legacy', layoutMode: 'zoned',
   }));
   check('tầng không đặt diện tích vẫn tạo được', r12.ok === true, JSON.stringify(r12));
+
+  // ── CHUỖI HẦM (level < 0): tách riêng khỏi tháp, đào sâu không rộng ra ──────────────────────────
+  // Dùng dải cao độ âm sâu (-90..-92) để không đụng B1 seed. Số nhỏ (≤ B1 seed) để hàng xóm gần
+  // mặt đất nhất của chúng (B1) không chặn nhầm.
+  console.log('\n=== HẦM một phần: cao độ -90 = 250 m² dù tháp nổi rộng 800+ → OK (2 chuỗi riêng) ===');
+  const b0 = await grab(() => createFloor({
+    floorCode: mk('K'), floorLevel: -90, label: 'Geo B90', layoutMode: 'zoned', areaM2: 250,
+  }));
+  check('hầm nhỏ hơn tháp → cho phép (không ràng buộc chéo)', b0.ok === true, JSON.stringify(b0));
+
+  console.log('=== Hầm SÂU hơn (-91) RỘNG hơn hầm nông (300 > 250) → 409 ===');
+  const b1 = await grab(() => createFloor({
+    floorCode: mk('L'), floorLevel: -91, label: 'Geo B91', layoutMode: 'zoned', areaM2: 300,
+  }));
+  check('hầm sâu rộng hơn hầm nông → 409', b1.ok === false && b1.status === 409, JSON.stringify(b1));
+  check('không tạo hầm vi phạm', (await Floor.findOne({ where: { floor_level: -91 } })) === null);
+
+  console.log('=== Hầm SÂU hơn (-91) HẸP hơn hầm nông (200 < 250) → OK ===');
+  const b2 = await grab(() => createFloor({
+    floorCode: mk('M'), floorLevel: -91, label: 'Geo B91', layoutMode: 'zoned', areaM2: 200,
+  }));
+  check('hầm sâu hẹp hơn hầm nông → cho phép', b2.ok === true, JSON.stringify(b2));
+
+  console.log('=== CHÈN GIỮA hầm: -92 (sâu nhất) rộng hơn -91 (150<200? không, 260>200) → 409 ===');
+  const b3 = await grab(() => createFloor({
+    floorCode: mk('N'), floorLevel: -92, label: 'Geo B92', layoutMode: 'zoned', areaM2: 260,
+  }));
+  check('hầm sâu nhất rộng hơn hầm trên → 409', b3.ok === false && b3.status === 409, JSON.stringify(b3));
+
+  console.log('=== SỬA hầm -90 xuống 150 (hẹp hơn hầm sâu -91 = 200) → 409 (giữ luật trong chuỗi hầm) ===');
+  const b90 = await Floor.findOne({ where: { floor_level: -90 } });
+  const b4 = await grab(() => updateFloor(b90.floor_id, { areaM2: 150 }));
+  check('sửa hầm nông hẹp hơn hầm sâu → 409', b4.ok === false && b4.status === 409, JSON.stringify(b4));
+  check('giữ nguyên 250 (không lưu)', Number((await Floor.findByPk(b90.floor_id)).area_m2) === 250);
 };
 
 try {

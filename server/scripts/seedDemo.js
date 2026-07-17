@@ -9,8 +9,8 @@
  *
  * Tạo: 6 user (admin/manager/staff/user/user2/chuaverify, mật khẩu đều 123456), 3 loại xe (CAR/BIKE/CAR7),
  * 4 tầng — B1 (hầm), F1, F2 phân khu (zoned: 1 khu ô tô + 1 khu xe máy, 8 chỗ/khu) và F3 riêng
- * xe máy (single). Diện tích sàn theo luật "không tăng khi lên cao" (assertFloorAreaMonotonic):
- * B1 1200 ≥ F1 1000 = F2 1000 ≥ F3 800 m² — hầm rộng nhất, tháp thu nhỏ dần, như tòa nhà thật.
+ * xe máy (single). Diện tích sàn theo luật hình khối (assertFloorAreaMonotonic — hầm & tháp là 2
+ * chuỗi riêng): tháp F1 1000 = F2 1000 ≥ F3 800; hầm B1 400 (hầm một phần, nhỏ hơn tháp — có thật).
  * Mã khu tự sinh <TẦNG>-<LOẠI XE>-<NN> (F1-CAR-01), mã chỗ tự sinh <MÃ KHU>-<NN>
  * (F1-CAR-01-01). Kèm cổng tòa nhà (IN/OUT) + cổng mỗi tầng (IN/OUT), bảng giá theo loại xe,
  * 1 đặt chỗ đã xác nhận sẵn (fallback demo reservation không cần đặt + thanh toán trực tiếp),
@@ -48,10 +48,10 @@ import { normalizePlateVN } from '../src/utils/plateVN.js';
 dotenv.config();
 
 const SLOTS_PER_ZONE = 8;
-// Diện tích sàn (m²). Đi từ dưới lên phải KHÔNG TĂNG — xem assertFloorAreaMonotonic:
-// hầm đào rộng hơn tháp, các tầng tháp bằng nhau rồi thu nhỏ dần. Tầng bãi xe thực tế
-// ~1.000–5.000 m²/tầng; các khu seed chỉ dùng ~214 m² nên còn nhiều chỗ trống để demo thêm khu.
-const FLOOR_AREA = { B1: 1200, F1: 1000, F2: 1000, F3: 800 };
+// Diện tích sàn (m²) — xem assertFloorAreaMonotonic: hầm và tháp là 2 chuỗi riêng, mỗi chuỗi càng
+// xa mặt đất càng không rộng ra. B1 (hầm gửi xe một phần) nhỏ hơn tháp là chuyện thật; tháp thu
+// nhỏ dần F1=F2 ≥ F3. B1 = 400 vẫn ≥ 214.4 m² mà 2 khu seed cần.
+const FLOOR_AREA = { B1: 400, F1: 1000, F2: 1000, F3: 800 };
 const BOOKING_FEE = 20000; // khớp default booking_fee trong utils/settings.js
 const hash = (pw) => bcrypt.hash(pw, 10);
 
@@ -185,7 +185,7 @@ const run = async () => {
     return { floor, carZone, bikeZone };
   };
 
-  // Hầm B1 — rộng nhất tòa nhà (đào hầm rộng hơn tháp là hợp lệ: luật chỉ cấm TĂNG khi lên cao).
+  // Hầm B1 — hầm gửi xe một phần, nhỏ hơn tháp (hầm & tháp là 2 chuỗi riêng, không ràng buộc chéo).
   await createZonedFloor({ code: 'B1', level: -1, label: 'Hầm B1', areaM2: FLOOR_AREA.B1 });
 
   // floors[0] = F1 — phần demo bên dưới (đặt chỗ, phiên đang đỗ) bám vào tầng này.
