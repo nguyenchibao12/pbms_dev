@@ -119,7 +119,9 @@ export const countPassCapacityUsage = async (
     where: {
       floor_id: floorId,
       vehicle_type_id: vehicleTypeId,
+      // pending CŨNG tính (đang giữ suất chờ trả tiền); quá TTL 15' job tự hủy nên không kẹt suất.
       status: { [Op.in]: ['pending', 'active'] },
+      // 2 dòng này = phép OVERLAP khoảng ngày: vé tháng 8 không ăn suất tháng 7 ⇒ gia hạn sớm được.
       start_date: { [Op.lte]: rangeTo },
       end_date: { [Op.gte]: rangeFrom },
     },
@@ -172,10 +174,12 @@ export const purchaseMonthlyPass = async (userId, data) => {
   const { pass, capacity, used } = await sequelize.transaction(async (transaction) => {
     const cap = await getPassCapacity(data.floorId, data.vehicleTypeId, {
       transaction,
+      // Khóa ngay ở bước ĐẾM chứ không phải bước ghi: khóa lúc ghi thì cả 2 request đã đếm xong và
+      // đều tin "còn suất". Khóa từ lúc đọc thì request 2 phải chờ commit rồi đếm lại → thấy hết suất.
       lock: transaction.LOCK.UPDATE,
     });
-    if (cap <= 0) {
-      throw new AppError(
+    if (cap <= 0) {                                   // 0 = khu CHƯA MỞ BÁN (không phải "hết suất")
+      throw new AppError(                             //   → mã lỗi riêng để FE báo đúng câu
         'Tầng/loại xe này chưa mở bán vé tháng — vui lòng chọn tầng hoặc loại xe khác',
         409,
         'PASS_NOT_AVAILABLE',
@@ -282,10 +286,14 @@ export const purchaseMonthlyPass = async (userId, data) => {
  * Link cũ còn PENDING trên PayOS → trả lại (không tạo giao dịch thừa); không thì
  * đánh dấu payment cũ failed rồi sinh orderCode + link + Payment pending mới.
  */
+/**
+ * "Trả tiếp" — chống THU TIỀN 2 LẦN. Không tin DB mình mà HỎI PayOS trạng thái thật:
+ * PENDING → trả lại link cũ · PAID → kích hoạt luôn · không chắc → hủy thật, hủy không xong thì 502.
+ */
 export const repayMonthlyPass = async (userId, passId) => {
   const pass = await MonthlyPass.findByPk(passId);
   if (!pass) throw new AppError('Monthly pass not found', 404, 'NOT_FOUND');
-  if (pass.user_id !== userId) throw new AppError('Not allowed', 403, 'FORBIDDEN');
+  if (pass.user_id !== userId) throw new AppError('Not allowed', 403, 'FORBIDDEN');   // vé người khác
   if (pass.status !== 'pending') {
     throw new AppError(`Vé không ở trạng thái chờ thanh toán (hiện tại: ${pass.status})`, 409, 'CONFLICT');
   }
@@ -298,9 +306,10 @@ export const repayMonthlyPass = async (userId, passId) => {
   if (oldPayment) {
     let info = null;
     try {
-      info = await getPayOSPaymentInfo(oldPayment.order_code);
+      info = await getPayOSPaymentInfo(oldPayment.order_code);   // hỏi PAYOS, không tin DB mình
     } catch {
-      info = null; // không tra được (mạng/PayOS lỗi) — xử lý thận trọng bên dưới
+      // Nuốt lỗi là cố ý: null rơi xuống nhánh "không chắc" bên dưới, ở đó mới fail-closed.
+      info = null;
     }
 
     // Link cũ còn sống → trả lại chính nó, không đẻ giao dịch thừa.
@@ -343,10 +352,11 @@ export const repayMonthlyPass = async (userId, passId) => {
         }
       }
     }
-    await oldPayment.update({ status: 'failed' });
+    await oldPayment.update({ status: 'failed' });   // chỉ đánh failed SAU khi chắc link cũ đã chết
   }
 
   // Giữ đúng giá lúc mua (snapshot trên payment cũ); vé chưa từng có payment → giá hiện hành.
+  // Manager có thể vừa đổi giá trong Settings — khách bấm mua 500k thì trả tiếp cũng phải 500k.
   const amount = oldPayment ? Number(oldPayment.amount) : getMonthlyPassPrice();
   try {
     const orderCode = generateOrderCode();

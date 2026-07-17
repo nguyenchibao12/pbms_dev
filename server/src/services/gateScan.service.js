@@ -241,31 +241,16 @@ const buildingExit = async (ref, gate) => {
  * Trả { action: OPEN | PAYMENT_REQUIRED, stage, ... }.
  */
 /**
- * BỘ ĐIỀU PHỐI của máy trạng thái cổng — mọi lần quét QR ở kiosk đều vào đây.
- *
- * Chỉ có 2 câu hỏi, ra đúng 4 nhánh (đó là toàn bộ "thông minh" của hàm này):
- *              │ cổng VÀO (in)   │ cổng RA (out)
- *   ───────────┼─────────────────┼────────────────
- *   cấp TÒA    │ buildingEntry   │ buildingExit   ← kích hoạt THU TIỀN
- *   cấp TẦNG   │ floorEntry      │ floorExit      ← ghi mốc `left_floor_at` (mốc tính phí)
- *
- * `gate.floor_id == null` = cổng cấp TÒA NHÀ (không phải "chưa gán tầng"). Chính vì mỗi phạm vi
- * chỉ được 1 IN + 1 OUT (`assertSingleDirectionGate`) nên từ gateId suy ngược ra vị trí xe mới
- * chắc chắn có một đáp án.
- *
- * Vòng đời phiên đi theo đúng thứ tự cổng quét:
- *   checked_in → in_building → on_floor → left_floor → exited
- * Quét sai thứ tự (vd ra cổng tầng khi chưa vào tầng) bị `stateGuards` chặn — đó là chống gian lận:
- * không cho nhảy cóc trạng thái để né phí.
+ * Điều phối máy trạng thái cổng — 2 câu hỏi (tòa/tầng × vào/ra) ra 4 nhánh dưới.
+ * Phiên đi đúng thứ tự checked_in → in_building → on_floor → left_floor → exited; nhảy cóc né phí bị chặn.
  */
 export const scanGate = async ({ qrToken, gateId }) => {
   const gate = await Gate.findByPk(gateId);
   if (!gate || !gate.is_active) {
     throw new AppError('Cổng không tồn tại hoặc đang bảo trì', 404, 'NOT_FOUND');
   }
-  const isBuilding = gate.floor_id == null;
-  // resolveQr: 1 mã QR có thể là phiên / đơn đặt chỗ / vé tháng — chuẩn hóa về 1 "ref" chung để
-  // 4 nhánh dưới không phải mỗi nhánh tự phân loại lại.
+  const isBuilding = gate.floor_id == null;            // NULL = cổng cấp TÒA (không phải "chưa gán tầng")
+  // QR có thể là phiên / đơn đặt chỗ / vé tháng → chuẩn hóa về 1 "ref" để 4 nhánh khỏi tự phân loại.
   const ref = await resolveQr(qrToken);
 
   if (gate.direction === 'in') {

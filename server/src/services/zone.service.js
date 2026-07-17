@@ -53,11 +53,10 @@ export const createZone = async (data) => {
   const zoneCode = await buildZoneCode(floor, vehicleType);
 
   const totalSlots = data.totalSlots ?? 0;
-  // monthly_pass_capacity = 0 CÓ NGHĨA: khu này KHÔNG mở bán vé tháng (không phải "chưa cấu hình").
-  // Trước đây code tự suy mặc định = total_slots/4 nên Manager KHÔNG có cách nào tắt bán ở một khu
-  // — đã bỏ hẳn fallback đó. Muốn bán thì phải set > 0. Xem `passCapacity.js`.
+  // 0 = KHÔNG mở bán vé tháng (không phải "chưa cấu hình"). Đã bỏ fallback slots/4 vì nó khiến
+  // Manager không có cách nào tắt bán ở một khu. Muốn bán phải set > 0.
   const monthlyPassCapacity = data.monthlyPassCapacity ?? 0;
-  // Bán vé tháng nhiều hơn số chỗ vật lý = hứa chỗ không tồn tại ⇒ khách có vé vẫn không có chỗ đỗ.
+  // Bán nhiều hơn số chỗ vật lý = hứa chỗ không tồn tại → khách có vé vẫn không có chỗ đỗ.
   if (monthlyPassCapacity > totalSlots) {
     throw new AppError(
       'monthlyPassCapacity cannot exceed totalSlots',
