@@ -45,14 +45,11 @@ const sessionIncludeForFloor = async (floorId) => {
 };
 
 /**
- * Where-fragment lọc Payment theo TẦNG cho các query doanh thu. Một payment thuộc tầng nếu
- * nguồn của nó nằm trên tầng đó: phiên gửi (session → slot → zone.floor_id), đặt chỗ
- * (reservation.floor_id) hoặc vé tháng (monthly_pass.floor_id). Không truyền floorId → {}
- * (toàn bãi, giữ nguyên hành vi cũ). Có floorId nhưng không payment nào khớp → chặn cứng
- * payment_id = -1 (khớp rỗng, cùng cách slotWhereForFloor trả zone_id = -1).
+ * Lọc Payment theo TẦNG. Bảng payment KHÔNG có cột floor_id nên phải suy qua nguồn của nó:
+ * phiên (session→slot→zone.floor_id) · đặt chỗ (reservation.floor_id) · vé tháng (pass.floor_id).
  */
 const paymentWhereForFloor = async (floorId) => {
-  if (!floorId) return {};
+  if (!floorId) return {};                            // không lọc tầng → {} = toàn bãi
 
   const zones = await Zone.findAll({ where: { floor_id: floorId }, attributes: ['zone_id'] });
   const zoneIds = zones.map((z) => z.zone_id);
@@ -75,6 +72,8 @@ const paymentWhereForFloor = async (floorId) => {
   if (reservations.length) or.push({ reservation_id: { [Op.in]: reservations.map((r) => r.reservation_id) } });
   if (passes.length) or.push({ pass_id: { [Op.in]: passes.map((p) => p.pass_id) } });
 
+  // Tầng có lọc nhưng không nguồn nào khớp → phải chặn CỨNG bằng id không tồn tại. Trả {} ở đây
+  // là "không lọc gì" ⇒ báo cáo 1 tầng trống lại hiện doanh thu TOÀN BÃI (đúng bug đã vá).
   if (or.length === 0) return { payment_id: -1 };
   return { [Op.or]: or };
 };

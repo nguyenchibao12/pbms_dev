@@ -544,16 +544,18 @@ export const checkinWithPass = async (pass, { gateId = null } = {}) => {
 export const computePassRefundPercent = (pass, now = new Date()) => {
   const policy = getPassRefundPolicy();
   const DAY = 24 * 3600 * 1000;
+  // Phải nối "T00:00:00": new Date("2026-07-17") bị parse là UTC → lệch 7 tiếng ở giờ VN, hủy sát
+  // nửa đêm sẽ tính nhầm sang ngày khác và trả sai % hoàn.
   const start = new Date(`${String(pass.start_date).slice(0, 10)}T00:00:00`);
   const end = new Date(`${String(pass.end_date).slice(0, 10)}T00:00:00`);
-  const today = new Date(now); today.setHours(0, 0, 0, 0);
+  const today = new Date(now); today.setHours(0, 0, 0, 0);   // cắt giờ: chính sách tính theo NGÀY
 
   const dayIndex = Math.floor((today - start) / DAY) + 1; // ngày hiệu lực thứ mấy (start = ngày 1)
-  if (dayIndex <= 0) return 100;
+  if (dayIndex <= 0) return 100;                       // hủy TRƯỚC ngày hiệu lực → chưa dùng gì → 100%
   if (dayIndex <= policy.trialDays) return policy.trialPercent;
   const totalDays = Math.floor((end - start) / DAY) + 1;
   if (dayIndex <= Math.floor(totalDays / 2)) return policy.halfTermPercent;
-  return 0;
+  return 0;                                            // quá nửa hạn: đã dùng phần lớn vé → không hoàn
 };
 
 /**
