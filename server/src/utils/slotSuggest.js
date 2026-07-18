@@ -1,5 +1,5 @@
 import { Op } from 'sequelize';
-import { ParkingSlot } from '../models/index.js';
+import { ParkingSlot, Reservation } from '../models/index.js';
 import { AppError } from './helpers.js';
 import {
   findSlotsAvailableForWindow,
@@ -146,41 +146,53 @@ export const releaseSlotIfOccupied = async (slotId, transaction) => {
 };
 
 /**
- * Giữ chỗ: available → reserved. `lock: true` (SELECT..FOR UPDATE) là bắt buộc — không khóa thì 2
- * request cùng đọc thấy 'available' rồi cùng giữ ⇒ 2 khách một chỗ. Khóa buộc request 2 xếp hàng.
+ * KHÓA TRỄ (JIT — luật chủ module 18/07): cờ `reserved` KHÔNG bật lúc tạo đơn nữa mà chỉ
+ * bật trước giờ vào SLOT_LOCK_LEAD_MS (≈ 1 ca). Trước mốc đó slot phục vụ bình thường
+ * (walk-in + đơn khác khung). "Bận cả khung" do so-khung ở slotWindow quyết, không do cờ.
+ * TODO: đưa lead vào Settings Nhóm C (cùng đợt walkin_block/void — xem handoff LeTuanAnh).
  */
-export const lockSlotReserved = async (slotId, transaction) => {
+export const SLOT_LOCK_LEAD_MS = 6 * 60 * 60 * 1000;
+
+/**
+ * Đồng bộ cờ khóa của MỘT slot theo mô hình JIT: bật `reserved` nếu còn đơn sống
+ * (pending/confirmed) có [start - lead, end] phủ hiện tại, ngược lại trả `available`.
+ * CHỈ đụng slot đang available|reserved — occupied/maintenance/locked thuộc vòng đời khác
+ * (checked_in đã có session giữ slot ở occupied). Idempotent: mọi đường hủy/no-show/tạo đơn
+ * và job nền cùng gọi hàm này thay vì tự bật/tắt cờ — hết cảnh nhả nhầm cờ của đơn khác.
+ */
+export const syncSlotLockFlag = async (slotId, transaction) => {
   const slot = await ParkingSlot.findByPk(slotId, { transaction, lock: true });
-  if (!slot) throw new AppError('Parking slot not found', 404, 'NOT_FOUND');
-  if (slot.status !== 'available') {
-    throw new AppError(
-      `Chỗ đỗ không khả dụng (hiện tại: ${slot.status})`,
-      409,
-      'CONFLICT',
-    );
+  if (!slot || !['available', 'reserved'].includes(slot.status)) return slot;
+
+  const now = Date.now();
+  const needLock = await Reservation.count({
+    where: {
+      slot_id: slotId,
+      status: { [Op.in]: ['pending', 'confirmed'] },
+      start_time: { [Op.lte]: new Date(now + SLOT_LOCK_LEAD_MS) },
+      end_time: { [Op.gt]: new Date(now) },
+    },
+    transaction,
+  });
+
+  const want = needLock > 0 ? 'reserved' : 'available';
+  if (slot.status !== want) {
+    assertSlotTransition(slot.status, want);
+    await slot.update({ status: want }, { transaction });
   }
-  // Đã check status ở trên rồi vẫn gọi assertSlotTransition: guard chung DV-08 là nguồn sự thật
-  // duy nhất về chuyển trạng thái, mọi đường đổi status đều phải qua nó (xem stateGuards.js).
-  assertSlotTransition(slot.status, 'reserved');
-  await slot.update({ status: 'reserved' }, { transaction });
   return slot;
 };
 
-export const releaseReservedSlot = async (slotId, transaction) => {
+/**
+ * Chiếm slot khi CHECK-IN ĐƠN ĐẶT: hợp lệ từ cả 'reserved' (job đã kích khóa) lẫn
+ * 'available' (check-in sớm hơn lead / job chưa kịp tick). 'occupied'/'maintenance'/'locked'
+ * → ném SLOT_BUSY để caller chạy luật 3 (cứu nạn nhân: gán slot khác).
+ */
+export const occupySlotForReservation = async (slotId, transaction) => {
   const slot = await ParkingSlot.findByPk(slotId, { transaction, lock: true });
   if (!slot) throw new AppError('Parking slot not found', 404, 'NOT_FOUND');
-  if (slot.status !== 'reserved') {
-    throw new AppError(`Cannot release reserved slot (current: ${slot.status})`, 409, 'CONFLICT');
-  }
-  assertSlotTransition(slot.status, 'available');
-  await slot.update({ status: 'available' }, { transaction });
-};
-
-export const occupyReservedSlot = async (slotId, transaction) => {
-  const slot = await ParkingSlot.findByPk(slotId, { transaction, lock: true });
-  if (!slot) throw new AppError('Parking slot not found', 404, 'NOT_FOUND');
-  if (slot.status !== 'reserved') {
-    throw new AppError(`Slot must be reserved to check in (current: ${slot.status})`, 409, 'CONFLICT');
+  if (!['reserved', 'available'].includes(slot.status)) {
+    throw new AppError(`Chỗ đã gán đang bận (hiện tại: ${slot.status})`, 409, 'SLOT_BUSY');
   }
   assertSlotTransition(slot.status, 'occupied');
   await slot.update({ status: 'occupied' }, { transaction });
