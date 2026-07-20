@@ -184,7 +184,10 @@ export const hasActiveSessionForPlate = async (plateNumber) => {
   return Boolean(session);
 };
 
-const CHECKIN_EARLY_GRACE_MS = 15 * 60 * 1000;
+// Ân hạn VÀO SỚM đã BỎ (=0): đơn chỉ nhận check-in từ ĐÚNG start_time (khớp lúc job khóa-đầu-ca).
+// Khách đến sớm hơn vẫn bị WALKIN_BLOCK_BEFORE_RESERVATION_MS chặn walk-in (hướng sang tab "Đặt chỗ vào").
+// (SRS BR-31 để 15' — đây là LỆCH SRS có chủ đích, cần cập nhật tài liệu.)
+const CHECKIN_EARLY_GRACE_MS = 0;
 // Đơn confirmed bắt đầu trong vòng ngưỡng này → coi khách là "đến sớm cho đơn", chặn walk-in.
 const WALKIN_BLOCK_BEFORE_RESERVATION_MS = 60 * 60 * 1000;
 
@@ -305,6 +308,9 @@ export const checkin = async (staffUserId, data) => {
     floorId: data.floorId,
     vehicleTypeId: data.vehicleTypeId,
     zoneId: data.zoneId,
+    // Người CÓ VÉ THÁNG vào qua quầy: miễn lớp giữ-chỗ-cho-đơn-đặt (cam kết vé đi trước);
+    // walk-in thường vẫn phải chừa chỗ cho đơn sắp tới.
+    skipReservationHoldback: Boolean(activePass),
   });
 
   const qrToken = generateQrToken();
@@ -357,8 +363,10 @@ export const cashCheckout = async (staffUserId, data) => {
   return settleCashCheckout(staffUserId, data);
 };
 
-// Ân hạn lấy xe sau khi hết khung giờ đã đặt (đối xứng với ân hạn check-in sớm 15').
-const RESERVATION_OVERSTAY_GRACE_MS = 15 * 60 * 1000;
+// Ân hạn lấy xe sau khi hết khung giờ đã đặt. Chủ module chốt BỎ (=0): quá end_time là tính phụ thu
+// ngay từ phút đầu (đối xứng với việc bỏ ân hạn check-in sớm). No-show (job) cũng đã bỏ ân hạn qua
+// booking_no_show_grace_minutes=0 — 2 núm giờ khai riêng nhưng cùng chốt = 0.
+const RESERVATION_OVERSTAY_GRACE_MS = 0;
 
 /**
  * Lố giờ của ĐẶT CHỖ — khác walk-in: ngưỡng là `end_time` của ĐƠN, không phải max_parking_hours.

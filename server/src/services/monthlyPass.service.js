@@ -492,6 +492,8 @@ export const checkinWithPass = async (pass, { gateId = null } = {}) => {
   const { slot, meta } = await suggestSlot({
     floorId: pass.floor_id,
     vehicleTypeId: pass.vehicle_type_id,
+    // Vé tháng có cam kết sức chứa riêng — lớp giữ-chỗ-cho-đơn-đặt không được chặn người có vé.
+    skipReservationHoldback: true,
   });
 
   const qrToken = generateQrToken();

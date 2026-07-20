@@ -7,6 +7,7 @@ import {
   NO_SLOT_FOR_WINDOW_MESSAGE,
 } from './slotWindow.js';
 import { filterWalkInCandidateSlots } from './passCapacity.js';
+import { filterWalkInCandidatesForUpcomingReservations } from './reservationCapacity.js';
 import { assertSlotTransition } from './stateGuards.js';
 import { pickBestSlot } from './slotScoring.js';
 
@@ -32,6 +33,9 @@ export const suggestSlot = async ({
   endTime,
   topN = 0,
   userPrefs = null,
+  // true = bỏ qua lớp giữ-chỗ-cho-đơn-đặt (holdback): dùng cho check-in VÉ THÁNG —
+  // vé tháng có cam kết sức chứa riêng, để holdback chặn là khóa oan người có vé.
+  skipReservationHoldback = false,
 }) => {
   const started = Date.now();
 
@@ -82,6 +86,21 @@ export const suggestSlot = async ({
         409,
         'PASS_CAPACITY_RESERVED',
       );
+    }
+    // Mô hình suất (migration 008): đơn đặt không ghim slot nên walk-in phải CHỪA CHỖ cho
+    // các đơn bắt đầu trong chân trời holdback — đây chính là lời cam kết "đặt là chắc có chỗ".
+    if (!skipReservationHoldback) {
+      slots = await filterWalkInCandidatesForUpcomingReservations(slots, {
+        floorId,
+        vehicleTypeId,
+      });
+      if (slots.length === 0) {
+        throw new AppError(
+          'Không còn chỗ walk-in — đang giữ chỗ cho các đơn đặt sắp tới',
+          409,
+          'WALKIN_HELD_FOR_RESERVATIONS',
+        );
+      }
     }
   }
 
@@ -146,43 +165,48 @@ export const releaseSlotIfOccupied = async (slotId, transaction) => {
 };
 
 /**
- * Giữ chỗ: available → reserved. `lock: true` (SELECT..FOR UPDATE) là bắt buộc — không khóa thì 2
- * request cùng đọc thấy 'available' rồi cùng giữ ⇒ 2 khách một chỗ. Khóa buộc request 2 xếp hàng.
+ * Chiếm slot khi CHECK-IN ĐƠN ĐẶT. Hợp lệ từ 'available' (đơn chưa được khóa-đầu-ca) và
+ * 'reserved' (slot ĐÃ GIỮ SẴN cho chính đơn này bởi job khóa-đầu-ca — bậc 1 chiếm thẳng nó).
+ * Slot bận ('occupied'/'maintenance'/'locked') → ném SLOT_BUSY để caller thử ứng viên kế.
  */
-export const lockSlotReserved = async (slotId, transaction) => {
+export const occupySlotForReservation = async (slotId, transaction) => {
+  const slot = await ParkingSlot.findByPk(slotId, { transaction, lock: true });
+  if (!slot) throw new AppError('Parking slot not found', 404, 'NOT_FOUND');
+  if (!['reserved', 'available'].includes(slot.status)) {
+    throw new AppError(`Chỗ đã gán đang bận (hiện tại: ${slot.status})`, 409, 'SLOT_BUSY');
+  }
+  assertSlotTransition(slot.status, 'occupied');
+  await slot.update({ status: 'occupied' }, { transaction });
+  return slot;
+};
+
+/**
+ * KHÓA-ĐẦU-CA (materialize): giữ 1 slot 'available' → 'reserved' cho đơn đã tới ca dù khách
+ * chưa đến. Chỉ nhận từ 'available' (chỗ trống thật); bận → SLOT_BUSY để job thử ứng viên kế.
+ * Cặp với releaseReservedSlot (nhả) và occupySlotForReservation (khách tới → occupied).
+ */
+export const reserveSlotForReservation = async (slotId, transaction) => {
   const slot = await ParkingSlot.findByPk(slotId, { transaction, lock: true });
   if (!slot) throw new AppError('Parking slot not found', 404, 'NOT_FOUND');
   if (slot.status !== 'available') {
-    throw new AppError(
-      `Chỗ đỗ không khả dụng (hiện tại: ${slot.status})`,
-      409,
-      'CONFLICT',
-    );
+    throw new AppError(`Chỗ định giữ đang bận (hiện tại: ${slot.status})`, 409, 'SLOT_BUSY');
   }
-  // Đã check status ở trên rồi vẫn gọi assertSlotTransition: guard chung DV-08 là nguồn sự thật
-  // duy nhất về chuyển trạng thái, mọi đường đổi status đều phải qua nó (xem stateGuards.js).
   assertSlotTransition(slot.status, 'reserved');
   await slot.update({ status: 'reserved' }, { transaction });
   return slot;
 };
 
-export const releaseReservedSlot = async (slotId, transaction) => {
-  const slot = await ParkingSlot.findByPk(slotId, { transaction, lock: true });
-  if (!slot) throw new AppError('Parking slot not found', 404, 'NOT_FOUND');
-  if (slot.status !== 'reserved') {
-    throw new AppError(`Cannot release reserved slot (current: ${slot.status})`, 409, 'CONFLICT');
-  }
+/**
+ * Nhả slot đang GIỮ ('reserved' → 'available') — idempotent: chỉ 'reserved' mới nhả, trạng thái
+ * khác thì bỏ qua (an toàn khi chạy trùng nhịp check-in đã chiếm → 'occupied'). Dùng ở 3 đường
+ * đóng đơn: hủy / no-show / hết ca không tới. transaction tùy chọn (đường hủy ngoài-txn cũng gọi được).
+ */
+export const releaseReservedSlot = async (slotId, transaction = null) => {
+  if (!slotId) return false;
+  const opts = transaction ? { transaction, lock: true } : {};
+  const slot = await ParkingSlot.findByPk(slotId, opts);
+  if (!slot || slot.status !== 'reserved') return false;
   assertSlotTransition(slot.status, 'available');
-  await slot.update({ status: 'available' }, { transaction });
-};
-
-export const occupyReservedSlot = async (slotId, transaction) => {
-  const slot = await ParkingSlot.findByPk(slotId, { transaction, lock: true });
-  if (!slot) throw new AppError('Parking slot not found', 404, 'NOT_FOUND');
-  if (slot.status !== 'reserved') {
-    throw new AppError(`Slot must be reserved to check in (current: ${slot.status})`, 409, 'CONFLICT');
-  }
-  assertSlotTransition(slot.status, 'occupied');
-  await slot.update({ status: 'occupied' }, { transaction });
-  return slot;
+  await slot.update({ status: 'available' }, transaction ? { transaction } : {});
+  return true;
 };

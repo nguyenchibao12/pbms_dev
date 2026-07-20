@@ -36,18 +36,17 @@ const findFreeSlot = async () => {
   return slot;
 };
 
-// Đơn confirmed giữ slot 'reserved' (đúng vòng đời thật).
+// Đơn confirmed — mô hình SUẤT (migration 008): KHÔNG ghim slot, chỉ giữ zone ưu tiên.
+// findFreeSlot chỉ để LẤY zone info (floor/vt) cho test đọc, không pin/không đổi status.
 const makeConfirmed = async ({ plate, startInMs }) => {
   const slot = await findFreeSlot();
-  await slot.update({ status: 'reserved' });
-  cleanup.slots.push(slot.slot_id);
   const start = new Date(Date.now() + startInMs);
   const r = await Reservation.create({
     user_id: USER_ID,
     vehicle_type_id: slot.zone.vehicle_type_id,
     floor_id: slot.zone.floor_id,
     zone_id: slot.zone_id,
-    slot_id: slot.slot_id,
+    slot_id: null,
     plate_number: normalizePlateVN(plate), // luồng thật luôn chuẩn hóa biển trước khi lưu
     start_time: start,
     end_time: new Date(start.getTime() + 4 * H),
@@ -89,7 +88,8 @@ const makeWalkinSession = async ({ plate, ageMs }) => {
 
 const run = async () => {
   console.log('=== TEST 1 (B2): đơn confirmed NGÀY MAI → hôm nay walk-in phải ĐƯỢC ===');
-  const t1 = await makeConfirmed({ plate: '94A-00001', startInMs: 24 * H });
+  // 25h > holdback lead (6h) → đơn xa không giữ chỗ walk-in hôm nay. (Để >24h cho bền nếu lead đổi.)
+  const t1 = await makeConfirmed({ plate: '94A-00001', startInMs: 25 * H });
   const w1 = await grab(() =>
     checkin(STAFF_ID, {
       plateNumber: '94A-00001',

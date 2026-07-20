@@ -1,8 +1,7 @@
 // Acceptance test — R1: trần cửa sổ đặt chỗ (Settings Nhóm C, booking_max_*).
-// Trước fix: đặt được năm 2030, đơn dài 100 giờ → slot bị giam `reserved` NGAY từ lúc
-// tạo đơn, đơn confirmed giam thẳng tới end_time. Sau fix: đặt trước tối đa
-// booking_max_advance_days (3) ngày, mỗi đơn tối đa booking_max_duration_hours (24) giờ.
-// 6 kịch bản / 8 check (kịch bản 1–2 mỗi cái 2 check: status + message).
+// Mô hình sức chứa: đặt KHÔNG ghim slot nên đặt xa không giam chỗ — trần chỉ còn là chính sách
+// nghiệp vụ. Mặc định hiện tại: booking_max_advance_days (365) ngày, booking_max_duration_hours
+// (24) giờ. 6 kịch bản / 8 check (kịch bản 1–2 mỗi cái 2 check: status + message).
 // Test qua getWindowAvailability là chính (cùng chạy assertBookableWindow, chỉ đọc —
 // không tạo đơn, không đụng PayOS). Chạy: node scripts/testReservationLimits.js
 import 'dotenv/config';
@@ -49,13 +48,13 @@ const run = async () => {
     endTime: new Date(start.getTime() + hours * H).toISOString(),
   });
 
-  console.log('=== KỊCH BẢN 1: đặt trước 4 ngày (quá trần 3) → 400 ===');
+  console.log('=== KỊCH BẢN 1: đặt trước 366 ngày (quá trần 365) → 400 ===');
   const r1 = await grab(() => getWindowAvailability({
     ...base,
-    ...windowFrom(new Date(Date.now() + 4 * D), 4),
+    ...windowFrom(new Date(Date.now() + 366 * D), 4),
   }));
   check('bị chặn 400', r1.ok === false && r1.status === 400, JSON.stringify(r1));
-  check('message nêu trần 3 ngày', String(r1.message).includes('3 ngày'), r1.message);
+  check('message nêu trần 365 ngày', String(r1.message).includes('365 ngày'), r1.message);
 
   console.log('=== KỊCH BẢN 2: đơn dài 25 giờ (quá trần 24) → 400 ===');
   const r2 = await grab(() => getWindowAvailability({
@@ -94,7 +93,7 @@ const run = async () => {
   const r6 = await grab(() => createReservation(USER_ID, {
     ...base,
     plateNumber: '94A-80001',
-    ...windowFrom(new Date(Date.now() + 4 * D), 4),
+    ...windowFrom(new Date(Date.now() + 366 * D), 4),
   }));
   check(
     '400 VALIDATION_ERROR trước khi đụng slot/PayOS (không phải 502 gateway)',

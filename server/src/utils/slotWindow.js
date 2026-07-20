@@ -71,6 +71,10 @@ export const findSlotsAvailableForWindow = async ({
     ...activeSessions.map((s) => s.slot_id),
   ]);
 
+  // KHÓA-ĐẦU-CA: 'reserved' = slot ĐÃ GIỮ cho một đơn tới ca (job materialize) → KHÔNG phải
+  // ứng viên cho ai khác. Slot đó cũng đã bị chặn qua blockedSlotIds (đơn confirmed trỏ vào nó),
+  // nhưng lọc thẳng theo status cho chắc: chỉ 'available' mới là ứng viên. Đơn tự chiếm slot
+  // ĐÃ-GIỮ-của-mình bằng occupySlotForReservation (nhận cả 'reserved'), không qua hàm này.
   const slots = allSlots
     .filter((s) => !blockedSlotIds.has(s.slot_id))
     .filter((s) => s.status === 'available');
