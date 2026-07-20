@@ -1,11 +1,9 @@
 import { Op } from 'sequelize';
-import sequelize from '../config/db.js';
-import { Reservation, ParkingSlot } from '../models/index.js';
+import { Reservation } from '../models/index.js';
 import {
   cancelReservationOnPaymentFail,
   markReservationNoShow,
 } from '../services/reservation.service.js';
-import { syncSlotLockFlag, SLOT_LOCK_LEAD_MS } from '../utils/slotSuggest.js';
 import {
   getBookingPendingTtlMinutes,
   getBookingNoShowGraceMinutes,
@@ -75,53 +73,18 @@ const markNoShows = async () => {
 };
 
 /**
- * Ca C — KHÓA TRỄ (JIT, luật 1): cờ 'reserved' chỉ bật trước giờ vào SLOT_LOCK_LEAD_MS.
- * Quét 2 chiều mỗi tick: (1) đơn sắp bắt đầu trong lead mà slot chưa khóa → kích;
- * (2) slot đang 'reserved' → sync lại, hết đơn trong cửa sổ thì tự nhả (dọn cả cờ mồ côi
- * do seed/chỉnh tay). syncSlotLockFlag idempotent nên chạy trùng nhịp với webhook/hủy an toàn.
+ * Một lượt quét: gọi được trực tiếp trong test. Mô hình SUẤT (migration 008): Ca A/B đổi
+ * status là TỰ TRẢ SUẤT sức chứa — không còn cờ slot nào phải kích/nhả (Ca C cũ đã gỡ).
  */
-const syncSlotLocks = async () => {
-  const now = Date.now();
-  const [upcoming, flagged] = await Promise.all([
-    Reservation.findAll({
-      where: {
-        status: { [Op.in]: ['pending', 'confirmed'] },
-        start_time: { [Op.lte]: new Date(now + SLOT_LOCK_LEAD_MS) },
-        end_time: { [Op.gt]: new Date(now) },
-      },
-      attributes: ['slot_id'],
-    }),
-    ParkingSlot.findAll({ where: { status: 'reserved' }, attributes: ['slot_id'] }),
-  ]);
-
-  const slotIds = new Set([
-    ...upcoming.map((r) => r.slot_id).filter(Boolean),
-    ...flagged.map((s) => s.slot_id),
-  ]);
-
-  let synced = 0;
-  for (const slotId of slotIds) {
-    try {
-      await sequelize.transaction((transaction) => syncSlotLockFlag(slotId, transaction));
-      synced += 1;
-    } catch (err) {
-      console.error(`[reservation-maintenance] sync slot lock #${slotId} failed:`, err.message);
-    }
-  }
-  return synced;
-};
-
-/** Một lượt quét: gọi được trực tiếp trong test. */
 export const runReservationMaintenance = async () => {
   const expired = await expireStalePending();
   const noShow = await markNoShows();
-  const synced = await syncSlotLocks();
   if (expired || noShow) {
     console.log(
       `[reservation-maintenance] expired ${expired} pending, marked ${noShow} no-show`,
     );
   }
-  return { expired, noShow, synced };
+  return { expired, noShow };
 };
 
 /** Bật job: quét 1 lần ngay khi boot rồi lặp mỗi phút. */

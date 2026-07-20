@@ -30,13 +30,16 @@ const Reservation = sequelize.define(
       type: DataTypes.INTEGER,
       allowNull: false,
     },
+    // Mô hình SỨC CHỨA (migration 008): đặt chỗ giữ MỘT SUẤT theo khung giờ, không ghim chỗ.
+    // zone_id = ƯU TIÊN khu (user chọn lúc đặt, có thể null); slot_id chỉ được điền lúc
+    // CHECK-IN khi hệ gán chỗ thật (kiểu vé tháng).
     zone_id: {
       type: DataTypes.INTEGER,
-      allowNull: false,
+      allowNull: true,
     },
     slot_id: {
       type: DataTypes.INTEGER,
-      allowNull: false,
+      allowNull: true,
     },
     plate_number: {
       type: DataTypes.STRING(20),

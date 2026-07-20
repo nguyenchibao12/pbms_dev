@@ -1,5 +1,5 @@
 import { Op } from 'sequelize';
-import { ParkingSlot, Reservation } from '../models/index.js';
+import { ParkingSlot } from '../models/index.js';
 import { AppError } from './helpers.js';
 import {
   findSlotsAvailableForWindow,
@@ -7,6 +7,7 @@ import {
   NO_SLOT_FOR_WINDOW_MESSAGE,
 } from './slotWindow.js';
 import { filterWalkInCandidateSlots } from './passCapacity.js';
+import { filterWalkInCandidatesForUpcomingReservations } from './reservationCapacity.js';
 import { assertSlotTransition } from './stateGuards.js';
 import { pickBestSlot } from './slotScoring.js';
 
@@ -32,6 +33,9 @@ export const suggestSlot = async ({
   endTime,
   topN = 0,
   userPrefs = null,
+  // true = bỏ qua lớp giữ-chỗ-cho-đơn-đặt (holdback): dùng cho check-in VÉ THÁNG —
+  // vé tháng có cam kết sức chứa riêng, để holdback chặn là khóa oan người có vé.
+  skipReservationHoldback = false,
 }) => {
   const started = Date.now();
 
@@ -82,6 +86,21 @@ export const suggestSlot = async ({
         409,
         'PASS_CAPACITY_RESERVED',
       );
+    }
+    // Mô hình suất (migration 008): đơn đặt không ghim slot nên walk-in phải CHỪA CHỖ cho
+    // các đơn bắt đầu trong chân trời holdback — đây chính là lời cam kết "đặt là chắc có chỗ".
+    if (!skipReservationHoldback) {
+      slots = await filterWalkInCandidatesForUpcomingReservations(slots, {
+        floorId,
+        vehicleTypeId,
+      });
+      if (slots.length === 0) {
+        throw new AppError(
+          'Không còn chỗ walk-in — đang giữ chỗ cho các đơn đặt sắp tới',
+          409,
+          'WALKIN_HELD_FOR_RESERVATIONS',
+        );
+      }
     }
   }
 
@@ -146,47 +165,10 @@ export const releaseSlotIfOccupied = async (slotId, transaction) => {
 };
 
 /**
- * KHÓA TRỄ (JIT — luật chủ module 18/07): cờ `reserved` KHÔNG bật lúc tạo đơn nữa mà chỉ
- * bật trước giờ vào SLOT_LOCK_LEAD_MS (≈ 1 ca). Trước mốc đó slot phục vụ bình thường
- * (walk-in + đơn khác khung). "Bận cả khung" do so-khung ở slotWindow quyết, không do cờ.
- * TODO: đưa lead vào Settings Nhóm C (cùng đợt walkin_block/void — xem handoff LeTuanAnh).
- */
-export const SLOT_LOCK_LEAD_MS = 6 * 60 * 60 * 1000;
-
-/**
- * Đồng bộ cờ khóa của MỘT slot theo mô hình JIT: bật `reserved` nếu còn đơn sống
- * (pending/confirmed) có [start - lead, end] phủ hiện tại, ngược lại trả `available`.
- * CHỈ đụng slot đang available|reserved — occupied/maintenance/locked thuộc vòng đời khác
- * (checked_in đã có session giữ slot ở occupied). Idempotent: mọi đường hủy/no-show/tạo đơn
- * và job nền cùng gọi hàm này thay vì tự bật/tắt cờ — hết cảnh nhả nhầm cờ của đơn khác.
- */
-export const syncSlotLockFlag = async (slotId, transaction) => {
-  const slot = await ParkingSlot.findByPk(slotId, { transaction, lock: true });
-  if (!slot || !['available', 'reserved'].includes(slot.status)) return slot;
-
-  const now = Date.now();
-  const needLock = await Reservation.count({
-    where: {
-      slot_id: slotId,
-      status: { [Op.in]: ['pending', 'confirmed'] },
-      start_time: { [Op.lte]: new Date(now + SLOT_LOCK_LEAD_MS) },
-      end_time: { [Op.gt]: new Date(now) },
-    },
-    transaction,
-  });
-
-  const want = needLock > 0 ? 'reserved' : 'available';
-  if (slot.status !== want) {
-    assertSlotTransition(slot.status, want);
-    await slot.update({ status: want }, { transaction });
-  }
-  return slot;
-};
-
-/**
- * Chiếm slot khi CHECK-IN ĐƠN ĐẶT: hợp lệ từ cả 'reserved' (job đã kích khóa) lẫn
- * 'available' (check-in sớm hơn lead / job chưa kịp tick). 'occupied'/'maintenance'/'locked'
- * → ném SLOT_BUSY để caller chạy luật 3 (cứu nạn nhân: gán slot khác).
+ * Chiếm slot khi CHECK-IN ĐƠN ĐẶT (mô hình suất — slot gán lúc check-in như vé tháng).
+ * Hợp lệ từ 'available' (bình thường) và cả 'reserved' (cờ DI SẢN trước migration 008 —
+ * hệ không bật cờ này nữa nhưng chịu đựng dữ liệu cũ chưa dọn hết). Slot bận
+ * ('occupied'/'maintenance'/'locked') → ném SLOT_BUSY để caller thử ứng viên kế.
  */
 export const occupySlotForReservation = async (slotId, transaction) => {
   const slot = await ParkingSlot.findByPk(slotId, { transaction, lock: true });

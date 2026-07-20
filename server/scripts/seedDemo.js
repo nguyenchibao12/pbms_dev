@@ -232,12 +232,9 @@ const run = async () => {
   console.log(`• Tầng 3 (single/xe máy) — sức chứa ${f3Zone.total_slots} slot (area ${F3_AREA} m²), tạo sẵn 10 chỗ`);
 
   // --- 1 đặt chỗ đã CONFIRMED sẵn (fallback demo, không cần đặt + trả tiền) -
+  // Mô hình SUẤT (migration 008): đặt chỗ không ghim slot — slot_id để null, chỉ giữ
+  // zone_id làm khu ƯU TIÊN; slot thật gán lúc check-in (giống vé tháng).
   const { floor: f1, carZone: f1Car } = floors[0];
-  const resSlot = await ParkingSlot.findOne({
-    where: { zone_id: f1Car.zone_id, status: 'available' },
-    order: [['slot_id', 'ASC']],
-  });
-  await resSlot.update({ status: 'reserved' });
 
   const now = new Date();
   const resPlate = normalizePlateVN('51F-67890');
@@ -247,7 +244,7 @@ const run = async () => {
     vehicle_type_id: car.vehicle_type_id,
     floor_id: f1.floor_id,
     zone_id: f1Car.zone_id,
-    slot_id: resSlot.slot_id,
+    slot_id: null,
     plate_number: resPlate,
     start_time: new Date(now.getTime() - 60 * 60 * 1000), // bắt đầu 1h trước → trong khung giờ
     end_time: new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000), // hạn rộng 7 ngày để check-in bất cứ lúc nào
@@ -320,7 +317,8 @@ const run = async () => {
     calculated_fee: null,
   });
 
-  // --- 1 SLOT — NHIỀU KHUNG GIỜ khác nhau (cùng 1 chỗ, các đơn confirmed KHÔNG trùng giờ) ---
+  // --- NHIỀU ĐƠN KHÁC KHUNG GIỜ trên cùng TẦNG (mô hình suất: không ghim chỗ, các đơn
+  // confirmed KHÔNG trùng giờ cùng chiếm 1 suất luân phiên — slot gán khi check-in) ---
   const atHour = (base, h) => { const d = new Date(base); d.setHours(h, 0, 0, 0); return d; };
   const d1 = new Date(now.getTime() + 24 * 60 * 60 * 1000); // ngày mai
   const d2 = new Date(now.getTime() + 48 * 60 * 60 * 1000); // ngày kia
@@ -329,11 +327,6 @@ const run = async () => {
     { plate: '51F-30002', start: atHour(d1, 18), end: atHour(d1, 22), shift: 'evening' },
     { plate: '51F-30003', start: atHour(d2, 6), end: atHour(d2, 12), shift: 'morning' },
   ];
-  const multiSlot = await ParkingSlot.findOne({
-    where: { zone_id: f1Car.zone_id, status: 'available' },
-    order: [['slot_id', 'ASC']],
-  });
-  await multiSlot.update({ status: 'reserved' });
   const multiReservations = [];
   for (const w of windows) {
     const r = await Reservation.create({
@@ -341,7 +334,7 @@ const run = async () => {
       vehicle_type_id: car.vehicle_type_id,
       floor_id: f1.floor_id,
       zone_id: f1Car.zone_id,
-      slot_id: multiSlot.slot_id,
+      slot_id: null,
       plate_number: normalizePlateVN(w.plate),
       start_time: w.start,
       end_time: w.end,
@@ -398,17 +391,18 @@ const run = async () => {
       qr_token: generateQrToken(),
       ...fields,
     });
-  const anySlotId = multiSlot.slot_id; // đơn đã đóng không giữ slot — chỉ cần FK hợp lệ
+  // Mô hình suất: đơn pending/cancelled/no_show KHÔNG giữ slot → slot_id null. Riêng
+  // SESSION của đơn completed (5) vẫn cần 1 slot thật (phiên luôn có chỗ vật lý) → lấy 1 id.
+  const someSlot = await ParkingSlot.findOne({
+    where: { zone_id: f1Car.zone_id }, order: [['slot_id', 'ASC']],
+  });
+  const anySlotId = someSlot.slot_id; // CHỈ dùng cho SESSION completed, KHÔNG cho reservation
   const HOUR = 60 * 60 * 1000;
   const DAY = 24 * HOUR;
 
   // --- (1) PENDING + payment pending (link PayOS đã chết) → test nút "Trả tiếp" ---
-  const pendSlot = await ParkingSlot.findOne({
-    where: { zone_id: f1Car.zone_id, status: 'available' }, order: [['slot_id', 'ASC']],
-  });
-  await pendSlot.update({ status: 'reserved' });
   const pendingResv = await makeReservation({
-    slot_id: pendSlot.slot_id,
+    slot_id: null,
     plate_number: normalizePlateVN('51F-40001'),
     start_time: new Date(now.getTime() + 6 * HOUR),
     end_time: new Date(now.getTime() + 10 * HOUR),
@@ -424,7 +418,7 @@ const run = async () => {
   // --- (2) CANCELLED trước cutoff → refund_request PENDING, user2 CÓ STK (admin hoàn được) ---
   const cancEarly = await makeReservation({
     user_id: users.user2.user_id,
-    slot_id: anySlotId,
+    slot_id: null,
     plate_number: normalizePlateVN('51F-40002'),
     start_time: new Date(now.getTime() + 2 * DAY),
     end_time: new Date(now.getTime() + 2 * DAY + 6 * HOUR),
@@ -441,7 +435,7 @@ const run = async () => {
 
   // --- (3) refund PENDING quá 7 ngày, user KHÔNG STK → job passMaintenance sẽ đánh expired ---
   const cancStale = await makeReservation({
-    slot_id: anySlotId,
+    slot_id: null,
     plate_number: normalizePlateVN('51F-40003'),
     start_time: new Date(now.getTime() - 6 * DAY),
     end_time: new Date(now.getTime() - 6 * DAY + 6 * HOUR),
@@ -459,7 +453,7 @@ const run = async () => {
   // --- (4) refund ĐÃ HOÀN (lịch sử trang hoàn tiền) ---
   const cancDone = await makeReservation({
     user_id: users.user2.user_id,
-    slot_id: anySlotId,
+    slot_id: null,
     plate_number: normalizePlateVN('51F-40004'),
     start_time: new Date(now.getTime() - 10 * DAY),
     end_time: new Date(now.getTime() - 10 * DAY + 6 * HOUR),
@@ -476,8 +470,9 @@ const run = async () => {
   });
 
   // --- (5) COMPLETED — QR đơn GIỮ NGUYÊN (OR-16), QR phiên đã thu hồi khi checkout ---
+  // Đơn để slot_id null (đã đóng); SESSION bên dưới mới cần slot thật (anySlotId).
   const doneResv = await makeReservation({
-    slot_id: anySlotId,
+    slot_id: null,
     plate_number: normalizePlateVN('51F-40005'),
     start_time: new Date(now.getTime() - 1 * DAY - 4 * HOUR),
     end_time: new Date(now.getTime() - 1 * DAY),
@@ -508,7 +503,7 @@ const run = async () => {
 
   // --- (6) NO_SHOW — QR đơn giữ nguyên, cổng phải chặn theo status ---
   const noshowResv = await makeReservation({
-    slot_id: anySlotId,
+    slot_id: null,
     plate_number: normalizePlateVN('51F-40006'),
     start_time: new Date(now.getTime() - 1 * DAY - 6 * HOUR),
     end_time: new Date(now.getTime() - 1 * DAY - 2 * HOUR),
@@ -598,13 +593,13 @@ const run = async () => {
   console.log('  user    / 123456');
   console.log('\nĐặt chỗ confirmed sẵn (demo luồng reservation, không cần thanh toán):');
   console.log(`  reservationId = ${reservation.reservation_id}`);
-  console.log(`  biển số       = ${resPlate}  (Tầng 1 · khu ô tô · chỗ ${resSlot.slot_code})`);
+  console.log(`  biển số       = ${resPlate}  (Tầng 1 · khu ô tô ưu tiên · chỗ sẽ gán khi check-in)`);
   console.log(`  qr_token      = ${resQr}`);
   console.log('\nKhách ĐẶT CHỖ đang đỗ (checked_in + phiên active) — test check-OUT:');
   console.log(`  sessionId     = ${inSession.session_id}`);
   console.log(`  biển số       = ${inPlate}  (Tầng 1 · khu ô tô · chỗ ${occSlot.slot_code} · đỗ ~2h ≈ 30.000đ)`);
   console.log(`  session qr    = ${inSessQr}`);
-  console.log(`\n1 SLOT — NHIỀU KHUNG GIỜ (cùng chỗ ${multiSlot.slot_code}, ${multiReservations.length} đơn confirmed KHÔNG trùng giờ):`);
+  console.log(`\nNHIỀU ĐƠN KHÁC KHUNG GIỜ (cùng tầng, ${multiReservations.length} đơn confirmed KHÔNG trùng giờ — chỗ gán khi check-in):`);
   for (const { r, w } of multiReservations) {
     console.log(`  resId=${r.reservation_id} | ${w.plate} | ${w.start.toLocaleString('vi-VN')} → ${w.end.toLocaleString('vi-VN')} (${w.shift})`);
   }

@@ -314,6 +314,9 @@ export const checkin = async (staffUserId, data) => {
     floorId: data.floorId,
     vehicleTypeId: data.vehicleTypeId,
     zoneId: data.zoneId,
+    // Người CÓ VÉ THÁNG vào qua quầy: miễn lớp giữ-chỗ-cho-đơn-đặt (cam kết vé đi trước);
+    // walk-in thường vẫn phải chừa chỗ cho đơn sắp tới.
+    skipReservationHoldback: Boolean(activePass),
   });
 
   const qrToken = generateQrToken();

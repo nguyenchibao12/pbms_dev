@@ -71,10 +71,10 @@ export const findSlotsAvailableForWindow = async ({
     ...activeSessions.map((s) => s.slot_id),
   ]);
 
-  // Luật 2 (JIT): cờ 'reserved' chỉ là khóa SÁT GIỜ, không có nghĩa bận cả mọi khung —
-  // "bận" thật do bộ so-khung phía trên quyết. Vì thế slot 'reserved' vẫn là ứng viên
-  // cho khung KHÔNG chồng lấn. Chỉ 'occupied' (xe đang đỗ, không hẹn giờ ra) bị loại
-  // khỏi ứng viên đặt trước — nếu xe đó lố sang khung đã đặt thì luật 3 (rescue) xử.
+  // Mô hình suất (migration 008): 'reserved' là cờ DI SẢN — hệ không bật nữa nhưng chịu
+  // đựng dữ liệu cũ chưa dọn, nên vẫn nhận làm ứng viên. Đơn đặt giờ slot_id NULL tới khi
+  // check-in → nhánh chặn-theo-reservation ở trên chỉ còn bắt đơn DI SẢN còn ghim chỗ;
+  // sức chứa thật của đặt-trước do reservationCapacity đếm, không do hàm này.
   const slots = allSlots
     .filter((s) => !blockedSlotIds.has(s.slot_id))
     .filter((s) => ['available', 'reserved'].includes(s.status));
