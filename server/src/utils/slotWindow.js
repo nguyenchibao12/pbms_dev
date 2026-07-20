@@ -71,13 +71,13 @@ export const findSlotsAvailableForWindow = async ({
     ...activeSessions.map((s) => s.slot_id),
   ]);
 
-  // Mô hình suất (migration 008): 'reserved' là cờ DI SẢN — hệ không bật nữa nhưng chịu
-  // đựng dữ liệu cũ chưa dọn, nên vẫn nhận làm ứng viên. Đơn đặt giờ slot_id NULL tới khi
-  // check-in → nhánh chặn-theo-reservation ở trên chỉ còn bắt đơn DI SẢN còn ghim chỗ;
-  // sức chứa thật của đặt-trước do reservationCapacity đếm, không do hàm này.
+  // KHÓA-ĐẦU-CA: 'reserved' = slot ĐÃ GIỮ cho một đơn tới ca (job materialize) → KHÔNG phải
+  // ứng viên cho ai khác. Slot đó cũng đã bị chặn qua blockedSlotIds (đơn confirmed trỏ vào nó),
+  // nhưng lọc thẳng theo status cho chắc: chỉ 'available' mới là ứng viên. Đơn tự chiếm slot
+  // ĐÃ-GIỮ-của-mình bằng occupySlotForReservation (nhận cả 'reserved'), không qua hàm này.
   const slots = allSlots
     .filter((s) => !blockedSlotIds.has(s.slot_id))
-    .filter((s) => ['available', 'reserved'].includes(s.status));
+    .filter((s) => s.status === 'available');
 
   return {
     slots,

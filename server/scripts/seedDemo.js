@@ -44,6 +44,7 @@ import { ensureRoles } from '../src/utils/ensureRoles.js';
 import { ROLES } from '../src/middleware/rbac.js';
 import { generateQrToken } from '../src/utils/qr.js';
 import { normalizePlateVN } from '../src/utils/plateVN.js';
+import { resolveShiftWindow } from '../src/utils/shifts.js';
 
 dotenv.config();
 
@@ -68,6 +69,32 @@ const paySuccess = (reservationId) =>
     paid_at: new Date(),
   });
 const pad2 = (n) => String(n).padStart(2, '0');
+const dateStrOf = (d) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+
+// Đơn đặt THẬT luôn khớp 1 CA cố định (server lưu reservation_type = mã ca) → FE hiện
+// "Ca X · giờ". Seed phải cùng khuôn: KHÔNG dùng cửa sổ tùy ý / 'standard' (sẽ hiện thô như
+// "16:38 20-07 → 17:38 27-07", không có nhãn ca). Hai helper dưới trả {shiftId, start, end}.
+
+// Ca CHỨA thời điểm `at` — dùng cho đơn "đang mở" (confirmed/checked_in): now nằm trong khung
+// nên check-in demo vẫn chạy, mà card vẫn hiện đúng ca.
+const shiftWindowContaining = (at) => {
+  const h = at.getHours();
+  const base = new Date(at);
+  let shiftId;
+  if (h >= 6 && h < 12) shiftId = 'morning';
+  else if (h >= 12 && h < 18) shiftId = 'afternoon';
+  else if (h >= 18 && h < 22) shiftId = 'evening';
+  else { shiftId = 'overnight'; if (h < 6) base.setDate(base.getDate() - 1); } // ca qua đêm mở từ 22:00 hôm trước
+  const win = resolveShiftWindow(dateStrOf(base), shiftId);
+  return { shiftId, start: win.start, end: win.end };
+};
+// Ca cố định của ngày cách hôm nay `dayOffset` ngày (âm = quá khứ) — cho đơn tương lai/lịch sử.
+const shiftWindowOn = (dayOffset, shiftId) => {
+  const d = new Date();
+  d.setDate(d.getDate() + dayOffset);
+  const win = resolveShiftWindow(dateStrOf(d), shiftId);
+  return { shiftId, start: win.start, end: win.end };
+};
 
 const run = async () => {
   await sequelize.authenticate();
@@ -237,6 +264,12 @@ const run = async () => {
   const { floor: f1, carZone: f1Car } = floors[0];
 
   const now = new Date();
+  // Đơn đặt = 1 CA cố định (như đơn thật) → card hiện "Ca X · giờ" gọn thay vì cửa sổ thô nhiều ngày.
+  // parkedShift = ca ĐANG diễn ra (cho xe đã vào, đang đỗ). bookShift nhìn trước 15' (đúng bằng
+  // CHECKIN_EARLY_GRACE_MS) để đơn chờ-check-in không rơi vào 4' cuối ca khi seed sát biên — luôn
+  // còn runway: now nằm trong [start − 15', end], staff demo check-in lúc nào cũng chạy.
+  const parkedShift = shiftWindowContaining(now);
+  const bookShift = shiftWindowContaining(new Date(now.getTime() + 15 * 60 * 1000));
   const resPlate = normalizePlateVN('51F-67890');
   const resQr = generateQrToken();
   const reservation = await Reservation.create({
@@ -246,10 +279,10 @@ const run = async () => {
     zone_id: f1Car.zone_id,
     slot_id: null,
     plate_number: resPlate,
-    start_time: new Date(now.getTime() - 60 * 60 * 1000), // bắt đầu 1h trước → trong khung giờ
-    end_time: new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000), // hạn rộng 7 ngày để check-in bất cứ lúc nào
+    start_time: bookShift.start,
+    end_time: bookShift.end,
     status: 'confirmed',
-    reservation_type: 'standard',
+    reservation_type: bookShift.shiftId,
     qr_token: resQr,
   });
   await paySuccess(reservation.reservation_id);
@@ -271,10 +304,10 @@ const run = async () => {
     zone_id: f1Car.zone_id,
     slot_id: occSlot.slot_id,
     plate_number: inPlate,
-    start_time: new Date(now.getTime() - 2 * 60 * 60 * 1000), // vào 2h trước
-    end_time: new Date(now.getTime() + 5 * 24 * 60 * 60 * 1000),
+    start_time: parkedShift.start, // ca đang diễn ra — xe đã vào, đang đỗ trong khung
+    end_time: parkedShift.end,
     status: 'checked_in',
-    reservation_type: 'standard',
+    reservation_type: parkedShift.shiftId,
     qr_token: inResQr,
   });
   await paySuccess(inReservation.reservation_id);
@@ -286,7 +319,8 @@ const run = async () => {
     slot_id: occSlot.slot_id,
     vehicle_type_id: car.vehicle_type_id,
     plate_number: inPlate,
-    time_in: new Date(now.getTime() - 2 * 60 * 60 * 1000), // đỗ ~2h → phí ô tô ≈ 30.000đ
+    // đỗ ~2h → phí ô tô ≈ 30.000đ; kẹp không sớm hơn đầu ca (khi seed ngay đầu ca)
+    time_in: new Date(Math.max(parkedShift.start.getTime(), now.getTime() - 2 * 60 * 60 * 1000)),
     gate_stage: 'on_floor', // xe đang đỗ trên tầng → sẵn sàng quét cổng tầng RA để test check-OUT
     qr_token: inSessQr,
     check_in_by: users.staff.user_id,
@@ -346,6 +380,29 @@ const run = async () => {
     multiReservations.push({ r, w });
   }
 
+  // --- 1 ĐƠN ĐÃ TỚI CA + ĐÃ KHÓA-ĐẦU-CA: slot flip 'reserved' chờ khách (dù khách chưa tới) ---
+  // Demo job Ca C (materialize) + map hiện màu "Đã đặt". Khách quét QR → slot 'reserved' → 'occupied'.
+  const lockPlate = normalizePlateVN('51F-67891');
+  const lockSlot = await ParkingSlot.findOne({
+    where: { zone_id: f1Car.zone_id, status: 'available' },
+    order: [['slot_id', 'ASC']],
+  });
+  await lockSlot.update({ status: 'reserved' });
+  const lockedReservation = await Reservation.create({
+    user_id: users.user.user_id,
+    vehicle_type_id: car.vehicle_type_id,
+    floor_id: f1.floor_id,
+    zone_id: f1Car.zone_id,
+    slot_id: lockSlot.slot_id, // ĐÃ materialize — slot vật lý đang giữ 'reserved'
+    plate_number: lockPlate,
+    start_time: parkedShift.start, // ca ĐANG diễn ra → job đã khóa chỗ
+    end_time: parkedShift.end,
+    status: 'confirmed',
+    reservation_type: parkedShift.shiftId,
+    qr_token: generateQrToken(),
+  });
+  await paySuccess(lockedReservation.reservation_id);
+
   // ================= SEED MỞ RỘNG — PHỦ ĐỦ CÁC LUỒNG CÒN LẠI =================
   // Mỗi luồng 1 biển số riêng (51F-4xxxx) để không giẫm chân các đơn demo phía trên
   // (tránh dính chặn "đã có đơn confirmed tương lai" khi test walk-in bằng biển khác).
@@ -401,12 +458,14 @@ const run = async () => {
   const DAY = 24 * HOUR;
 
   // --- (1) PENDING + payment pending (link PayOS đã chết) → test nút "Trả tiếp" ---
+  const pendShift = shiftWindowOn(1, 'afternoon'); // ca chiều ngày mai — đơn tương lai gọn
   const pendingResv = await makeReservation({
     slot_id: null,
     plate_number: normalizePlateVN('51F-40001'),
-    start_time: new Date(now.getTime() + 6 * HOUR),
-    end_time: new Date(now.getTime() + 10 * HOUR),
+    start_time: pendShift.start,
+    end_time: pendShift.end,
     status: 'pending',
+    reservation_type: pendShift.shiftId,
   });
   await makePayment({
     reservation_id: pendingResv.reservation_id,
@@ -603,6 +662,8 @@ const run = async () => {
   for (const { r, w } of multiReservations) {
     console.log(`  resId=${r.reservation_id} | ${w.plate} | ${w.start.toLocaleString('vi-VN')} → ${w.end.toLocaleString('vi-VN')} (${w.shift})`);
   }
+  console.log('\nĐƠN ĐÃ TỚI CA + ĐÃ KHÓA-ĐẦU-CA (slot reserved chờ khách — map hiện "Đã đặt"):');
+  console.log(`  resId=${lockedReservation.reservation_id} | 51F-67891 | chỗ ${lockSlot.slot_code} đang GIỮ (reserved) · khách quét QR → occupied`);
   console.log('\n--------- CÁC LUỒNG BỔ SUNG (đăng nhập user/user2 để xem) ---------');
   console.log('Tài khoản thêm:');
   console.log('  user2      / 123456  (CÓ STK ngân hàng → nhận hoàn tiền được)');

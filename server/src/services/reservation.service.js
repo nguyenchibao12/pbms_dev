@@ -5,6 +5,7 @@ import {
   Payment,
   ParkingSession,
   ParkingSlot,
+  Zone,
   Gate,
   Floor,
   VehicleType,
@@ -12,7 +13,12 @@ import {
 } from '../models/index.js';
 import { AppError } from '../utils/helpers.js';
 import { generateQrToken } from '../utils/qr.js';
-import { suggestSlot, occupySlotForReservation } from '../utils/slotSuggest.js';
+import {
+  suggestSlot,
+  occupySlotForReservation,
+  reserveSlotForReservation,
+  releaseReservedSlot,
+} from '../utils/slotSuggest.js';
 import {
   getReservationWindowCapacity,
 } from '../utils/reservationCapacity.js';
@@ -511,8 +517,12 @@ export const cancelReservationOnPaymentFail = async (reservationId, payload) => 
   if (!reservation) return null;
   if (!['pending', 'confirmed'].includes(reservation.status)) return reservation;
 
-  // Mô hình suất: đổi status là TỰ TRẢ SUẤT sức chứa — không còn slot/cờ nào phải nhả.
-  await reservation.update({ status: 'cancelled' });
+  // Mô hình suất: đổi status là tự trả suất. Nếu đơn ĐÃ khóa-đầu-ca (giữ slot 'reserved') thì
+  // nhả slot vật lý đó về 'available'.
+  if (reservation.slot_id) {
+    await sequelize.transaction((transaction) => releaseReservedSlot(reservation.slot_id, transaction));
+  }
+  await reservation.update({ status: 'cancelled', slot_id: null });
 
   if (payload) {
     const failedPayment = await Payment.findOne({
@@ -546,8 +556,9 @@ export const markReservationNoShow = async (reservationId) => {
 
     assertReservationTransition(locked.status, 'no_show');
     // OR-16: giữ nguyên qr_token — cổng chặn theo status (assertReservationQrUsable).
-    // Mô hình suất: đổi status là tự trả suất sức chứa, không có slot/cờ phải nhả.
-    await locked.update({ status: 'no_show' }, { transaction });
+    // Nhả slot 'reserved' nếu đơn đã khóa-đầu-ca (hết ca không tới → trả chỗ về bãi).
+    if (locked.slot_id) await releaseReservedSlot(locked.slot_id, transaction);
+    await locked.update({ status: 'no_show', slot_id: null }, { transaction });
   });
 
   return getReservation(reservationId);
@@ -601,9 +612,10 @@ export const cancelUserReservation = async (userId, reservationId) => {
     }
 
     // OR-16: giữ nguyên qr_token — cổng chặn theo status (assertReservationQrUsable).
-    // Mô hình suất: đổi status là tự trả suất; phiên của CHÍNH đơn này (nếu có) đã được
-    // voidActiveSession nhả slot vật lý ở trên.
-    await reservation.update({ status: 'cancelled' }, { transaction });
+    // Nhả slot 'reserved' nếu đơn đã khóa-đầu-ca; phiên của CHÍNH đơn này (nếu có) đã được
+    // voidActiveSession nhả slot 'occupied' ở trên.
+    if (reservation.slot_id) await releaseReservedSlot(reservation.slot_id, transaction);
+    await reservation.update({ status: 'cancelled', slot_id: null }, { transaction });
 
     const payment = await Payment.findOne({
       where: {
@@ -821,65 +833,233 @@ export const staffLookupReservationByQr = async (qrToken) => {
   return reservation;
 };
 
-/** Staff cho xe vào bãi: kiểm confirmed + đúng cổng/tầng/khung giờ → tạo session active. */
-/**
- * MÔ HÌNH SUẤT: gán slot thật LÚC CHECK-IN (như vé tháng). Ưu tiên khu user chọn lúc đặt
- * (reservation.zone_id, có thể null), hết khu mới lan ra cả tầng. Ứng viên lấy từ
- * suggestSlot windowed [now, end_time] (có chấm điểm — meta nuôi ai_log, UC-25); danh sách
- * đọc NGOÀI transaction — chốt thật bằng occupySlotForReservation (row-lock) BÊN TRONG txn,
- * thua race thì thử ứng viên kế. Holdback 6h chặn walk-in vét chỗ nên nhánh 409 hiếm khi tới.
- */
-const assignSlotForCheckin = async (reservation, transaction) => {
-  const windowArgs = {
-    floorId: reservation.floor_id,
-    vehicleTypeId: reservation.vehicle_type_id,
-    startTime: new Date(),
-    endTime: reservation.end_time,
-  };
-
-  let suggestion = null;
-  if (reservation.zone_id) {
+/** Gợi ý slot trong khung [now, end] trên MỘT tầng — ưu tiên khu, hết thì cả tầng. Trả null
+ *  nếu tầng hết chỗ (NO_SLOT_FOR_WINDOW/NOT_FOUND/CONFLICT), ném lỗi khác lên trên. */
+const trySuggestOnFloor = async ({ floorId, vehicleTypeId, zoneId, endTime }) => {
+  const windowArgs = { floorId, vehicleTypeId, startTime: new Date(), endTime };
+  if (zoneId) {
     try {
-      suggestion = await suggestSlot({ ...windowArgs, zoneId: reservation.zone_id });
+      return await suggestSlot({ ...windowArgs, zoneId });
     } catch (err) {
-      // Khu ưu tiên hết chỗ/không còn hợp lệ → thử toàn tầng, không phải lỗi chết.
-      if (!['NO_SLOT_FOR_WINDOW', 'NOT_FOUND'].includes(err.code)) throw err;
+      if (!['NO_SLOT_FOR_WINDOW', 'NOT_FOUND', 'CONFLICT'].includes(err.code)) throw err;
+      // khu ưu tiên hết → thử cả tầng bên dưới
     }
   }
-  if (!suggestion) {
-    try {
-      suggestion = await suggestSlot(windowArgs);
-    } catch (err) {
-      if (['NO_SLOT_FOR_WINDOW', 'NOT_FOUND', 'CONFLICT'].includes(err.code)) {
-        throw new AppError(
-          'Không còn chỗ trống trên tầng cho khung giờ đặt — nhờ nhân viên xử lý.',
-          409,
-          'NO_SLOT_RESCUE',
-        );
-      }
-      throw err;
-    }
+  try {
+    return await suggestSlot(windowArgs);
+  } catch (err) {
+    if (['NO_SLOT_FOR_WINDOW', 'NOT_FOUND', 'CONFLICT'].includes(err.code)) return null;
+    throw err;
   }
+};
 
-  const candidates = (suggestion.rankedSlots?.length
-    ? suggestion.rankedSlots
-    : [suggestion.slot]
-  ).slice(0, MAX_SLOT_LOCK_ATTEMPTS);
-
+/** Chốt 1 slot từ danh sách gợi ý (row-lock) — thua race (SLOT_BUSY) thì thử ứng viên kế. */
+const occupyFromSuggestion = async (suggestion, transaction) => {
+  const candidates = (suggestion.rankedSlots?.length ? suggestion.rankedSlots : [suggestion.slot])
+    .slice(0, MAX_SLOT_LOCK_ATTEMPTS);
   for (const candidate of candidates) {
     try {
       await occupySlotForReservation(candidate.slot_id, transaction);
-      return { slot: candidate, meta: suggestion.meta };
+      return candidate;
     } catch (err) {
-      if (err.code === 'SLOT_BUSY') continue; // vừa bị giật giữa suggest và lock → ứng viên kế
+      if (err.code === 'SLOT_BUSY') continue;
       throw err;
     }
   }
+  return null;
+};
+
+/** Các tầng KHÁC (cùng loại xe) để "walk the guest" khi tầng đặt hết — dùng cho bậc 3. */
+const findFallbackFloorIds = async (excludeFloorId, vehicleTypeId) => {
+  const zones = await Zone.findAll({
+    where: { vehicle_type_id: vehicleTypeId, floor_id: { [Op.ne]: excludeFloorId } },
+    attributes: ['floor_id'],
+  });
+  return [...new Set(zones.map((z) => z.floor_id))];
+};
+
+/** Staff cho xe vào bãi: kiểm confirmed + đúng cổng/tầng/khung giờ → tạo session active. */
+/**
+ * BẬC THANG GÁN CHỖ lúc check-in (guarantee = "có chỗ trong TÒA", tầng chỉ là ưu tiên):
+ *   B1: slot ĐÃ KHÓA SẴN đầu ca (reservation.slot_id, status 'reserved') → chiếm thẳng nó.
+ *   B2: tầng đặt còn trống → gán slot tốt nhất (ưu tiên khu → cả tầng).
+ *   B3: tầng đặt HẾT (do overstay) → "walk the guest" sang tầng khác cùng loại xe + cờ floorChanged.
+ *   B4: cả tòa hết → ném NO_SLOT_RESCUE (caller xử: hủy + hoàn phí + incident).
+ * Danh sách ứng viên đọc NGOÀI txn, chốt bằng occupySlotForReservation (row-lock) TRONG txn.
+ */
+const assignSlotForCheckin = async (reservation, transaction) => {
+  // B1: slot đã giữ sẵn cho chính đơn này (job khóa-đầu-ca).
+  if (reservation.slot_id) {
+    try {
+      const slot = await occupySlotForReservation(reservation.slot_id, transaction);
+      return {
+        slot,
+        meta: { algorithm: 'pre-locked', selectedSlotId: slot.slot_id, floorId: reservation.floor_id, vehicleTypeId: reservation.vehicle_type_id },
+        floorChanged: false,
+      };
+    } catch (err) {
+      if (err.code !== 'SLOT_BUSY') throw err; // slot đã mất (bị chiếm khác) → gán lại bên dưới
+    }
+  }
+
+  // B2: tầng đặt.
+  const onFloor = await trySuggestOnFloor({
+    floorId: reservation.floor_id,
+    vehicleTypeId: reservation.vehicle_type_id,
+    zoneId: reservation.zone_id,
+    endTime: reservation.end_time,
+  });
+  if (onFloor) {
+    const slot = await occupyFromSuggestion(onFloor, transaction);
+    if (slot) return { slot, meta: onFloor.meta, floorChanged: false };
+  }
+
+  // B3: tầng đặt hết → tầng khác cùng loại xe.
+  const fallbackFloorIds = await findFallbackFloorIds(reservation.floor_id, reservation.vehicle_type_id);
+  for (const fid of fallbackFloorIds) {
+    const other = await trySuggestOnFloor({
+      floorId: fid,
+      vehicleTypeId: reservation.vehicle_type_id,
+      zoneId: null,
+      endTime: reservation.end_time,
+    });
+    if (!other) continue;
+    const slot = await occupyFromSuggestion(other, transaction);
+    if (slot) {
+      return {
+        slot,
+        meta: other.meta,
+        floorChanged: true,
+        fromFloorId: reservation.floor_id,
+        toFloorId: fid,
+      };
+    }
+  }
+
+  // B4: cả tòa hết.
   throw new AppError(
-    'Không còn chỗ trống trên tầng cho khung giờ đặt — nhờ nhân viên xử lý.',
+    'Không còn chỗ trống trong toàn bãi cho khung giờ này — nhờ nhân viên xử lý.',
     409,
     'NO_SLOT_RESCUE',
   );
+};
+
+/**
+ * KHÓA-ĐẦU-CA (materialize): đơn confirmed đã tới ca (start<=now<end) mà chưa có slot → giữ 1
+ * slot 'reserved' trên tầng đặt (ưu tiên khu → cả tầng), kể cả khách chưa tới. Tầng hết chỗ →
+ * ghi incident (staff dọn sớm), để slot_id null cho check-in tự xử (bậc 3 chuyển tầng).
+ * Idempotent: đã có slot_id / khác 'confirmed' / ngoài ca → bỏ qua. Job nền gọi mỗi phút.
+ */
+export const materializeReservationSlot = async (reservationId) => {
+  const reservation = await Reservation.findByPk(reservationId);
+  if (!reservation || reservation.status !== 'confirmed' || reservation.slot_id) {
+    return { locked: false };
+  }
+  const now = Date.now();
+  if (
+    new Date(reservation.start_time).getTime() > now ||
+    new Date(reservation.end_time).getTime() <= now
+  ) {
+    return { locked: false };
+  }
+
+  const suggestion = await trySuggestOnFloor({
+    floorId: reservation.floor_id,
+    vehicleTypeId: reservation.vehicle_type_id,
+    zoneId: reservation.zone_id,
+    endTime: reservation.end_time,
+  });
+  if (!suggestion) {
+    await recordIncident({
+      type: 'slot_conflict',
+      status: 'open',
+      reservationId,
+      userId: reservation.user_id,
+      description:
+        `Đầu ca không còn chỗ trên tầng để giữ cho đơn ${reservation.plate_number} ` +
+        `(khung ${new Date(reservation.start_time).toLocaleString('vi-VN')}) — chờ check-in xử (có thể chuyển tầng).`,
+    });
+    return { locked: false };
+  }
+
+  const candidates = (suggestion.rankedSlots?.length ? suggestion.rankedSlots : [suggestion.slot])
+    .slice(0, MAX_SLOT_LOCK_ATTEMPTS);
+  let lockedSlot = null;
+  await sequelize.transaction(async (transaction) => {
+    const r = await Reservation.findByPk(reservationId, {
+      transaction,
+      lock: transaction.LOCK.UPDATE,
+    });
+    if (!r || r.status !== 'confirmed' || r.slot_id) return; // đổi trạng thái/đã materialize giữa chừng
+    for (const cand of candidates) {
+      try {
+        const slot = await reserveSlotForReservation(cand.slot_id, transaction);
+        await r.update({ slot_id: slot.slot_id, zone_id: slot.zone_id }, { transaction });
+        lockedSlot = slot;
+        return;
+      } catch (err) {
+        if (err.code === 'SLOT_BUSY') continue; // ứng viên vừa bị giật → thử kế
+        throw err;
+      }
+    }
+  });
+
+  return lockedSlot ? { locked: true, slotId: lockedSlot.slot_id } : { locked: false };
+};
+
+/**
+ * B4 — cả tòa hết chỗ khi đơn đặt tới check-in (bất khả kháng, thường do xe ở lì/overstay): hủy đơn
+ * + tự tạo yêu cầu hoàn 100% phí giữ chỗ (đấu vào luồng refund sẵn có — completeRefund của Admin
+ * mới đổi payment sang 'refunded', KHÔNG gọi PayOS thật ở đây) + ghi incident cho staff.
+ * Idempotent qua row-lock + guard status; nhả slot 'reserved' nếu đơn lỡ có giữ sẵn.
+ */
+const handleBuildingOverflow = async (reservation, staffUserId) => {
+  await sequelize.transaction(async (transaction) => {
+    const locked = await Reservation.findByPk(reservation.reservation_id, {
+      transaction,
+      lock: transaction.LOCK.UPDATE,
+    });
+    if (!locked || locked.status !== 'confirmed') return;
+    if (locked.slot_id) await releaseReservedSlot(locked.slot_id, transaction);
+    assertReservationTransition(locked.status, 'cancelled');
+    await locked.update({ status: 'cancelled', slot_id: null }, { transaction });
+
+    const payment = await Payment.findOne({
+      where: { reservation_id: locked.reservation_id, status: 'success' },
+      transaction,
+    });
+    if (payment) {
+      const existing = await RefundRequest.findOne({
+        where: { payment_id: payment.payment_id },
+        transaction,
+      });
+      if (!existing) {
+        await RefundRequest.create(
+          {
+            reservation_id: locked.reservation_id,
+            payment_id: payment.payment_id,
+            user_id: locked.user_id,
+            percent: 100,
+            amount: Number(payment.amount),
+            status: 'pending',
+            requested_at: new Date(),
+          },
+          { transaction },
+        );
+      }
+    }
+  });
+
+  await recordIncident({
+    type: 'slot_conflict',
+    status: 'open',
+    reservationId: reservation.reservation_id,
+    userId: reservation.user_id,
+    reportedBy: staffUserId,
+    description:
+      `HẾT CHỖ TOÀN BÃI khi check-in đơn ${reservation.plate_number} ` +
+      `(khung ${new Date(reservation.start_time).toLocaleString('vi-VN')}) — đã hủy đơn + tạo hoàn 100% phí giữ chỗ.`,
+  });
 };
 
 export const checkinReservation = async (staffUserId, data) => {
@@ -963,7 +1143,9 @@ export const checkinReservation = async (staffUserId, data) => {
   const timeIn = new Date();
 
   let assignInfo = null;
-  const session = await sequelize.transaction(async (transaction) => {
+  let session;
+  try {
+    session = await sequelize.transaction(async (transaction) => {
     if (activeSession) {
       const locked = await ParkingSession.findByPk(activeSession.session_id, {
         transaction,
@@ -1000,10 +1182,11 @@ export const checkinReservation = async (staffUserId, data) => {
     // khu user chọn lúc đặt. Đơn di sản còn slot_id cũ cũng đi chung đường (gán mới —
     // pin cũ không còn được enforce ở đâu).
     assignInfo = await assignSlotForCheckin(reservation, transaction);
-    await reservation.update(
-      { slot_id: assignInfo.slot.slot_id, zone_id: assignInfo.slot.zone_id },
-      { transaction },
-    );
+    const slotUpdate = { slot_id: assignInfo.slot.slot_id, zone_id: assignInfo.slot.zone_id };
+    // B3 "walk the guest": tầng đặt hết → chuyển floor_id sang tầng mới cho đơn/hiển thị nhất
+    // quán (session ghi slot tầng mới; lần quét cổng tầng sau khớp theo floor này, không báo sai tầng).
+    if (assignInfo.floorChanged) slotUpdate.floor_id = assignInfo.toFloorId;
+    await reservation.update(slotUpdate, { transaction });
 
     const created = await ParkingSession.create(
       {
@@ -1025,7 +1208,19 @@ export const checkinReservation = async (staffUserId, data) => {
     assertReservationTransition(reservation.status, 'checked_in');
     await reservation.update({ status: 'checked_in' }, { transaction });
     return created;
-  });
+    });
+  } catch (err) {
+    // B4: cả tòa hết chỗ → hủy đơn + tự hoàn 100% phí + incident, rồi báo 409 cho staff/kiosk.
+    if (err.code === 'NO_SLOT_RESCUE') {
+      await handleBuildingOverflow(reservation, staffUserId);
+      throw new AppError(
+        'Hết chỗ toàn bãi cho khung giờ này — đã hoàn 100% phí giữ chỗ, mời quý khách quay lại sau.',
+        409,
+        'BUILDING_FULL_REFUNDED',
+      );
+    }
+    throw err;
+  }
 
   // ai_log dời từ lúc ĐẶT sang lúc CHECK-IN (UC-25): giờ mới là lúc hệ thật sự chọn chỗ.
   if (assignInfo?.meta) {
@@ -1037,11 +1232,31 @@ export const checkinReservation = async (staffUserId, data) => {
     });
   }
 
+  // B3: đã "walk the guest" sang tầng khác — ghi vết cho staff + trả cờ để FE báo khách.
+  if (assignInfo?.floorChanged) {
+    await recordIncident({
+      type: 'slot_conflict',
+      status: 'open',
+      reservationId: reservation.reservation_id,
+      userId: reservation.user_id,
+      reportedBy: staffUserId,
+      slotId: assignInfo.slot.slot_id,
+      description:
+        `Tầng đặt (#${assignInfo.fromFloorId}) hết chỗ khi check-in đơn ${reservation.plate_number} ` +
+        `— đã chuyển sang tầng #${assignInfo.toFloorId}, chỗ ${assignInfo.slot.slot_code}.`,
+    });
+  }
+
   return {
     session: await getSession(session.session_id),
     reservation: await getReservation(reservation.reservation_id),
     // Giữ field cho FE cũ: gán-lúc-check-in là hành vi mặc định, không còn khái niệm "đổi chỗ".
     slotReassigned: false,
+    // B3: FE báo khách "chỗ của bạn chuyển sang tầng khác" khi floorReassigned = true.
+    floorReassigned: Boolean(assignInfo?.floorChanged),
+    reassignedTo: assignInfo?.floorChanged
+      ? { floorId: assignInfo.toFloorId, slotCode: assignInfo.slot.slot_code }
+      : null,
   };
 };
 

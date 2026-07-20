@@ -3,6 +3,7 @@ import { Reservation } from '../models/index.js';
 import {
   cancelReservationOnPaymentFail,
   markReservationNoShow,
+  materializeReservationSlot,
 } from '../services/reservation.service.js';
 import {
   getBookingPendingTtlMinutes,
@@ -73,18 +74,52 @@ const markNoShows = async () => {
 };
 
 /**
- * Một lượt quét: gọi được trực tiếp trong test. Mô hình SUẤT (migration 008): Ca A/B đổi
- * status là TỰ TRẢ SUẤT sức chứa — không còn cờ slot nào phải kích/nhả (Ca C cũ đã gỡ).
+ * Ca C — KHÓA-ĐẦU-CA (materialize): đơn confirmed đã tới ca (start<=now<end) mà chưa có slot →
+ * giữ 1 slot 'reserved' trên tầng đặt (dù khách chưa tới). materializeReservationSlot tự guard
+ * status + row-lock nên idempotent, chạy trùng nhịp check-in/hủy an toàn. Tầng hết chỗ → hàm tự
+ * ghi incident (staff dọn sớm), check-in sau vẫn có bậc chuyển-tầng.
+ */
+const lockSlotsForStartedShifts = async () => {
+  const now = new Date();
+  const due = await Reservation.findAll({
+    where: {
+      status: 'confirmed',
+      slot_id: null,
+      start_time: { [Op.lte]: now },
+      end_time: { [Op.gt]: now },
+    },
+    attributes: ['reservation_id'],
+  });
+
+  let locked = 0;
+  for (const row of due) {
+    try {
+      const res = await materializeReservationSlot(row.reservation_id);
+      if (res.locked) locked += 1;
+    } catch (err) {
+      console.error(
+        `[reservation-maintenance] lock slot #${row.reservation_id} failed:`,
+        err.message,
+      );
+    }
+  }
+  return locked;
+};
+
+/**
+ * Một lượt quét: gọi được trực tiếp trong test. Ca A/B đổi status là tự trả suất sức chứa;
+ * Ca C giữ 1 slot 'reserved' cho đơn vừa tới ca (materialize) — cặp với các đường nhả ở service.
  */
 export const runReservationMaintenance = async () => {
   const expired = await expireStalePending();
   const noShow = await markNoShows();
-  if (expired || noShow) {
+  const locked = await lockSlotsForStartedShifts();
+  if (expired || noShow || locked) {
     console.log(
-      `[reservation-maintenance] expired ${expired} pending, marked ${noShow} no-show`,
+      `[reservation-maintenance] expired ${expired} pending, marked ${noShow} no-show, locked ${locked} slot`,
     );
   }
-  return { expired, noShow };
+  return { expired, noShow, locked };
 };
 
 /** Bật job: quét 1 lần ngay khi boot rồi lặp mỗi phút. */

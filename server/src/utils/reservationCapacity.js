@@ -114,6 +114,10 @@ export const filterWalkInCandidatesForUpcomingReservations = async (
       floor_id: floorId,
       vehicle_type_id: vehicleTypeId,
       status: { [Op.in]: BOOKED_STATUSES },
+      // Đơn ĐÃ khóa-đầu-ca (slot_id != null) đã giữ 1 slot vật lý 'reserved' — slot đó không còn
+      // nằm trong freeOnFloor, nên KHÔNG đếm lại vào holdback (kẻo giữ chỗ 2 lần cho cùng đơn).
+      // Chỉ đơn CHƯA materialize mới cần walk-in chừa chỗ.
+      slot_id: null,
       start_time: { [Op.lte]: new Date(now + RESERVATION_HOLDBACK_LEAD_MS) },
       end_time: { [Op.gt]: new Date(now) },
     },
