@@ -265,11 +265,9 @@ const run = async () => {
 
   const now = new Date();
   // Đơn đặt = 1 CA cố định (như đơn thật) → card hiện "Ca X · giờ" gọn thay vì cửa sổ thô nhiều ngày.
-  // parkedShift = ca ĐANG diễn ra (cho xe đã vào, đang đỗ). bookShift nhìn trước 15' (đúng bằng
-  // CHECKIN_EARLY_GRACE_MS) để đơn chờ-check-in không rơi vào 4' cuối ca khi seed sát biên — luôn
-  // còn runway: now nằm trong [start − 15', end], staff demo check-in lúc nào cũng chạy.
+  // Ân hạn vào sớm đã bỏ (grace=0) → đơn chờ-check-in phải thuộc CA ĐANG diễn ra (start ≤ now) mới
+  // check-in được ngay. Dùng chung parkedShift cho cả đơn confirmed lẫn xe đang đỗ.
   const parkedShift = shiftWindowContaining(now);
-  const bookShift = shiftWindowContaining(new Date(now.getTime() + 15 * 60 * 1000));
   const resPlate = normalizePlateVN('51F-67890');
   const resQr = generateQrToken();
   const reservation = await Reservation.create({
@@ -279,10 +277,10 @@ const run = async () => {
     zone_id: f1Car.zone_id,
     slot_id: null,
     plate_number: resPlate,
-    start_time: bookShift.start,
-    end_time: bookShift.end,
+    start_time: parkedShift.start,
+    end_time: parkedShift.end,
     status: 'confirmed',
-    reservation_type: bookShift.shiftId,
+    reservation_type: parkedShift.shiftId,
     qr_token: resQr,
   });
   await paySuccess(reservation.reservation_id);

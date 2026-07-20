@@ -123,6 +123,12 @@ const run = async () => {
   check('confirmed ĐÃ có slot_id → locked=false (idempotent)', (await materializeReservationSlot(already.reservation_id)).locked === false);
   await ParkingSlot.update({ status: 'available' }, { where: { slot_id: freeSlot.slot_id } });
 
+  console.log('=== B2. EDGE: check-in TRƯỚC start_time → 409 (ân hạn vào sớm đã bỏ = 0) ===');
+  const early = await makeResv({ base, status: 'confirmed', startMs: 5 * 60 * 1000, endMs: 4 * H });
+  const earlyCi = await grab(() => checkinReservation(STAFF_ID, { reservationId: early.reservation_id }));
+  check('check-in sớm 5 phút bị chặn 409 (không còn du di 15\')', earlyCi.ok === false && earlyCi.status === 409, JSON.stringify(earlyCi));
+  check('đơn vẫn confirmed (không bị check-in sớm)', (await Reservation.findByPk(early.reservation_id)).status === 'confirmed');
+
   console.log('=== C. EDGE: holdback — đơn ĐÃ materialize không giữ chỗ walk-in; CHƯA materialize thì có ===');
   // Dọn mọi đơn edge đã tạo ở F2 để holdback về nền sạch, rồi dựng kịch bản kiểm soát freeOnFloor.
   await Reservation.update({ status: 'cancelled', slot_id: null }, { where: { reservation_id: { [Op.in]: created.reservations } } });

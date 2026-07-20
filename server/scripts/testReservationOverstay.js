@@ -1,5 +1,5 @@
 // Acceptance test — LỐ GIỜ ĐẶT CHỖ: xe ra sau end_time của đơn → thu phụ thu (như walk-in lố giờ),
-// ngưỡng là end_time của TỪNG ĐƠN chứ không phải max_parking_hours. Ân hạn 15 phút.
+// ngưỡng là end_time của TỪNG ĐƠN chứ không phải max_parking_hours. KHÔNG ân hạn (grace=0).
 // Gọi thẳng service, không PayOS. Tự dọn dữ liệu.
 // Chạy: node scripts/testReservationOverstay.js
 import 'dotenv/config';
@@ -74,11 +74,11 @@ const run = async () => {
   check('overstay = false', p1.overstay === false, JSON.stringify({ overstay: p1.overstay, reason: p1.overstayReason }));
   check('không cộng phụ thu', p1.overstayFee === 0);
 
-  console.log('=== TEST 2: Quá end_time nhưng TRONG ân hạn 15 phút → vẫn KHÔNG thu ===');
+  console.log('=== TEST 2: Quá end_time dù chỉ ít phút → LỐ NGAY (ân hạn = 0) ===');
   const b = await makeParkedReservation({ endInMs: -10 * 60 * 1000 }); // quá 10 phút
   const p2 = await previewCheckoutFee({ sessionId: b.session.session_id });
-  check('overstay = false (còn ân hạn)', p2.overstay === false, JSON.stringify({ overstay: p2.overstay }));
-  check('không cộng phụ thu', p2.overstayFee === 0);
+  check('overstay = true (không còn ân hạn)', p2.overstay === true, JSON.stringify({ overstay: p2.overstay }));
+  check('cộng phụ thu = overstay_fee (phẳng, không theo giờ)', p2.overstayFee === OVERSTAY_FEE, `(được ${p2.overstayFee})`);
 
   console.log('=== TEST 3: Quá end_time 3 tiếng → LỐ GIỜ, thu phụ thu, BẮT BUỘC ===');
   const c = await makeParkedReservation({ endInMs: -3 * H });

@@ -36,12 +36,13 @@ const DEFAULT_SYSTEM = {
   booking_refund_cutoff_hours: 1,
   // Đơn pending quá ngần này (phút) chưa thanh toán → job nền tự hủy + nhả slot (3.3)
   booking_pending_ttl_minutes: 15,
-  // Đặt chỗ confirmed quá end_time + ngần này (phút) mà không check-in → no_show + nhả slot (3.3)
-  booking_no_show_grace_minutes: 15,
-  // Trần cửa sổ đặt chỗ (R1): slot bị giam `reserved` NGAY từ lúc tạo đơn (slotSuggest.js) và đơn
-  // confirmed giam thẳng tới end_time → cho đặt càng xa / đơn càng dài thì slot chết càng lâu chỉ để
-  // thu booking_fee, walk-in không dùng được. 24h đủ cho ca qua đêm.
-  booking_max_advance_days: 3,
+  // Ân hạn sau end_time (phút) — chung 1 núm cho no-show (job) LẪN phụ thu lố giờ (detectReservationOverstay).
+  // Chủ module chốt BỎ ân hạn (=0): hết ca là no_show + tính phụ thu ngay từ phút đầu, không du di.
+  booking_no_show_grace_minutes: 0,
+  // Trần cửa sổ đặt chỗ. Mô hình sức chứa: đặt KHÔNG ghim slot (slot_id null tới khi khóa-đầu-ca)
+  // nên đặt xa không còn giam chỗ như bản cũ — trần giờ chỉ là chính sách nghiệp vụ (chặn đơn quá
+  // xa/quá dài). Để rộng 365 ngày; mỗi đơn tối đa 24h (đủ cho ca qua đêm).
+  booking_max_advance_days: 365,
   booking_max_duration_hours: 24,
   // Hủy vé tháng (P3-8): % hoàn theo mốc — trước start_date 100%; 3 ngày đầu hiệu lực 70%;
   // tới hết NỬA thời hạn 50%; quá nửa 0%. Deadline user cập nhật STK để nhận hoàn (ngày).

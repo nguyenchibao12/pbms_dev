@@ -1,10 +1,10 @@
 import { AppError } from './helpers.js';
 
-// BR-31 — check-in đơn đặt được phép SỚM tối đa 15' trước start_time. SRS chốt cứng con số
-// này nên để hằng (không phải Settings). Đặt Ở ĐÂY làm nguồn duy nhất: cả luồng check-in đơn
-// (reservation.service) lẫn luồng điều hướng walk-in (session.service) cùng đọc — trước đây
-// mỗi file tự khai một bản, sửa lệch nhau là hai luồng cãi nhau ở cổng.
-export const CHECKIN_EARLY_GRACE_MS = 15 * 60 * 1000;
+// Ân hạn VÀO SỚM trước start_time. Chủ module chốt BỎ (=0): check-in mở đúng từ start_time —
+// khớp đúng lúc job khóa-đầu-ca giữ slot, cửa sổ vào khít [start_time, end_time]. LƯU Ý: SRS
+// BR-31 quy định 15' → đây là LỆCH SRS có chủ đích (cần cập nhật tài liệu). Giữ hằng làm nguồn
+// duy nhất (cả reservation.service lẫn session.service cùng đọc) để dễ đảo lại nếu cần.
+export const CHECKIN_EARLY_GRACE_MS = 0;
 
 /** DV-08 */
 const SLOT_TRANSITIONS = {

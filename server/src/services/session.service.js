@@ -193,8 +193,9 @@ export const hasActiveSessionForPlate = async (plateNumber) => {
   return Boolean(session);
 };
 
-// CHECKIN_EARLY_GRACE_MS (BR-31) import từ stateGuards — cùng nguồn với luồng check-in đơn.
-// Đơn confirmed bắt đầu trong vòng ngưỡng này → coi khách là "đến sớm cho đơn", chặn walk-in.
+// CHECKIN_EARLY_GRACE_MS import từ stateGuards — cùng nguồn với luồng check-in đơn. Ân hạn vào
+// sớm đã bỏ (=0) nên đơn chỉ được nhận check-in từ ĐÚNG start_time. Khách đến sớm hơn vẫn bị
+// WALKIN_BLOCK_BEFORE_RESERVATION_MS chặn walk-in (hướng sang tab "Đặt chỗ vào"), chờ tới ca.
 const WALKIN_BLOCK_BEFORE_RESERVATION_MS = 60 * 60 * 1000;
 
 const findConfirmedReservationForPlate = async (plateNumber, at = new Date()) =>

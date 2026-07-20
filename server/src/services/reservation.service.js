@@ -1115,6 +1115,7 @@ export const checkinReservation = async (staffUserId, data) => {
   // Không chặn theo giờ mở cửa tòa (DV-14) cho đặt chỗ: khung CA đã đặt (kể cả ca
   // qua đêm 22:00→06:00) chính là sự cho phép vào. Giới hạn entry do cửa sổ start/end bên dưới.
 
+  // Ân hạn vào sớm đã bỏ (CHECKIN_EARLY_GRACE_MS = 0) → chặn mọi lượt vào trước start_time.
   const graceMs = CHECKIN_EARLY_GRACE_MS;
   if (now.getTime() < reservation.start_time.getTime() - graceMs) {
     await recordIncident({
@@ -1124,7 +1125,7 @@ export const checkinReservation = async (staffUserId, data) => {
       userId: reservation.user_id,
       slotId: reservation.slot_id,
     });
-    throw new AppError('Quá sớm — ngoài khung giờ đặt chỗ (sớm tối đa 15 phút)', 409, 'CONFLICT');
+    throw new AppError('Chưa tới giờ ca đã đặt — vui lòng quay lại đúng giờ vào', 409, 'CONFLICT');
   }
   if (now > reservation.end_time) {
     await recordIncident({
