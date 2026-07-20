@@ -1,11 +1,5 @@
 import { AppError } from './helpers.js';
 
-// Ân hạn VÀO SỚM trước start_time. Chủ module chốt BỎ (=0): check-in mở đúng từ start_time —
-// khớp đúng lúc job khóa-đầu-ca giữ slot, cửa sổ vào khít [start_time, end_time]. LƯU Ý: SRS
-// BR-31 quy định 15' → đây là LỆCH SRS có chủ đích (cần cập nhật tài liệu). Giữ hằng làm nguồn
-// duy nhất (cả reservation.service lẫn session.service cùng đọc) để dễ đảo lại nếu cần.
-export const CHECKIN_EARLY_GRACE_MS = 0;
-
 /** DV-08 */
 const SLOT_TRANSITIONS = {
   available: ['reserved', 'occupied', 'maintenance', 'locked'],

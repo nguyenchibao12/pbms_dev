@@ -16,17 +16,8 @@ import { validateAndNormalizePlateVN } from '../utils/plateVN.js';
 import { assertBuildingOpenForCheckIn } from '../utils/buildingHours.js';
 import { assertGateVehicleType } from '../utils/gateVehicle.js';
 import { resolveFloorGate } from '../utils/gateResolve.js';
-import {
-  getMaxParkingHours,
-  getLostTicketFee,
-  getOverstayFee,
-  getBookingNoShowGraceMinutes,
-} from '../utils/settings.js';
-import {
-  assertSessionActive,
-  buildRevokedQrToken,
-  CHECKIN_EARLY_GRACE_MS,
-} from '../utils/stateGuards.js';
+import { getMaxParkingHours, getLostTicketFee, getOverstayFee } from '../utils/settings.js';
+import { assertSessionActive, buildRevokedQrToken } from '../utils/stateGuards.js';
 import { createIncident } from './incident.service.js';
 import { parsePagination, paginatedResult } from '../utils/pagination.js';
 
@@ -193,9 +184,11 @@ export const hasActiveSessionForPlate = async (plateNumber) => {
   return Boolean(session);
 };
 
-// CHECKIN_EARLY_GRACE_MS import từ stateGuards — cùng nguồn với luồng check-in đơn. Ân hạn vào
-// sớm đã bỏ (=0) nên đơn chỉ được nhận check-in từ ĐÚNG start_time. Khách đến sớm hơn vẫn bị
-// WALKIN_BLOCK_BEFORE_RESERVATION_MS chặn walk-in (hướng sang tab "Đặt chỗ vào"), chờ tới ca.
+// Ân hạn VÀO SỚM đã BỎ (=0): đơn chỉ nhận check-in từ ĐÚNG start_time (khớp lúc job khóa-đầu-ca).
+// Khách đến sớm hơn vẫn bị WALKIN_BLOCK_BEFORE_RESERVATION_MS chặn walk-in (hướng sang tab "Đặt chỗ vào").
+// (SRS BR-31 để 15' — đây là LỆCH SRS có chủ đích, cần cập nhật tài liệu.)
+const CHECKIN_EARLY_GRACE_MS = 0;
+// Đơn confirmed bắt đầu trong vòng ngưỡng này → coi khách là "đến sớm cho đơn", chặn walk-in.
 const WALKIN_BLOCK_BEFORE_RESERVATION_MS = 60 * 60 * 1000;
 
 const findConfirmedReservationForPlate = async (plateNumber, at = new Date()) =>
@@ -370,12 +363,14 @@ export const cashCheckout = async (staffUserId, data) => {
   return settleCashCheckout(staffUserId, data);
 };
 
+// Ân hạn lấy xe sau khi hết khung giờ đã đặt. Chủ module chốt BỎ (=0): quá end_time là tính phụ thu
+// ngay từ phút đầu (đối xứng với việc bỏ ân hạn check-in sớm). No-show (job) cũng đã bỏ ân hạn qua
+// booking_no_show_grace_minutes=0 — 2 núm giờ khai riêng nhưng cùng chốt = 0.
+const RESERVATION_OVERSTAY_GRACE_MS = 0;
+
 /**
  * Lố giờ của ĐẶT CHỖ — khác walk-in: ngưỡng là `end_time` của ĐƠN, không phải max_parking_hours.
  * Ở quá khung đã đặt là giữ mất chỗ của người đặt ca kế tiếp → thu phụ thu như walk-in lố giờ.
- * Ân hạn dùng CHUNG booking_no_show_grace_minutes (Settings): "du di sau end_time" là MỘT
- * chính sách — Manager chỉnh một núm áp cho cả xe chưa đến (no-show) lẫn xe đỗ lố (phụ thu),
- * hết cảnh nâng ân hạn no-show lên 30' mà xe trong bãi vẫn bị phạt từ phút 16.
  * (Không dùng import từ reservation.service để tránh vòng lặp import — file đó đã import file này.)
  */
 const detectReservationOverstay = async (session, feeEnd) => {
@@ -387,8 +382,7 @@ const detectReservationOverstay = async (session, feeEnd) => {
 
   const endTime = new Date(reservation.end_time);
   const overMs = feeEnd.getTime() - endTime.getTime();
-  const graceMs = getBookingNoShowGraceMinutes() * 60 * 1000;
-  if (overMs <= graceMs) return none;
+  if (overMs <= RESERVATION_OVERSTAY_GRACE_MS) return none;
 
   // Số giờ tính TỪ end_time (không trừ ân hạn) — ân hạn chỉ để quyết định CÓ thu hay không.
   return { overstay: true, overstayHours: Math.floor(overMs / (1000 * 60 * 60)) };

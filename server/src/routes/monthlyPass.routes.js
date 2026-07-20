@@ -39,6 +39,11 @@ router.get('/capacity',
      #swagger.parameters['vehicleTypeId'] = { in: 'query', required: true, schema: { type: 'integer' } } */
   ...authenticated, monthlyPassController.getCapacity);
 
+router.get('/refund-policy',
+  /* #swagger.tags = ['Monthly Passes']
+     #swagger.summary = 'Chính sách hoàn tiền hủy vé tháng (đọc từ settings, cho modal hủy vé User)' */
+  ...authenticated, monthlyPassController.getRefundPolicy);
+
 router.post('/:id/cancel',
   /* #swagger.tags = ['Monthly Passes']
      #swagger.summary = 'Hủy vé tháng (User, chủ vé) — tính % hoàn theo chính sách'

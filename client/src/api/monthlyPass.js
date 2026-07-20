@@ -30,4 +30,9 @@ export const monthlyPassApi = {
   // Hủy vé + tính % hoàn theo chính sách. Thông điệp kết quả nằm ở res.data.message;
   // data: { pass, refund, percent }. refund != null nghĩa là đã tạo yêu cầu hoàn tiền.
   cancel: (id) => api.post(`/monthly-passes/${id}/cancel`),
+
+  // Chính sách hoàn tiền hủy vé (đọc từ settings pass_refund_*) — đổ số thật vào modal hủy.
+  // data: { trialDays, trialPercent, halfTermPercent, bankInfoTtlDays }
+  // BE CHƯA có endpoint này (đã gửi handoff) — FE gọi thử, lỗi thì modal hiện text chung.
+  refundPolicy: () => api.get('/monthly-passes/refund-policy'),
 };

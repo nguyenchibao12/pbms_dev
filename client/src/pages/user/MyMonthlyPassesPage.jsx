@@ -31,6 +31,12 @@ const dailyWindowLabel = (pass) => {
   return from && to ? `${from}–${to}` : '—';
 };
 
+// % hoàn → nhãn hiển thị; 0% nói thẳng "không hoàn" thay vì "hoàn 0%".
+const refundPctLabel = (value) => {
+  const pct = Number(value);
+  return pct > 0 ? `hoàn ${pct}%` : 'không hoàn';
+};
+
 export default function MyMonthlyPassesPage() {
   const [searchParams] = useSearchParams();
   const [items, setItems] = useState([]);
@@ -40,6 +46,7 @@ export default function MyMonthlyPassesPage() {
   const [cancelTarget, setCancelTarget] = useState(null);
   const [cancelLoading, setCancelLoading] = useState(false);
   const [repayingId, setRepayingId] = useState(null);
+  const [refundPolicy, setRefundPolicy] = useState(null); // null = chưa đọc được → modal hiện text chung
 
   const load = useCallback(async (mode = 'initial') => {
     if (mode === 'manual') setRefreshing(true);
@@ -71,6 +78,18 @@ export default function MyMonthlyPassesPage() {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     load('initial');
   }, [load, paymentResult]);
+
+  // Mở modal hủy vé đã thanh toán → đọc chính sách hoàn tiền thật từ settings (Manager chỉnh được,
+  // không hardcode). BE chưa có endpoint (đã gửi handoff) → nuốt lỗi, modal rơi về text chung.
+  useEffect(() => {
+    if (!cancelTarget || cancelTarget.status === 'pending' || refundPolicy) return undefined;
+    let active = true;
+    monthlyPassApi
+      .refundPolicy()
+      .then((res) => { if (active) setRefundPolicy(res.data.data || null); })
+      .catch(() => {});
+    return () => { active = false; };
+  }, [cancelTarget, refundPolicy]);
 
   const handleRepay = async (pass) => {
     if (repayingId) return;
@@ -272,15 +291,27 @@ export default function MyMonthlyPassesPage() {
         ) : (
           <div className="space-y-3 text-sm text-slate-600">
             <p>Hủy vé đã thanh toán? Mã QR sẽ ngừng hiệu lực. % hoàn tiền tính theo thời điểm hủy:</p>
-            <ul className="space-y-1 rounded-lg bg-slate-50 px-4 py-3 text-slate-600">
-              <li>· Trước ngày hiệu lực: <strong>hoàn 100%</strong></li>
-              <li>· 3 ngày đầu hiệu lực: <strong>hoàn 70%</strong></li>
-              <li>· Tới hết nửa thời hạn: <strong>hoàn 50%</strong></li>
-              <li>· Quá nửa thời hạn: <strong>không hoàn</strong></li>
-            </ul>
+            {refundPolicy ? (
+              // Các mốc đọc từ settings pass_refund_* — khớp trang Cấu hình hệ thống của Manager.
+              <ul className="space-y-1 rounded-lg bg-slate-50 px-4 py-3 text-slate-600">
+                <li>· Trước ngày hiệu lực: <strong>hoàn 100%</strong></li>
+                {Number(refundPolicy.trialDays) > 0 && (
+                  <li>· {Number(refundPolicy.trialDays)} ngày đầu hiệu lực: <strong>{refundPctLabel(refundPolicy.trialPercent)}</strong></li>
+                )}
+                <li>· Tới hết nửa thời hạn: <strong>{refundPctLabel(refundPolicy.halfTermPercent)}</strong></li>
+                <li>· Quá nửa thời hạn: <strong>không hoàn</strong></li>
+              </ul>
+            ) : (
+              // Chưa đọc được chính sách (BE chưa có endpoint) — không bịa số cứng kẻo sai với cấu hình.
+              <p className="rounded-lg bg-slate-50 px-4 py-3 text-slate-600">
+                Mức hoàn tính theo chính sách hoàn tiền hiện hành của bãi xe.
+              </p>
+            )}
             <p className="text-xs text-slate-400">
               Nếu có tiền hoàn, hệ thống tạo yêu cầu hoàn tiền — bạn cần cập nhật số tài khoản ngân hàng
-              trong hồ sơ để nhận tiền. Số tiền hoàn chính xác hiển thị sau khi xác nhận hủy.
+              trong hồ sơ{refundPolicy && Number(refundPolicy.bankInfoTtlDays) > 0
+                ? ` trong vòng ${Number(refundPolicy.bankInfoTtlDays)} ngày`
+                : ''} để nhận tiền. Số tiền hoàn chính xác hiển thị sau khi xác nhận hủy.
             </p>
           </div>
         )}
