@@ -36,6 +36,10 @@ export const suggestSlot = async ({
   // true = bỏ qua lớp giữ-chỗ-cho-đơn-đặt (holdback): dùng cho check-in VÉ THÁNG —
   // vé tháng có cam kết sức chứa riêng, để holdback chặn là khóa oan người có vé.
   skipReservationHoldback = false,
+  // true = bỏ qua filter GIỮ-CHỖ-CHO-VÉ-THÁNG (walk-in guard): dùng cho check-in VÉ THÁNG —
+  // chủ vé đương nhiên được lấy chỗ trong phần capacity của chính vé mình. Overselling đã chống
+  // ở lúc BÁN vé (getPassCapacity khóa Zone), không cần chặn lại lúc vào (nếu không sẽ tự khóa chính chủ).
+  skipPassCapacity = false,
 }) => {
   const started = Date.now();
 
@@ -79,13 +83,18 @@ export const suggestSlot = async ({
     if (slots.length === 0) {
       throw new AppError('No available parking slot', 409, 'CONFLICT');
     }
-    slots = await filterWalkInCandidateSlots(slots);
-    if (slots.length === 0) {
-      throw new AppError(
-        'Không còn chỗ walk-in — phần capacity đang dành cho vé tháng (OR-03)',
-        409,
-        'PASS_CAPACITY_RESERVED',
-      );
+    // Filter walk-in guard: CHỈ áp cho walk-in (chặn walk-in ăn phần để dành vé tháng). KHÔNG áp
+    // cho check-in chính chủ vé tháng — chủ vé lúc quét chưa có phiên nên headroom vẫn tính cả suất
+    // của họ → filter loại sạch khu, tự khóa đúng người cần phục vụ (xem handoff OR-03).
+    if (!skipPassCapacity) {
+      slots = await filterWalkInCandidateSlots(slots);
+      if (slots.length === 0) {
+        throw new AppError(
+          'Không còn chỗ walk-in — phần capacity đang dành cho vé tháng (OR-03)',
+          409,
+          'PASS_CAPACITY_RESERVED',
+        );
+      }
     }
     // Mô hình suất (migration 008): đơn đặt không ghim slot nên walk-in phải CHỪA CHỖ cho
     // các đơn bắt đầu trong chân trời holdback — đây chính là lời cam kết "đặt là chắc có chỗ".
