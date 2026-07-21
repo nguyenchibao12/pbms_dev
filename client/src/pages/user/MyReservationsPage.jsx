@@ -1,15 +1,17 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import { Link, Navigate, useSearchParams } from 'react-router-dom';
 import { QRCodeSVG } from 'qrcode.react';
-import { CalendarPlus, RefreshCw, MapPin, CheckCircle2, CreditCard } from 'lucide-react';
+import { CalendarPlus, RefreshCw, MapPin, CheckCircle2, CreditCard, SearchX } from 'lucide-react';
 import { reservationsApi } from '../../api/reservations';
 import { formatShiftLabel } from '../../lib/shifts';
 import { formatFloorLabel } from '../../lib/floor';
+import { collectFloorOptions, inDateRange, matchPlate } from '../../lib/filters';
 import PageHeader from '../../components/ui/PageHeader';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
 import Badge from '../../components/ui/Badge';
 import EmptyState from '../../components/ui/EmptyState';
+import FilterBar, { DateRangeField, SearchField, SelectField } from '../../components/ui/FilterBar';
 import { TableSkeleton } from '../../components/ui/Skeleton';
 import { ErrorAlert } from '../../components/ui/Field';
 import Modal, { ModalActions } from '../../components/ui/Modal';
@@ -54,6 +56,25 @@ const QR_HISTORY_LABEL = {
   no_show: 'Không đến',
 };
 
+// Nhãn trạng thái cho dropdown lọc — giữ đúng chữ trên Badge của từng đơn để
+// người dùng chọn được cái họ đang nhìn thấy.
+const STATUS_OPTIONS = [
+  { value: 'pending', label: 'Chờ xử lý' },
+  { value: 'confirmed', label: 'Đã xác nhận' },
+  { value: 'checked_in', label: 'Đã vào bãi' },
+  { value: 'completed', label: 'Hoàn tất' },
+  { value: 'cancelled', label: 'Đã hủy' },
+  { value: 'no_show', label: 'Không đến' },
+];
+
+// Khoảng ngày lọc theo mốc nào: ngày bấm đặt hay ngày đi gửi xe.
+const DATE_FIELD_OPTIONS = [
+  { value: 'created_at', label: 'Ngày tạo đơn' },
+  { value: 'start_time', label: 'Ngày vào bãi' },
+];
+
+const emptyFilters = { plate: '', status: '', floorId: '', dateField: 'created_at', from: '', to: '' };
+
 export default function MyReservationsPage() {
   const [searchParams] = useSearchParams();
   const [items, setItems] = useState([]);
@@ -63,6 +84,31 @@ export default function MyReservationsPage() {
   const [cancelTarget, setCancelTarget] = useState(null);
   const [cancelLoading, setCancelLoading] = useState(false);
   const [repayingId, setRepayingId] = useState(null);
+  const [filters, setFilters] = useState(emptyFilters);
+
+  const setFilter = (key, value) => setFilters((f) => ({ ...f, [key]: value }));
+
+  // dateField luôn có giá trị nên không tính là "đang lọc" — chỉ khoảng ngày mới tính.
+  const filterActive = Boolean(
+    filters.plate || filters.status || filters.floorId || filters.from || filters.to,
+  );
+
+  const floorOptions = useMemo(
+    () => collectFloorOptions(items, (r) => r.floor).map((f) => ({ value: String(f.id), label: formatFloorLabel(f.label) })),
+    [items],
+  );
+
+  const visibleItems = useMemo(
+    () =>
+      items.filter(
+        (r) =>
+          matchPlate(r.plate_number, filters.plate) &&
+          (!filters.status || r.status === filters.status) &&
+          (!filters.floorId || String(r.floor?.floor_id) === filters.floorId) &&
+          inDateRange(r[filters.dateField], filters.from, filters.to),
+      ),
+    [items, filters],
+  );
 
   const load = useCallback(async (mode = 'initial') => {
     if (mode === 'manual') setRefreshing(true);
@@ -199,6 +245,52 @@ export default function MyReservationsPage() {
 
       <ErrorAlert message={error} />
 
+      {!loading && items.length > 0 && (
+        <FilterBar
+          active={filterActive}
+          onReset={() => setFilters(emptyFilters)}
+          shown={visibleItems.length}
+          total={items.length}
+          unitLabel="đơn"
+          gridClassName="sm:grid-cols-2 lg:grid-cols-4"
+        >
+          <SearchField
+            label="Biển số"
+            value={filters.plate}
+            onChange={(v) => setFilter('plate', v)}
+            placeholder="VD: 51F-678.90"
+          />
+          <SelectField
+            label="Trạng thái"
+            value={filters.status}
+            onChange={(v) => setFilter('status', v)}
+            allLabel="— Tất cả trạng thái —"
+            options={STATUS_OPTIONS}
+          />
+          <SelectField
+            label="Tầng"
+            value={filters.floorId}
+            onChange={(v) => setFilter('floorId', v)}
+            allLabel="— Tất cả tầng —"
+            options={floorOptions}
+          />
+          <SelectField
+            label="Lọc ngày theo"
+            value={filters.dateField}
+            onChange={(v) => setFilter('dateField', v)}
+            options={DATE_FIELD_OPTIONS}
+          />
+          <DateRangeField
+            label="Khoảng ngày"
+            from={filters.from}
+            to={filters.to}
+            onFromChange={(v) => setFilter('from', v)}
+            onToChange={(v) => setFilter('to', v)}
+            className="sm:col-span-2"
+          />
+        </FilterBar>
+      )}
+
       {loading ? (
         <Card>
           <TableSkeleton rows={3} cols={4} />
@@ -214,9 +306,16 @@ export default function MyReservationsPage() {
             </Link>
           }
         />
+      ) : visibleItems.length === 0 ? (
+        <EmptyState
+          icon={SearchX}
+          title="Không có đơn nào khớp bộ lọc"
+          description="Thử nới khoảng ngày hoặc bỏ bớt điều kiện lọc"
+          action={<Button variant="secondary" onClick={() => setFilters(emptyFilters)}>Xóa lọc</Button>}
+        />
       ) : (
         <div className="space-y-3">
-          {items.map((r) => {
+          {visibleItems.map((r) => {
             // Token cũ (đơn hủy TRƯỚC bản BE giữ-token) bị bẻ 'revoked-…' → không render nổi QR.
             const hasQr = r.qr_token && !String(r.qr_token).startsWith('revoked-');
             const showQr = hasQr && QR_LIVE_STATUSES.includes(r.status);

@@ -1,16 +1,18 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { QRCodeSVG } from 'qrcode.react';
-import { Car, RefreshCw, MapPin } from 'lucide-react';
+import { Car, RefreshCw, MapPin, SearchX } from 'lucide-react';
 import { sessionsApi } from '../../api/sessions';
 import PageHeader from '../../components/ui/PageHeader';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
 import Badge from '../../components/ui/Badge';
 import EmptyState from '../../components/ui/EmptyState';
+import FilterBar, { SearchField, SelectField } from '../../components/ui/FilterBar';
 import { TableSkeleton } from '../../components/ui/Skeleton';
 import { ErrorAlert } from '../../components/ui/Field';
 import { formatFloorLabel } from '../../lib/floor';
+import { collectFloorOptions, matchPlate } from '../../lib/filters';
 
 const fmtMoney = (v) => `${Number(v || 0).toLocaleString('vi-VN')} ₫`;
 
@@ -43,11 +45,37 @@ const formatLocation = (s) => {
 // QR còn dùng được (mở cổng tầng + cổng ra); token đơn đã đóng bị bẻ 'revoked-…'.
 const hasLiveQr = (s) => s.qr_token && !String(s.qr_token).startsWith('revoked-');
 
+const emptyFilters = { plate: '', floorId: '' };
+
 export default function MyParkingPage() {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
+  const [filters, setFilters] = useState(emptyFilters);
+
+  const setFilter = (key, value) => setFilters((f) => ({ ...f, [key]: value }));
+
+  const filterActive = Boolean(filters.plate || filters.floorId);
+
+  const floorOptions = useMemo(
+    () =>
+      collectFloorOptions(items, (s) => s.slot?.zone?.floor).map((f) => ({
+        value: String(f.id),
+        label: formatFloorLabel(f.label),
+      })),
+    [items],
+  );
+
+  const visibleItems = useMemo(
+    () =>
+      items.filter(
+        (s) =>
+          matchPlate(s.plate_number, filters.plate) &&
+          (!filters.floorId || String(s.slot?.zone?.floor?.floor_id) === filters.floorId),
+      ),
+    [items, filters],
+  );
 
   const load = useCallback(async (mode = 'initial') => {
     if (mode === 'manual') setRefreshing(true);
@@ -84,6 +112,33 @@ export default function MyParkingPage() {
 
       <ErrorAlert message={error} />
 
+      {/* Người dùng thường chỉ gửi một xe — thanh lọc trên danh sách 1 dòng chỉ làm rối,
+          nên chỉ hiện khi có từ 2 xe trở lên (hoặc đang lọc dở, để còn xóa lọc). */}
+      {!loading && (items.length > 1 || filterActive) && (
+        <FilterBar
+          active={filterActive}
+          onReset={() => setFilters(emptyFilters)}
+          shown={visibleItems.length}
+          total={items.length}
+          unitLabel="xe"
+          gridClassName="sm:grid-cols-2"
+        >
+          <SearchField
+            label="Biển số"
+            value={filters.plate}
+            onChange={(v) => setFilter('plate', v)}
+            placeholder="VD: 51F-678.90"
+          />
+          <SelectField
+            label="Tầng"
+            value={filters.floorId}
+            onChange={(v) => setFilter('floorId', v)}
+            allLabel="— Tất cả tầng —"
+            options={floorOptions}
+          />
+        </FilterBar>
+      )}
+
       {loading ? (
         <Card>
           <TableSkeleton rows={2} cols={4} />
@@ -99,9 +154,16 @@ export default function MyParkingPage() {
             </Link>
           }
         />
+      ) : visibleItems.length === 0 ? (
+        <EmptyState
+          icon={SearchX}
+          title="Không có xe nào khớp bộ lọc"
+          description="Thử bỏ bớt điều kiện lọc"
+          action={<Button variant="secondary" onClick={() => setFilters(emptyFilters)}>Xóa lọc</Button>}
+        />
       ) : (
         <div className="space-y-3">
-          {items.map((s) => (
+          {visibleItems.map((s) => (
             <Card key={s.session_id}>
               <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                 <div className="min-w-0 flex-1 space-y-2">

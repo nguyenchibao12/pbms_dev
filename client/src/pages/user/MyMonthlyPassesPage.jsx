@@ -1,18 +1,20 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import { Link, Navigate, useSearchParams } from 'react-router-dom';
 import { QRCodeSVG } from 'qrcode.react';
-import { TicketPlus, RefreshCw, CreditCard, CheckCircle2, Clock } from 'lucide-react';
+import { TicketPlus, RefreshCw, CreditCard, CheckCircle2, Clock, SearchX } from 'lucide-react';
 import { monthlyPassApi } from '../../api/monthlyPass';
 import PageHeader from '../../components/ui/PageHeader';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
 import Badge from '../../components/ui/Badge';
 import EmptyState from '../../components/ui/EmptyState';
+import FilterBar, { DateRangeField, SearchField, SelectField } from '../../components/ui/FilterBar';
 import { TableSkeleton } from '../../components/ui/Skeleton';
 import { ErrorAlert } from '../../components/ui/Field';
 import Modal, { ModalActions } from '../../components/ui/Modal';
 import { toast } from '../../components/ui/toast';
 import { formatFloorLabel } from '../../lib/floor';
+import { collectFloorOptions, inDateRange, matchPlate, overlapsDateRange } from '../../lib/filters';
 
 // Ngày hiệu lực lưu dạng DATEONLY 'YYYY-MM-DD' → 'DD/MM/YYYY' (không lệ thuộc múi giờ).
 const fmtDate = (value) => {
@@ -37,6 +39,22 @@ const refundPctLabel = (value) => {
   return pct > 0 ? `hoàn ${pct}%` : 'không hoàn';
 };
 
+// Nhãn trạng thái cho dropdown lọc — giữ đúng chữ trên Badge của từng vé.
+const STATUS_OPTIONS = [
+  { value: 'pending', label: 'Chờ xử lý' },
+  { value: 'active', label: 'Đang hoạt động' },
+  { value: 'expired', label: 'Hết hạn' },
+  { value: 'cancelled', label: 'Đã hủy' },
+];
+
+// Khoảng ngày lọc theo mốc nào: ngày mua vé hay thời hạn vé phủ.
+const DATE_FIELD_OPTIONS = [
+  { value: 'created_at', label: 'Ngày mua vé' },
+  { value: 'validity', label: 'Ngày hiệu lực' },
+];
+
+const emptyFilters = { plate: '', status: '', floorId: '', dateField: 'created_at', from: '', to: '' };
+
 export default function MyMonthlyPassesPage() {
   const [searchParams] = useSearchParams();
   const [items, setItems] = useState([]);
@@ -47,6 +65,38 @@ export default function MyMonthlyPassesPage() {
   const [cancelLoading, setCancelLoading] = useState(false);
   const [repayingId, setRepayingId] = useState(null);
   const [refundPolicy, setRefundPolicy] = useState(null); // null = chưa đọc được → modal hiện text chung
+  const [filters, setFilters] = useState(emptyFilters);
+
+  const setFilter = (key, value) => setFilters((f) => ({ ...f, [key]: value }));
+
+  // dateField luôn có giá trị nên không tính là "đang lọc" — chỉ khoảng ngày mới tính.
+  const filterActive = Boolean(
+    filters.plate || filters.status || filters.floorId || filters.from || filters.to,
+  );
+
+  const floorOptions = useMemo(
+    () => collectFloorOptions(items, (p) => p.floor).map((f) => ({ value: String(f.id), label: formatFloorLabel(f.label) })),
+    [items],
+  );
+
+  const visibleItems = useMemo(
+    () =>
+      items.filter((p) => {
+        // "Ngày hiệu lực" so theo GIAO khoảng: vé 01/07–31/07 phải hiện khi lọc riêng ngày 15/07,
+        // khác với "Ngày mua vé" chỉ có một mốc.
+        const dateOk =
+          filters.dateField === 'validity'
+            ? overlapsDateRange(p.start_date, p.end_date, filters.from, filters.to)
+            : inDateRange(p.created_at, filters.from, filters.to);
+        return (
+          matchPlate(p.plate_number, filters.plate) &&
+          (!filters.status || p.status === filters.status) &&
+          (!filters.floorId || String(p.floor?.floor_id) === filters.floorId) &&
+          dateOk
+        );
+      }),
+    [items, filters],
+  );
 
   const load = useCallback(async (mode = 'initial') => {
     if (mode === 'manual') setRefreshing(true);
@@ -169,6 +219,52 @@ export default function MyMonthlyPassesPage() {
 
       <ErrorAlert message={error} />
 
+      {!loading && items.length > 0 && (
+        <FilterBar
+          active={filterActive}
+          onReset={() => setFilters(emptyFilters)}
+          shown={visibleItems.length}
+          total={items.length}
+          unitLabel="vé"
+          gridClassName="sm:grid-cols-2 lg:grid-cols-4"
+        >
+          <SearchField
+            label="Biển số"
+            value={filters.plate}
+            onChange={(v) => setFilter('plate', v)}
+            placeholder="VD: 51F-678.90"
+          />
+          <SelectField
+            label="Trạng thái"
+            value={filters.status}
+            onChange={(v) => setFilter('status', v)}
+            allLabel="— Tất cả trạng thái —"
+            options={STATUS_OPTIONS}
+          />
+          <SelectField
+            label="Tầng"
+            value={filters.floorId}
+            onChange={(v) => setFilter('floorId', v)}
+            allLabel="— Tất cả tầng —"
+            options={floorOptions}
+          />
+          <SelectField
+            label="Lọc ngày theo"
+            value={filters.dateField}
+            onChange={(v) => setFilter('dateField', v)}
+            options={DATE_FIELD_OPTIONS}
+          />
+          <DateRangeField
+            label="Khoảng ngày"
+            from={filters.from}
+            to={filters.to}
+            onFromChange={(v) => setFilter('from', v)}
+            onToChange={(v) => setFilter('to', v)}
+            className="sm:col-span-2"
+          />
+        </FilterBar>
+      )}
+
       {loading ? (
         <Card>
           <TableSkeleton rows={3} cols={4} />
@@ -184,9 +280,16 @@ export default function MyMonthlyPassesPage() {
             </Link>
           }
         />
+      ) : visibleItems.length === 0 ? (
+        <EmptyState
+          icon={SearchX}
+          title="Không có vé nào khớp bộ lọc"
+          description="Thử nới khoảng ngày hoặc bỏ bớt điều kiện lọc"
+          action={<Button variant="secondary" onClick={() => setFilters(emptyFilters)}>Xóa lọc</Button>}
+        />
       ) : (
         <div className="space-y-3">
-          {items.map((pass) => {
+          {visibleItems.map((pass) => {
             const showQr =
               pass.status === 'active' &&
               pass.qr_token &&
