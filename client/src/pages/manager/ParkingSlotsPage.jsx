@@ -1,8 +1,11 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { parkingSlotsApi, zonesApi } from '../../api/masterData';
 import Modal, { Field, inputClass, ErrorAlert } from '../../components/Modal';
+import FilterBar, { SearchField, SelectField } from '../../components/ui/FilterBar';
 import { toast } from '../../components/ui/toast';
 import { validateSlotForm } from '../../lib/validate';
+import { collectFloorOptions, matchText } from '../../lib/filters';
+import { formatFloorLabel } from '../../lib/floor';
 
 // Nhãn + màu cho từng trạng thái slot (parking_slot.status).
 // available/maintenance/locked: Manager đổi tay; reserved/occupied: hệ thống quản lý.
@@ -34,10 +37,15 @@ const emptyForm = {
   status: 'available',
 };
 
+// Lọc khu vẫn đi qua API (GET /parking-slots?zoneId=...), còn tầng/trạng thái/mã chỗ
+// lọc ngay trên danh sách đã tải — backend không nhận các tham số đó.
+const emptyFilters = { code: '', floorId: '', status: '' };
+
 export default function ParkingSlotsPage() {
   const [items, setItems] = useState([]);
   const [zones, setZones] = useState([]);
   const [zoneFilter, setZoneFilter] = useState(''); // '' = tất cả khu
+  const [filters, setFilters] = useState(emptyFilters);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [fieldErrors, setFieldErrors] = useState({});
@@ -115,6 +123,52 @@ export default function ParkingSlotsPage() {
       .catch(() => { if (active) setBulkInfo(null); });
     return () => { active = false; };
   }, [bulkOpen, bulkForm.zoneId, zones]);
+
+  const setFilter = (key, value) => setFilters((f) => ({ ...f, [key]: value }));
+
+  const filterActive = Boolean(filters.code || filters.floorId || filters.status || zoneFilter);
+
+  const resetFilters = () => {
+    setFilters(emptyFilters);
+    setZoneFilter(''); // kéo theo việc tải lại toàn bộ chỗ (lọc khu chạy qua API)
+  };
+
+  // Tầng lấy từ danh sách khu (mỗi khu đã kèm floor) — khỏi gọi thêm API /floors.
+  const floorOptions = useMemo(
+    () =>
+      collectFloorOptions(zones, (z) => z.floor).map((f) => ({
+        value: String(f.id),
+        label: formatFloorLabel(f.label),
+      })),
+    [zones],
+  );
+
+  // Chọn tầng thì dropdown khu chỉ còn khu của tầng đó.
+  const zonesInFilter = useMemo(
+    () => (filters.floorId ? zones.filter((z) => String(z.floor?.floor_id) === filters.floorId) : zones),
+    [zones, filters.floorId],
+  );
+
+  // Đổi tầng mà khu đang lọc không thuộc tầng mới → bỏ lọc khu, nếu không bảng rỗng mà
+  // người dùng không hiểu vì sao (khu đã biến mất khỏi dropdown).
+  const changeFloorFilter = (value) => {
+    setFilter('floorId', value);
+    const stillValid = zones.some(
+      (z) => String(z.zone_id) === zoneFilter && String(z.floor?.floor_id) === value,
+    );
+    if (value && zoneFilter && !stillValid) setZoneFilter('');
+  };
+
+  const visibleItems = useMemo(
+    () =>
+      items.filter(
+        (item) =>
+          matchText(filters.code, item.slot_code, item.slot_type) &&
+          (!filters.floorId || String(item.zone?.floor?.floor_id) === filters.floorId) &&
+          (!filters.status || item.status === filters.status),
+      ),
+    [items, filters],
+  );
 
   // reserved/occupied do hệ thống quản lý → không cho đổi status từ form.
   const statusEditable = !editing || MANUAL_STATUSES.includes(editing.status);
@@ -257,21 +311,42 @@ export default function ParkingSlotsPage() {
         </div>
       </div>
 
-      <div className="mb-4">
-        <label className="mr-2 text-sm text-slate-600">Khu vực:</label>
-        <select
-          className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
+      <FilterBar
+        className="mb-4"
+        active={filterActive}
+        onReset={resetFilters}
+        shown={visibleItems.length}
+        total={items.length}
+        unitLabel="chỗ"
+      >
+        <SearchField
+          label="Mã chỗ / loại chỗ"
+          value={filters.code}
+          onChange={(v) => setFilter('code', v)}
+          placeholder="VD: B1-C-01"
+        />
+        <SelectField
+          label="Tầng"
+          value={filters.floorId}
+          onChange={changeFloorFilter}
+          allLabel="— Tất cả tầng —"
+          options={floorOptions}
+        />
+        <SelectField
+          label="Khu vực"
           value={zoneFilter}
-          onChange={(e) => setZoneFilter(e.target.value)}
-        >
-          <option value="">— Tất cả khu —</option>
-          {zones.map((z) => (
-            <option key={z.zone_id} value={z.zone_id}>
-              {z.zone_code} — {z.label}
-            </option>
-          ))}
-        </select>
-      </div>
+          onChange={setZoneFilter}
+          allLabel="— Tất cả khu —"
+          options={zonesInFilter.map((z) => ({ value: String(z.zone_id), label: `${z.zone_code} — ${z.label}` }))}
+        />
+        <SelectField
+          label="Trạng thái"
+          value={filters.status}
+          onChange={(v) => setFilter('status', v)}
+          allLabel="— Tất cả trạng thái —"
+          options={Object.entries(STATUS_META).map(([value, meta]) => ({ value, label: meta.label }))}
+        />
+      </FilterBar>
 
       {error && !modalOpen && !bulkOpen && (
         <div className="mb-4 rounded-lg bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</div>
@@ -295,7 +370,9 @@ export default function ParkingSlotsPage() {
               <tr><td colSpan={7} className="px-4 py-8 text-center text-slate-400">Đang tải...</td></tr>
             ) : items.length === 0 ? (
               <tr><td colSpan={7} className="px-4 py-8 text-center text-slate-400">Chưa có chỗ đỗ</td></tr>
-            ) : items.map((item) => (
+            ) : visibleItems.length === 0 ? (
+              <tr><td colSpan={7} className="px-4 py-8 text-center text-slate-400">Không có chỗ nào khớp bộ lọc</td></tr>
+            ) : visibleItems.map((item) => (
               <tr key={item.slot_id} className="border-b border-slate-100">
                 <td className="px-4 py-3 font-medium">{item.slot_code}</td>
                 <td className="px-4 py-3">{item.zone?.zone_code || '—'}</td>

@@ -13,6 +13,26 @@ export const matchPlate = (plate, query) => {
   return compactPlate(plate).includes(q);
 };
 
+// Bỏ dấu tiếng Việt: tách nguyên âm khỏi dấu thanh (NFD) rồi xóa dải dấu tổ hợp
+// U+0300–U+036F; riêng 'đ' là một ký tự độc lập nên phải thay tay.
+const deaccent = (value) =>
+  String(value ?? '')
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .replace(/đ/gi, 'd')
+    .toLowerCase()
+    .trim();
+
+/**
+ * Ô tìm kiếm chung cho dữ liệu danh mục: khớp nếu MỘT trong các trường chứa chuỗi tìm.
+ * Bỏ dấu nên gõ "tang ham" vẫn ra "Tầng hầm".
+ */
+export const matchText = (query, ...values) => {
+  const q = deaccent(query);
+  if (!q) return true;
+  return values.some((value) => deaccent(value).includes(q));
+};
+
 /**
  * Quy về khóa ngày 'YYYY-MM-DD' để so sánh chuỗi với ô <input type="date">.
  * - DATEONLY ('2026-07-21') giữ nguyên: cắt chuỗi, KHÔNG qua Date() để khỏi lệch múi giờ.

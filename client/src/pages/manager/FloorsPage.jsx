@@ -1,13 +1,22 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { floorsApi, vehicleTypesApi } from '../../api/masterData';
 import { validateFloorForm } from '../../lib/validate';
+import { matchText } from '../../lib/filters';
 import Modal from '../../components/ui/Modal';
 import Field, { ErrorAlert } from '../../components/ui/Field';
+import FilterBar, { SearchField, SelectField } from '../../components/ui/FilterBar';
 import { inputClass } from '../../components/ui/Input';
 import Button from '../../components/ui/Button';
 import { toast } from '../../components/ui/toast';
 
 const emptyForm = { floorCode: '', floorLevel: '', label: '', layoutMode: 'zoned', vehicleTypeId: '', areaM2: '' };
+
+const emptyFilters = { text: '', layoutMode: '', vehicleTypeId: '' };
+
+const LAYOUT_OPTIONS = [
+  { value: 'zoned', label: 'Phân khu' },
+  { value: 'single', label: '1 loại xe' },
+];
 
 // Hiển thị m² gọn (bỏ số 0 thừa), null/—.
 const fmtArea = (v) => (v == null ? '—' : `${Number(v)} m²`);
@@ -23,6 +32,7 @@ export default function FloorsPage() {
   const [editing, setEditing] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const [form, setForm] = useState(emptyForm);
+  const [filters, setFilters] = useState(emptyFilters);
 
   // Tải danh sách tầng + loại xe, sau đó lấy capacity từng tầng (diện tích đã dùng / còn trống).
   const load = async () => {
@@ -143,6 +153,22 @@ export default function FloorsPage() {
 
   const isSingle = form.layoutMode === 'single';
 
+  const setFilter = (key, value) => setFilters((f) => ({ ...f, [key]: value }));
+
+  const filterActive = Boolean(filters.text || filters.layoutMode || filters.vehicleTypeId);
+
+  const visibleItems = useMemo(
+    () =>
+      items.filter(
+        (item) =>
+          matchText(filters.text, item.floor_code, item.label) &&
+          (!filters.layoutMode || item.layout_mode === filters.layoutMode) &&
+          // Chỉ tầng "1 loại xe" mới gắn loại xe — lọc loại xe tự loại hết tầng phân khu.
+          (!filters.vehicleTypeId || String(item.vehicle_type_id) === filters.vehicleTypeId),
+      ),
+    [items, filters],
+  );
+
   return (
     <div>
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
@@ -156,6 +182,37 @@ export default function FloorsPage() {
       </div>
 
       {error && !modalOpen && <ErrorAlert message={error} className="mb-4" />}
+
+      <FilterBar
+        className="mb-4"
+        active={filterActive}
+        onReset={() => setFilters(emptyFilters)}
+        shown={visibleItems.length}
+        total={items.length}
+        unitLabel="tầng"
+        gridClassName="sm:grid-cols-3"
+      >
+        <SearchField
+          label="Mã tầng / tên"
+          value={filters.text}
+          onChange={(v) => setFilter('text', v)}
+          placeholder="VD: B1 hoặc Tầng hầm"
+        />
+        <SelectField
+          label="Chế độ bố trí"
+          value={filters.layoutMode}
+          onChange={(v) => setFilter('layoutMode', v)}
+          allLabel="— Tất cả chế độ —"
+          options={LAYOUT_OPTIONS}
+        />
+        <SelectField
+          label="Loại xe (tầng 1 loại xe)"
+          value={filters.vehicleTypeId}
+          onChange={(v) => setFilter('vehicleTypeId', v)}
+          allLabel="— Tất cả loại xe —"
+          options={vehicleTypes.map((t) => ({ value: String(t.vehicle_type_id), label: t.type_name }))}
+        />
+      </FilterBar>
 
       <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-surface-raised shadow-(--shadow-card)">
         <table className="min-w-full text-sm">
@@ -174,8 +231,10 @@ export default function FloorsPage() {
               <tr><td colSpan={6} className="px-4 py-10 text-center text-slate-400">Đang tải...</td></tr>
             ) : items.length === 0 ? (
               <tr><td colSpan={6} className="px-4 py-10 text-center text-slate-400">Chưa có tầng nào</td></tr>
+            ) : visibleItems.length === 0 ? (
+              <tr><td colSpan={6} className="px-4 py-10 text-center text-slate-400">Không có tầng nào khớp bộ lọc</td></tr>
             ) : (
-              items.map((item) => {
+              visibleItems.map((item) => {
                 const cap = capacities[item.floor_id];
                 const single = item.layout_mode === 'single';
                 return (

@@ -1,9 +1,25 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { gatesApi, floorsApi, vehicleTypesApi } from '../../api/masterData';
 import Modal, { Field, inputClass, ErrorAlert } from '../../components/Modal';
+import FilterBar, { SearchField, SelectField } from '../../components/ui/FilterBar';
 import { validateGateForm } from '../../lib/validate';
+import { matchText } from '../../lib/filters';
+import { formatFloorLabel } from '../../lib/floor';
 
 const DIRECTION_LABELS = { in: 'Vào', out: 'Ra' };
+
+const DIRECTION_OPTIONS = [
+  { value: 'in', label: 'Vào (IN)' },
+  { value: 'out', label: 'Ra (OUT)' },
+];
+
+const ACTIVE_OPTIONS = [
+  { value: 'yes', label: 'Đang bật' },
+  { value: 'no', label: 'Đang tắt' },
+];
+
+// 'building' = cổng cấp tòa nhà (floor_id null), khớp sentinel dùng trong form.
+const emptyFilters = { text: '', floorId: '', direction: '', active: '' };
 
 const emptyForm = () => ({
   floorId: '',
@@ -24,6 +40,25 @@ export default function GatesPage() {
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState(emptyForm());
   const [fieldErrors, setFieldErrors] = useState({});
+  const [filters, setFilters] = useState(emptyFilters);
+
+  const setFilter = (key, value) => setFilters((f) => ({ ...f, [key]: value }));
+
+  const filterActive = Boolean(filters.text || filters.floorId || filters.direction || filters.active);
+
+  const visibleItems = useMemo(
+    () =>
+      items.filter((item) => {
+        const floorKey = item.floor_id == null ? 'building' : String(item.floor_id);
+        return (
+          matchText(filters.text, item.gate_code, item.label) &&
+          (!filters.floorId || floorKey === filters.floorId) &&
+          (!filters.direction || item.direction === filters.direction) &&
+          (!filters.active || (filters.active === 'yes' ? item.is_active : !item.is_active))
+        );
+      }),
+    [items, filters],
+  );
 
   const load = async () => {
     setLoading(true);
@@ -141,6 +176,45 @@ export default function GatesPage() {
         </div>
         <button onClick={openCreate} className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700">+ Thêm cổng</button>
       </div>
+      <FilterBar
+        className="mb-4"
+        active={filterActive}
+        onReset={() => setFilters(emptyFilters)}
+        shown={visibleItems.length}
+        total={items.length}
+        unitLabel="cổng"
+      >
+        <SearchField
+          label="Mã cổng / nhãn"
+          value={filters.text}
+          onChange={(v) => setFilter('text', v)}
+          placeholder="VD: IN-CAR"
+        />
+        <SelectField
+          label="Phạm vi"
+          value={filters.floorId}
+          onChange={(v) => setFilter('floorId', v)}
+          allLabel="— Tất cả phạm vi —"
+          options={[
+            { value: 'building', label: 'Cổng tòa nhà' },
+            ...floors.map((f) => ({ value: String(f.floor_id), label: formatFloorLabel(f.label || f.floor_code) })),
+          ]}
+        />
+        <SelectField
+          label="Hướng"
+          value={filters.direction}
+          onChange={(v) => setFilter('direction', v)}
+          allLabel="— Cả hai chiều —"
+          options={DIRECTION_OPTIONS}
+        />
+        <SelectField
+          label="Kích hoạt"
+          value={filters.active}
+          onChange={(v) => setFilter('active', v)}
+          allLabel="— Tất cả —"
+          options={ACTIVE_OPTIONS}
+        />
+      </FilterBar>
       <div className="overflow-hidden rounded-xl bg-white shadow-sm">
         <table className="min-w-full text-sm">
           <thead className="border-b border-slate-200 bg-slate-50 text-left text-slate-600">
@@ -157,7 +231,11 @@ export default function GatesPage() {
           <tbody>
             {loading ? (
               <tr><td colSpan={7} className="px-4 py-8 text-center text-slate-400">Đang tải...</td></tr>
-            ) : items.map((item) => (
+            ) : items.length === 0 ? (
+              <tr><td colSpan={7} className="px-4 py-8 text-center text-slate-400">Chưa có cổng nào</td></tr>
+            ) : visibleItems.length === 0 ? (
+              <tr><td colSpan={7} className="px-4 py-8 text-center text-slate-400">Không có cổng nào khớp bộ lọc</td></tr>
+            ) : visibleItems.map((item) => (
               <tr key={item.gate_id} className="border-b border-slate-100">
                 <td className="px-4 py-3 font-medium">{item.gate_code}</td>
                 <td className="px-4 py-3">{item.label || '—'}</td>
