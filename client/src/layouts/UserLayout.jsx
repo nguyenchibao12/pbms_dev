@@ -55,7 +55,10 @@ export default function UserLayout() {
           </div>
         </div>
 
-        <nav className="mx-auto flex max-w-6xl gap-1 overflow-x-auto px-4">
+        {/* overflow-y-hidden là BẮT BUỘC, không thừa: overflow-x-auto khiến trình duyệt tự nâng
+            overflow-y (visible) thành auto, mà -mb-px của tab lại làm nội dung cao hơn khung 1px
+            → hiện thanh cuộn dọc cụt ngủn ở góc phải thanh menu. */}
+        <nav className="mx-auto flex max-w-6xl gap-1 overflow-x-auto overflow-y-hidden px-4">
           {tabs.map((tab) => (
             <NavLink
               key={tab.to}
