@@ -494,6 +494,9 @@ export const checkinWithPass = async (pass, { gateId = null } = {}) => {
     vehicleTypeId: pass.vehicle_type_id,
     // Vé tháng có cam kết sức chứa riêng — lớp giữ-chỗ-cho-đơn-đặt không được chặn người có vé.
     skipReservationHoldback: true,
+    // ...và walk-in guard (giữ chỗ cho vé tháng) cũng không được chặn CHÍNH chủ vé: overselling đã
+    // chống ở lúc bán vé (getPassCapacity khóa Zone) nên vé active luôn có quyền lấy 1 chỗ trong capacity.
+    skipPassCapacity: true,
   });
 
   const qrToken = generateQrToken();
