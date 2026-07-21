@@ -40,7 +40,9 @@ export default function StaffLayout() {
           </div>
         </div>
 
-        <nav className="mx-auto flex max-w-6xl gap-1 overflow-x-auto px-4">
+        {/* overflow-y-hidden là BẮT BUỘC: overflow-x-auto khiến overflow-y tự thành auto, mà
+            -mb-px của tab làm nội dung cao hơn khung 1px → hiện thanh cuộn dọc thừa. */}
+        <nav className="mx-auto flex max-w-6xl gap-1 overflow-x-auto overflow-y-hidden px-4">
           {tabs.map((tab) => (
             <NavLink
               key={tab.to}
