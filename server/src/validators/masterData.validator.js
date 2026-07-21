@@ -243,7 +243,11 @@ export const vehicleTypeValidators = {
       .trim()
       .notEmpty().withMessage('Mã loại xe không được để trống')
       .bail()
-      .isLength({ max: 20 }).withMessage('Mã loại xe tối đa 20 ký tự'),
+      .isLength({ max: 20 }).withMessage('Mã loại xe tối đa 20 ký tự')
+      .bail()
+      // typeCode là 1 MẢNH của mã khu <TẦNG>-<LOẠI XE>-NN; ký tự '-' hoặc khoảng trắng làm prefix loại này
+      // trùng prefix loại khác (F1-CAR-% khớp cả F1-CAR-A-01) → buildZoneCode đánh số NN sai. Chỉ chữ+số.
+      .matches(/^[A-Za-z0-9]+$/).withMessage('Mã loại xe chỉ gồm chữ và số (không dấu cách hay ký tự "-")'),
     body('slotAreaM2')
       .optional()
       .isFloat({ min: 0 }).withMessage('Diện tích 1 slot (m²) phải là số ≥ 0')
@@ -262,7 +266,10 @@ export const vehicleTypeValidators = {
       .trim()
       .notEmpty().withMessage('Mã loại xe không được để trống')
       .bail()
-      .isLength({ max: 20 }).withMessage('Mã loại xe tối đa 20 ký tự'),
+      .isLength({ max: 20 }).withMessage('Mã loại xe tối đa 20 ký tự')
+      .bail()
+      // Xem create: giữ mã loại xe chỉ chữ+số để không phá quy ước ghép mã khu.
+      .matches(/^[A-Za-z0-9]+$/).withMessage('Mã loại xe chỉ gồm chữ và số (không dấu cách hay ký tự "-")'),
     body('slotAreaM2')
       .optional()
       .isFloat({ min: 0 }).withMessage('Diện tích 1 slot (m²) phải là số ≥ 0')
