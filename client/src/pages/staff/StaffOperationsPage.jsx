@@ -599,7 +599,7 @@ export default function StaffOperationsPage() {
       <div className="mb-6 inline-flex rounded-xl border border-slate-200 bg-surface-raised p-1">
         {[
           { id: 'checkin', label: 'Check-in (xe vào)' },
-          { id: 'active', label: `Xe đang đỗ${active.length ? ` (${active.length})` : ''}` },
+          { id: 'active', label: `Phiên hoạt động${active.length ? ` (${active.length})` : ''}` },
           { id: 'reservation', label: `Đặt chỗ vào${upcoming.length ? ` (${upcoming.length})` : ''}` },
           { id: 'lookup', label: 'Tra cứu xe (QR)' },
           { id: 'booth', label: 'Thu tiền mặt (ra)' },
