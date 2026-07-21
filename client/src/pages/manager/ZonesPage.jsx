@@ -1,10 +1,16 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { zonesApi, floorsApi, vehicleTypesApi } from '../../api/masterData';
 import Modal, { Field, inputClass, ErrorAlert } from '../../components/Modal';
+import FilterBar, { SearchField, SelectField } from '../../components/ui/FilterBar';
 import { validateZoneForm } from '../../lib/validate';
+import { matchText } from '../../lib/filters';
+import { formatFloorLabel } from '../../lib/floor';
+
+const emptyFilters = { text: '', floorId: '', vehicleTypeId: '' };
 
 export default function ZonesPage() {
   const [items, setItems] = useState([]);
+  const [filters, setFilters] = useState(emptyFilters);
   const [floors, setFloors] = useState([]);
   const [vehicleTypes, setVehicleTypes] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -26,6 +32,21 @@ export default function ZonesPage() {
   // Tầng single tự quản 1 khu mặc định → không cho tạo khu thủ công.
   const zonedFloors = floors.filter((f) => f.layout_mode !== 'single');
   const noZonedFloor = !loading && zonedFloors.length === 0;
+
+  const setFilter = (key, value) => setFilters((f) => ({ ...f, [key]: value }));
+
+  const filterActive = Boolean(filters.text || filters.floorId || filters.vehicleTypeId);
+
+  const visibleItems = useMemo(
+    () =>
+      items.filter(
+        (item) =>
+          matchText(filters.text, item.zone_code, item.label) &&
+          (!filters.floorId || String(item.floor_id) === filters.floorId) &&
+          (!filters.vehicleTypeId || String(item.vehicle_type_id) === filters.vehicleTypeId),
+      ),
+    [items, filters],
+  );
 
   const load = async () => {
     setLoading(true);
@@ -192,6 +213,37 @@ export default function ZonesPage() {
           Tất cả tầng đang ở chế độ "1 loại xe" (single) — các tầng này tự quản 1 khu mặc định nên không thể thêm khu thủ công. Tạo tầng "Phân khu" (zoned) để thêm khu.
         </p>
       )}
+      <FilterBar
+        className="mb-4"
+        active={filterActive}
+        onReset={() => setFilters(emptyFilters)}
+        shown={visibleItems.length}
+        total={items.length}
+        unitLabel="khu"
+        gridClassName="sm:grid-cols-3"
+      >
+        <SearchField
+          label="Mã khu / tên"
+          value={filters.text}
+          onChange={(v) => setFilter('text', v)}
+          placeholder="VD: B1-C-01 hoặc Khu A"
+        />
+        <SelectField
+          label="Tầng"
+          value={filters.floorId}
+          onChange={(v) => setFilter('floorId', v)}
+          allLabel="— Tất cả tầng —"
+          options={floors.map((f) => ({ value: String(f.floor_id), label: formatFloorLabel(f.label || f.floor_code) }))}
+        />
+        <SelectField
+          label="Loại xe"
+          value={filters.vehicleTypeId}
+          onChange={(v) => setFilter('vehicleTypeId', v)}
+          allLabel="— Tất cả loại xe —"
+          options={vehicleTypes.map((t) => ({ value: String(t.vehicle_type_id), label: t.type_name }))}
+        />
+      </FilterBar>
+
       <div className="overflow-hidden rounded-xl bg-white shadow-sm">
         <table className="min-w-full text-sm">
           <thead className="border-b border-slate-200 bg-slate-50 text-left text-slate-600">
@@ -210,7 +262,9 @@ export default function ZonesPage() {
               <tr><td colSpan={7} className="px-4 py-8 text-center text-slate-400">Đang tải...</td></tr>
             ) : items.length === 0 ? (
               <tr><td colSpan={7} className="px-4 py-8 text-center text-slate-400">Chưa có khu vực</td></tr>
-            ) : items.map((item) => (
+            ) : visibleItems.length === 0 ? (
+              <tr><td colSpan={7} className="px-4 py-8 text-center text-slate-400">Không có khu nào khớp bộ lọc</td></tr>
+            ) : visibleItems.map((item) => (
               <tr key={item.zone_id} className="border-b border-slate-100">
                 <td className="px-4 py-3 font-medium">{item.zone_code}</td>
                 <td className="px-4 py-3">{item.label}</td>
