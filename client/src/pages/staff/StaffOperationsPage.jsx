@@ -50,6 +50,16 @@ const INCIDENT_STATUS_BADGE = {
   resolved: 'bg-emerald-50 text-emerald-700',
 };
 
+// Lố giờ có 2 lý do khác nhau (BE trả overstayReason) — nói đúng để Manager không tưởng
+// liên quan "Giờ gửi tối đa": reservation_window = ở quá khung đã đặt (không liên quan giờ gửi
+// tối đa); walk_in_max_hours = quá giờ gửi tối đa của bãi.
+const overstayLabel = (reason) =>
+  reason === 'reservation_window'
+    ? 'ở quá KHUNG ĐẶT CHỖ đã đăng ký'
+    : reason === 'walk_in_max_hours'
+      ? 'quá GIỜ GỬI TỐI ĐA của bãi'
+      : 'lố giờ';
+
 // Vé tháng (tab tra cứu của Staff).
 const PASS_STATUS_OPTIONS = [
   ['pending', 'Chờ thanh toán'],
@@ -993,7 +1003,7 @@ export default function StaffOperationsPage() {
 
                     {boothPreview.overstay && (
                       <p className="rounded bg-red-50 px-2 py-1 text-xs font-medium text-red-700">
-                        ⚠ Xe {boothPreview.session?.plate_number} LỐ GIỜ{boothPreview.overstayHours > 0 ? ` (~${boothPreview.overstayHours}h)` : ''} — BẮT BUỘC thu phụ thu {fmtMoney(boothPreview.overstayFee)} (đã tính vào phí).
+                        ⚠ Xe {boothPreview.session?.plate_number} {overstayLabel(boothPreview.overstayReason)}{boothPreview.overstayHours > 0 ? ` (~${boothPreview.overstayHours}h)` : ''} — BẮT BUỘC thu phụ thu {fmtMoney(boothPreview.overstayFee)} (đã tính vào phí).
                       </p>
                     )}
                     <label className="flex items-center gap-2 text-sm text-slate-700">
@@ -1004,15 +1014,20 @@ export default function StaffOperationsPage() {
                       />
                       Khách báo mất vé (phụ thu)
                     </label>
-                    <label className={`flex items-center gap-2 text-sm ${boothPreview.overstayEnforced ? 'font-medium text-red-700' : 'text-slate-700'}`}>
-                      <input
-                        type="checkbox"
-                        checked={boothPreview.overstayEnforced || boothOverstay}
-                        disabled={boothPreview.overstayEnforced}
-                        onChange={(e) => toggleBoothOverstay(e.target.checked)}
-                      />
-                      Phụ thu lố giờ{boothPreview.overstayEnforced ? ' — bắt buộc' : ''}{boothPreview.overstayFee > 0 ? ` (+${fmtMoney(boothPreview.overstayFee)})` : ''}
-                    </label>
+                    {boothPreview.overstayEnforced ? (
+                      <p className="text-sm font-medium text-red-700">
+                        ↳ Đã tự cộng phụ thu lố giờ{boothPreview.overstayFee > 0 ? ` (+${fmtMoney(boothPreview.overstayFee)})` : ''} — bắt buộc, không bỏ được.
+                      </p>
+                    ) : (
+                      <label className="flex items-center gap-2 text-sm text-slate-700">
+                        <input
+                          type="checkbox"
+                          checked={boothOverstay}
+                          onChange={(e) => toggleBoothOverstay(e.target.checked)}
+                        />
+                        Phụ thu lố giờ (giá Manager set){boothPreview.overstayFee > 0 ? ` (+${fmtMoney(boothPreview.overstayFee)})` : ''}
+                      </label>
+                    )}
 
                     <Button className="brand-gradient w-full border-0" loading={boothSubmitting} onClick={confirmBoothCash}>
                       Đã thu tiền mặt → mở barie
@@ -1286,22 +1301,23 @@ export default function StaffOperationsPage() {
 
             {coPreview?.overstay && (
               <p className="rounded bg-red-50 px-2 py-1 text-xs font-medium text-red-700">
-                ⚠ Xe {coPreview.session?.plate_number} LỐ GIỜ{coPreview.overstayHours > 0 ? ` (~${coPreview.overstayHours}h)` : ''} — BẮT BUỘC thu phụ thu {fmtMoney(coPreview.overstayFee)} (đã tính vào phí).
+                ⚠ Xe {coPreview.session?.plate_number} {overstayLabel(coPreview.overstayReason)}{coPreview.overstayHours > 0 ? ` (~${coPreview.overstayHours}h)` : ''} — BẮT BUỘC thu phụ thu {fmtMoney(coPreview.overstayFee)} (đã tính vào phí).
               </p>
             )}
             <label className="flex items-center gap-2 text-sm text-slate-700">
               <input type="checkbox" checked={coLost} onChange={(e) => toggleCoLost(e.target.checked)} />
               Khách báo mất vé (phụ thu)
             </label>
-            <label className={`flex items-center gap-2 text-sm ${coPreview?.overstayEnforced ? 'font-medium text-red-700' : 'text-slate-700'}`}>
-              <input
-                type="checkbox"
-                checked={coPreview?.overstayEnforced || coOverstay}
-                disabled={coPreview?.overstayEnforced}
-                onChange={(e) => toggleCoOverstay(e.target.checked)}
-              />
-              Phụ thu lố giờ{coPreview?.overstayEnforced ? ' — bắt buộc' : ' (giá Manager set)'}{coPreview?.overstayFee > 0 ? ` (+${fmtMoney(coPreview.overstayFee)})` : ''}
-            </label>
+            {coPreview?.overstayEnforced ? (
+              <p className="text-sm font-medium text-red-700">
+                ↳ Đã tự cộng phụ thu lố giờ{coPreview?.overstayFee > 0 ? ` (+${fmtMoney(coPreview.overstayFee)})` : ''} — bắt buộc, không bỏ được.
+              </p>
+            ) : (
+              <label className="flex items-center gap-2 text-sm text-slate-700">
+                <input type="checkbox" checked={coOverstay} onChange={(e) => toggleCoOverstay(e.target.checked)} />
+                Phụ thu lố giờ (giá Manager set){coPreview?.overstayFee > 0 ? ` (+${fmtMoney(coPreview.overstayFee)})` : ''}
+              </label>
+            )}
 
             <div className="flex justify-end gap-2 pt-2">
               <Button type="button" variant="secondary" onClick={() => setCoSession(null)}>Hủy</Button>
