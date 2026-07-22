@@ -1,3 +1,5 @@
+import { validateAndNormalizePlateVN } from './plate.js';
+
 /** Gộp nhiều object lỗi { field: message } thành một. */
 export function mergeErrors(...maps) {
   return Object.assign({}, ...maps.filter(Boolean));
@@ -27,6 +29,15 @@ export function validateNonNegativeNumber(value, field, { required = true } = {}
   if (Number.isNaN(n)) return { [field]: 'Phải là số hợp lệ' };
   if (n < 0) return { [field]: 'Không được âm' };
   return {};
+}
+
+/**
+ * Biển số xe: bắt buộc + đúng định dạng VN (mirror plate.validator.js của BE).
+ * Chặn tại chỗ để khách không gửi form rồi mới nhận lỗi định dạng từ server.
+ */
+export function validatePlateNumber(value, field = 'plateNumber') {
+  const result = validateAndNormalizePlateVN(value);
+  return result.valid ? {} : { [field]: result.error };
 }
 
 /**
@@ -78,7 +89,7 @@ export function validateVehicleTypeForm(form) {
 
 /**
  * Validate form chỗ đỗ (parking_slot): khu (bắt buộc). Mã chỗ do BE tự sinh nên không validate.
- * Khoảng cách tới cổng (tùy chọn, số ≥ 0). slotType tự do.
+ * Khoảng cách tới cổng (tùy chọn, số ≥ 0).
  */
 export function validateSlotForm(form) {
   return mergeErrors(
@@ -102,18 +113,27 @@ export function validateZoneForm(form) {
   );
 }
 
-/** Validate form cổng (gate): tầng (bắt buộc), mã cổng (bắt buộc). */
-export function validateGateForm(form) {
-  return mergeErrors(
-    validateRequired(form.floorId, 'floorId', 'tầng'),
-    validateRequiredText(form.gateCode, 'gateCode', 'mã cổng'),
+/**
+ * Validate form cổng (gate): phạm vi + hướng bắt buộc. Mã cổng do FE tự sinh từ
+ * mã tầng/hướng/loại xe (lib/gateCode.js) nên chỉ kiểm nó dựng được và không trùng —
+ * `codeConflict` là câu báo trùng do trang truyền vào sau khi đối chiếu danh sách cổng.
+ */
+export function validateGateForm(form, { codeConflict = '' } = {}) {
+  const errors = mergeErrors(
+    validateRequired(form.floorId, 'floorId', 'phạm vi (tầng hoặc cấp tòa nhà)'),
+    validateRequired(form.direction, 'direction', 'hướng cổng'),
   );
+  if (!errors.floorId && !errors.direction) {
+    if (!form.gateCode) errors.gateCode = 'Chưa dựng được mã cổng — kiểm tra lại phạm vi và hướng';
+    else if (codeConflict) errors.gateCode = codeConflict;
+  }
+  return errors;
 }
 
 /** Validate form check-in (Staff): biển số, loại xe, tầng. Cổng do BE tự suy (optional). */
 export function validateCheckinForm(form) {
   return mergeErrors(
-    validateRequiredText(form.plateNumber, 'plateNumber', 'biển số xe'),
+    validatePlateNumber(form.plateNumber),
     validateRequired(form.vehicleTypeId, 'vehicleTypeId', 'loại xe'),
     validateRequired(form.floorId, 'floorId', 'tầng'),
   );
