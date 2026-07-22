@@ -7,6 +7,7 @@ import { floorsApi, vehicleTypesApi, gatesApi } from '../../api/masterData';
 import { friendlyReservationError, reservationCheckinBadge } from '../../lib/reservationStatus';
 import { publicApi } from '../../api/public';
 import { validateCheckinForm } from '../../lib/validate';
+import { PLATE_VN_HINT, cleanPlateInput, normalizePlateOrKeep } from '../../lib/plate';
 import Card from '../../components/ui/Card';
 import Modal from '../../components/ui/Modal';
 import Field, { ErrorAlert } from '../../components/ui/Field';
@@ -383,7 +384,7 @@ export default function StaffOperationsPage() {
     setSubmitting(true);
     try {
       const payload = {
-        plateNumber: form.plateNumber.trim().toUpperCase(),
+        plateNumber: normalizePlateOrKeep(form.plateNumber),
         vehicleTypeId: Number(form.vehicleTypeId),
         floorId: Number(form.floorId),
         ...(form.gateId ? { gateId: Number(form.gateId) } : {}), // BE tự suy nếu bỏ trống
@@ -639,12 +640,15 @@ export default function StaffOperationsPage() {
             <h2 className="mb-4 text-lg font-semibold text-slate-800">Ghi nhận xe vào</h2>
             <ErrorAlert message={checkinError} className="mb-4" />
             <form onSubmit={handleCheckin} className="space-y-4">
-              <Field label="Biển số xe" required error={fieldErrors.plateNumber}>
+              <Field label="Biển số xe" required error={fieldErrors.plateNumber} hint={PLATE_VN_HINT}>
                 <input
                   className={inputClass}
                   value={form.plateNumber}
-                  onChange={(e) => setForm({ ...form, plateNumber: e.target.value.toUpperCase() })}
-                  placeholder="51F-12345"
+                  onChange={(e) => setForm({ ...form, plateNumber: cleanPlateInput(e.target.value) })}
+                  // Rời ô là chuẩn hóa về dạng BE lưu (51F12345 -> 51F-123.45) để staff thấy đúng
+                  // biển sẽ được ghi nhận, không phải đoán cách chấm/gạch.
+                  onBlur={() => setForm((f) => ({ ...f, plateNumber: normalizePlateOrKeep(f.plateNumber) }))}
+                  placeholder="51F-123.45"
                   required
                 />
               </Field>
@@ -681,9 +685,12 @@ export default function StaffOperationsPage() {
                   <option value="">— Chọn tầng —</option>
                   {visibleFloors.map((f) => {
                     const fr = freeFor(floorMetaFor(f.floor_id), form.vehicleTypeId);
+                    // Tầng hết chỗ thì khóa luôn: cho chọn rồi mới báo đầy là bắt staff thao tác thừa.
+                    const full = fr ? fr.available === 0 : false;
                     return (
-                      <option key={f.floor_id} value={f.floor_id}>
-                        {f.floor_code} — {f.label}{fr ? ` (${fr.available} trống)` : ''}
+                      <option key={f.floor_id} value={f.floor_id} disabled={full}>
+                        {f.floor_code} — {f.label}
+                        {fr ? (full ? ' — đã kín, không nhận thêm xe' : ` (còn ${fr.available} chỗ)`) : ''}
                       </option>
                     );
                   })}
@@ -711,11 +718,16 @@ export default function StaffOperationsPage() {
               {form.floorId && selectedFloorFree && (
                 <div className={`rounded-lg px-3 py-2 text-sm ${selectedFloorFree.available === 0 ? 'bg-red-50 text-red-600' : 'bg-emerald-50 text-emerald-700'}`}>
                   {selectedFloorFree.available === 0
-                    ? `Tầng đầy${selectedVtName ? ` cho ${selectedVtName}` : ''} (${selectedFloorFree.available}/${selectedFloorFree.total} chỗ)`
+                    ? `Tầng này đã kín — ${selectedFloorFree.total} chỗ${selectedVtName ? ` dành cho ${selectedVtName}` : ''} đều không nhận thêm được. Chọn tầng khác.`
                     : `Còn ${selectedFloorFree.available}/${selectedFloorFree.total} chỗ${selectedVtName ? ` cho ${selectedVtName}` : ''}`}
                 </div>
               )}
-              <Button type="submit" className="brand-gradient w-full border-0 shadow-(--shadow-soft)" loading={submitting} disabled={!!form.floorId && gates.length === 0}>
+              <Button
+                type="submit"
+                className="brand-gradient w-full border-0 shadow-(--shadow-soft)"
+                loading={submitting}
+                disabled={(!!form.floorId && gates.length === 0) || selectedFloorFree?.available === 0}
+              >
                 Check-in xe vào
               </Button>
             </form>
