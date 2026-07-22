@@ -29,10 +29,10 @@ function StatusBadge({ status }) {
   );
 }
 
+// Không còn slotType: migration 009 đã drop cột slot_type khỏi bảng parking_slot.
 const emptyForm = {
   zoneId: '',
   slotCode: '',
-  slotType: '',
   distanceToGate: '',
   status: 'available',
 };
@@ -163,7 +163,7 @@ export default function ParkingSlotsPage() {
     () =>
       items.filter(
         (item) =>
-          matchText(filters.code, item.slot_code, item.slot_type) &&
+          matchText(filters.code, item.slot_code) &&
           (!filters.floorId || String(item.zone?.floor?.floor_id) === filters.floorId) &&
           (!filters.status || item.status === filters.status),
       ),
@@ -190,7 +190,6 @@ export default function ParkingSlotsPage() {
     setForm({
       zoneId: String(item.zone_id),
       slotCode: item.slot_code,
-      slotType: item.slot_type || '',
       distanceToGate: item.distance_to_gate != null ? String(item.distance_to_gate) : '',
       status: item.status,
     });
@@ -209,7 +208,6 @@ export default function ParkingSlotsPage() {
       // Không gửi slotCode — BE tự sinh mã chỗ theo <mã khu>-NN.
       const payload = {
         zoneId: Number(form.zoneId),
-        slotType: form.slotType.trim() || null,
         distanceToGate: form.distanceToGate !== '' ? Number(form.distanceToGate) : null,
       };
       // Chỉ gửi status khi Manager được phép đặt/đổi (tránh backend từ chối reserved/occupied).
@@ -359,7 +357,6 @@ export default function ParkingSlotsPage() {
               <th className="px-4 py-3">Mã chỗ</th>
               <th className="px-4 py-3">Khu</th>
               <th className="px-4 py-3">Tầng</th>
-              <th className="px-4 py-3">Loại chỗ</th>
               <th className="px-4 py-3">Cách cổng (m)</th>
               <th className="px-4 py-3">Trạng thái</th>
               <th className="px-4 py-3 text-right">Thao tác</th>
@@ -367,17 +364,16 @@ export default function ParkingSlotsPage() {
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={7} className="px-4 py-8 text-center text-slate-400">Đang tải...</td></tr>
+              <tr><td colSpan={6} className="px-4 py-8 text-center text-slate-400">Đang tải...</td></tr>
             ) : items.length === 0 ? (
-              <tr><td colSpan={7} className="px-4 py-8 text-center text-slate-400">Chưa có chỗ đỗ</td></tr>
+              <tr><td colSpan={6} className="px-4 py-8 text-center text-slate-400">Chưa có chỗ đỗ</td></tr>
             ) : visibleItems.length === 0 ? (
-              <tr><td colSpan={7} className="px-4 py-8 text-center text-slate-400">Không có chỗ nào khớp bộ lọc</td></tr>
+              <tr><td colSpan={6} className="px-4 py-8 text-center text-slate-400">Không có chỗ nào khớp bộ lọc</td></tr>
             ) : visibleItems.map((item) => (
               <tr key={item.slot_id} className="border-b border-slate-100">
                 <td className="px-4 py-3 font-medium">{item.slot_code}</td>
                 <td className="px-4 py-3">{item.zone?.zone_code || '—'}</td>
                 <td className="px-4 py-3">{item.zone?.floor?.floor_code || '—'}</td>
-                <td className="px-4 py-3">{item.slot_type || '—'}</td>
                 <td className="px-4 py-3">{item.distance_to_gate ?? '—'}</td>
                 <td className="px-4 py-3">
                   {MANUAL_STATUSES.includes(item.status) ? (
@@ -425,9 +421,6 @@ export default function ParkingSlotsPage() {
               placeholder="Chọn khu"
               readOnly
             />
-          </Field>
-          <Field label="Loại chỗ" hint="Tùy chọn — vd: standard, ev, disabled" error={fieldErrors.slotType}>
-            <input className={inputClass} value={form.slotType} onChange={(e) => setForm({ ...form, slotType: e.target.value })} />
           </Field>
           <Field label="Khoảng cách tới cổng (m)" hint="Tùy chọn — dùng cho AI gợi ý slot" error={fieldErrors.distanceToGate}>
             <input type="number" min="0" step="0.01" className={inputClass} value={form.distanceToGate} onChange={(e) => setForm({ ...form, distanceToGate: e.target.value })} />

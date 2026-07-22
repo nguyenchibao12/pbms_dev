@@ -3,8 +3,11 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { CalendarPlus, ArrowLeft } from 'lucide-react';
 import { reservationsApi } from '../../api/reservations';
 import { floorsApi, vehicleTypesApi } from '../../api/masterData';
+import { publicApi } from '../../api/public';
 import { SHIFTS, resolveShiftWindow } from '../../lib/shifts';
-import { mergeErrors, validateRequiredText, validateRequired } from '../../lib/validate';
+import { mergeErrors, validatePlateNumber, validateRequired } from '../../lib/validate';
+import { PLATE_VN_HINT, cleanPlateInput, normalizePlateOrKeep } from '../../lib/plate';
+import { floorsAcceptingVehicleType } from '../../lib/floor';
 import PageHeader from '../../components/ui/PageHeader';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
@@ -26,6 +29,7 @@ export default function ReservePage() {
   const [searchParams] = useSearchParams();
   const [floors, setFloors] = useState([]);
   const [vehicleTypes, setVehicleTypes] = useState([]);
+  const [capacity, setCapacity] = useState([]); // sức chứa theo tầng/khu (GET /public/availability)
   const [metaLoading, setMetaLoading] = useState(true);
   const [metaError, setMetaError] = useState('');
 
@@ -47,9 +51,16 @@ export default function ReservePage() {
   const loadMeta = useCallback(async () => {
     setMetaLoading(true);
     try {
-      const [floorRes, vtRes] = await Promise.all([floorsApi.list(), vehicleTypesApi.list()]);
+      // Kèm availability để biết tầng nào CÓ khu cho loại xe nào — lọc dropdown tầng
+      // ngay khi khách chọn loại xe, khỏi để họ chọn tầng không nhận xe của mình.
+      const [floorRes, vtRes, availRes] = await Promise.all([
+        floorsApi.list(),
+        vehicleTypesApi.list(),
+        publicApi.availability().catch(() => null),
+      ]);
       setFloors(floorRes.data.data ?? []);
       setVehicleTypes(vtRes.data.data ?? []);
+      setCapacity(availRes?.data.data ?? []);
       setMetaError('');
     } catch (err) {
       setMetaError(err.response?.data?.error?.message || 'Không tải được dữ liệu bãi đỗ');
@@ -86,6 +97,23 @@ export default function ReservePage() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Tầng khách chọn được: chỉ tầng CÓ khu cho loại xe đang chọn. Lọc theo sức chứa chứ không
+  // theo chỗ trống hiện tại — tầng nay kín vẫn có thể trống ở ca khách định đặt, phần đó đã
+  // có ô "chỗ trống trong ca" bên dưới lo.
+  const floorOptions = floorsAcceptingVehicleType(floors, capacity, form.vehicleTypeId);
+  const selectedVtName = vehicleTypes.find((t) => String(t.vehicle_type_id) === String(form.vehicleTypeId))?.type_name;
+  // Chỉ kết luận "không có tầng nào" khi đã có đủ dữ liệu tầng + sức chứa để nói vậy.
+  const noFloorForVehicle = Boolean(form.vehicleTypeId)
+    && floors.length > 0 && capacity.length > 0 && floorOptions.length === 0;
+
+  // Đổi loại xe mà tầng đang chọn không nhận loại đó -> bỏ chọn tầng ngay.
+  const onVehicleTypeChange = (vehicleTypeId) => {
+    const stillValid = !form.floorId
+      || floorsAcceptingVehicleType(floors, capacity, vehicleTypeId)
+        .some((f) => String(f.floor_id) === String(form.floorId));
+    patchForm({ vehicleTypeId, ...(stillValid ? {} : { floorId: '' }) });
+  };
 
   const complete = Boolean(form.floorId && form.vehicleTypeId && form.arrivalDate && form.shiftId);
 
@@ -134,7 +162,7 @@ export default function ReservePage() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     const errors = mergeErrors(
-      validateRequiredText(form.plateNumber, 'plateNumber', 'biển số xe'),
+      validatePlateNumber(form.plateNumber),
       validateRequired(form.vehicleTypeId, 'vehicleTypeId', 'loại xe'),
       validateRequired(form.floorId, 'floorId', 'tầng'),
       validateRequired(form.shiftId, 'shiftId', 'ca'),
@@ -166,7 +194,7 @@ export default function ReservePage() {
     setError('');
     try {
       const { data } = await reservationsApi.create({
-        plateNumber: form.plateNumber.trim(),
+        plateNumber: normalizePlateOrKeep(form.plateNumber),
         vehicleTypeId: Number(form.vehicleTypeId),
         floorId: Number(form.floorId),
         shiftId: form.shiftId,
@@ -208,11 +236,14 @@ export default function ReservePage() {
 
       <Card>
         <form onSubmit={handleSubmit} className="space-y-4">
-          <Field label="Biển số xe" required error={fieldErrors.plateNumber}>
+          <Field label="Biển số xe" required error={fieldErrors.plateNumber} hint={PLATE_VN_HINT}>
             <input
               className={inputClass}
               value={form.plateNumber}
-              onChange={(e) => patchForm({ plateNumber: e.target.value })}
+              onChange={(e) => patchForm({ plateNumber: cleanPlateInput(e.target.value) })}
+              // Rời ô là chuẩn hóa về dạng BE lưu (51F67890 -> 51F-678.90), khách khỏi đoán
+              // phải chấm hay gạch ở đâu.
+              onBlur={() => patchForm({ plateNumber: normalizePlateOrKeep(form.plateNumber) })}
               placeholder="VD: 51F-678.90"
               autoComplete="off"
             />
@@ -222,7 +253,7 @@ export default function ReservePage() {
             <select
               className={inputClass}
               value={form.vehicleTypeId}
-              onChange={(e) => patchForm({ vehicleTypeId: e.target.value })}
+              onChange={(e) => onVehicleTypeChange(e.target.value)}
               disabled={metaLoading}
             >
               <option value="">— Chọn loại xe —</option>
@@ -234,7 +265,12 @@ export default function ReservePage() {
             </select>
           </Field>
 
-          <Field label="Tầng" required error={fieldErrors.floorId}>
+          <Field
+            label="Tầng"
+            required
+            error={fieldErrors.floorId}
+            hint={form.vehicleTypeId ? `Chỉ hiện tầng nhận ${selectedVtName || 'loại xe này'}` : 'Chọn loại xe trước để lọc tầng phù hợp'}
+          >
             <select
               className={inputClass}
               value={form.floorId}
@@ -242,13 +278,19 @@ export default function ReservePage() {
               disabled={metaLoading}
             >
               <option value="">— Chọn tầng —</option>
-              {floors.map((f) => (
+              {floorOptions.map((f) => (
                 <option key={f.floor_id} value={f.floor_id}>
                   {f.floor_code} — {f.label}
                 </option>
               ))}
             </select>
           </Field>
+
+          {noFloorForVehicle && (
+            <div className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-700">
+              Bãi chưa có tầng nào nhận {selectedVtName || 'loại xe này'} — chọn loại xe khác hoặc liên hệ ban quản lý.
+            </div>
+          )}
 
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <Field label="Ngày đến" required error={fieldErrors.arrivalDate}>
@@ -311,7 +353,7 @@ export default function ReservePage() {
             type="submit"
             className="w-full"
             loading={submitting}
-            disabled={metaLoading || !canBook || availLoading || Boolean(availError)}
+            disabled={metaLoading || !canBook || availLoading || Boolean(availError) || noFloorForVehicle}
           >
             <CalendarPlus className="h-4 w-4" />
             Đặt chỗ &amp; thanh toán

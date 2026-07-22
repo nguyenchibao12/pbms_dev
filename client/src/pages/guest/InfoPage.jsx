@@ -70,8 +70,12 @@ export default function InfoPage() {
               </li>
             </ul>
             <div className="mt-4 rounded-lg bg-brand-light p-3 text-sm">
-              <p>Phí đặt chỗ: <strong>{formatVnd(info.bookingFee)}</strong></p>
-              <p className="mt-1">Vé tháng từ: <strong>{formatVnd(info.monthlyPassPrice)}</strong></p>
+              <p>Phí giữ chỗ (đặt trước): <strong>{formatVnd(info.bookingFee)}</strong></p>
+              {/* Khách hay tưởng phí giữ chỗ là tiền gửi xe — nói rõ đây là 2 khoản tách biệt. */}
+              <p className="mt-0.5 text-xs text-slate-500">
+                Thu 1 lần khi đặt chỗ, chưa gồm tiền gửi xe theo giờ (xem Bảng giá).
+              </p>
+              <p className="mt-2">Vé tháng từ: <strong>{formatVnd(info.monthlyPassPrice)}</strong></p>
             </div>
           </Card>
 

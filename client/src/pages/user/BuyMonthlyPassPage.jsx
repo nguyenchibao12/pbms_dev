@@ -3,7 +3,10 @@ import { Link } from 'react-router-dom';
 import { TicketPlus, ArrowLeft } from 'lucide-react';
 import { monthlyPassApi } from '../../api/monthlyPass';
 import { floorsApi, vehicleTypesApi } from '../../api/masterData';
-import { mergeErrors, validateRequiredText, validateRequired } from '../../lib/validate';
+import { publicApi } from '../../api/public';
+import { mergeErrors, validatePlateNumber, validateRequired } from '../../lib/validate';
+import { PLATE_VN_HINT, cleanPlateInput, normalizePlateOrKeep } from '../../lib/plate';
+import { floorsAcceptingVehicleType } from '../../lib/floor';
 import PageHeader from '../../components/ui/PageHeader';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
@@ -23,6 +26,7 @@ const emptyForm = { plateNumber: '', vehicleTypeId: '', floorId: '', startDate: 
 export default function BuyMonthlyPassPage() {
   const [floors, setFloors] = useState([]);
   const [vehicleTypes, setVehicleTypes] = useState([]);
+  const [slotCapacity, setSlotCapacity] = useState([]); // sức chứa theo tầng/khu (GET /public/availability)
   const [metaLoading, setMetaLoading] = useState(true);
   const [metaError, setMetaError] = useState('');
 
@@ -40,9 +44,16 @@ export default function BuyMonthlyPassPage() {
   const loadMeta = useCallback(async () => {
     setMetaLoading(true);
     try {
-      const [floorRes, vtRes] = await Promise.all([floorsApi.list(), vehicleTypesApi.list()]);
+      // Kèm availability để biết tầng nào CÓ khu cho loại xe nào — lọc dropdown tầng ngay
+      // khi khách chọn loại xe, khỏi để họ chọn tầng không nhận xe của mình.
+      const [floorRes, vtRes, availRes] = await Promise.all([
+        floorsApi.list(),
+        vehicleTypesApi.list(),
+        publicApi.availability().catch(() => null),
+      ]);
       setFloors(floorRes.data.data ?? []);
       setVehicleTypes(vtRes.data.data ?? []);
+      setSlotCapacity(availRes?.data.data ?? []);
       setMetaError('');
     } catch (err) {
       setMetaError(err.response?.data?.error?.message || 'Không tải được dữ liệu bãi đỗ');
@@ -99,10 +110,26 @@ export default function BuyMonthlyPassPage() {
   // Còn suất để mua? Chưa có dữ liệu capacity thì chưa chặn (để BE là nguồn chốt cuối).
   const soldOut = capacity && capacity.available <= 0;
 
+  // Tầng khách chọn được: chỉ tầng CÓ khu cho loại xe đang chọn (lọc theo sức chứa, không
+  // theo chỗ trống tức thời — suất vé tháng đã có ô "sức chứa" riêng bên dưới lo).
+  const floorOptions = floorsAcceptingVehicleType(floors, slotCapacity, form.vehicleTypeId);
+  const selectedVtName = vehicleTypes.find((t) => String(t.vehicle_type_id) === String(form.vehicleTypeId))?.type_name;
+  // Chỉ kết luận "không có tầng nào" khi đã có đủ dữ liệu tầng + sức chứa để nói vậy.
+  const noFloorForVehicle = Boolean(form.vehicleTypeId)
+    && floors.length > 0 && slotCapacity.length > 0 && floorOptions.length === 0;
+
+  // Đổi loại xe mà tầng đang chọn không nhận loại đó -> bỏ chọn tầng ngay.
+  const onVehicleTypeChange = (vehicleTypeId) => {
+    const stillValid = !form.floorId
+      || floorsAcceptingVehicleType(floors, slotCapacity, vehicleTypeId)
+        .some((f) => String(f.floor_id) === String(form.floorId));
+    patchForm({ vehicleTypeId, ...(stillValid ? {} : { floorId: '' }) });
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     const errors = mergeErrors(
-      validateRequiredText(form.plateNumber, 'plateNumber', 'biển số xe'),
+      validatePlateNumber(form.plateNumber),
       validateRequired(form.vehicleTypeId, 'vehicleTypeId', 'loại xe'),
       validateRequired(form.floorId, 'floorId', 'tầng'),
     );
@@ -126,7 +153,7 @@ export default function BuyMonthlyPassPage() {
     setError('');
     try {
       const { data } = await monthlyPassApi.create({
-        plateNumber: form.plateNumber.trim(),
+        plateNumber: normalizePlateOrKeep(form.plateNumber),
         vehicleTypeId: Number(form.vehicleTypeId),
         floorId: Number(form.floorId),
         startDate: form.startDate,
@@ -165,11 +192,14 @@ export default function BuyMonthlyPassPage() {
 
       <Card>
         <form onSubmit={handleSubmit} className="space-y-4">
-          <Field label="Biển số xe" required error={fieldErrors.plateNumber}>
+          <Field label="Biển số xe" required error={fieldErrors.plateNumber} hint={PLATE_VN_HINT}>
             <input
               className={inputClass}
               value={form.plateNumber}
-              onChange={(e) => patchForm({ plateNumber: e.target.value })}
+              onChange={(e) => patchForm({ plateNumber: cleanPlateInput(e.target.value) })}
+              // Rời ô là chuẩn hóa về dạng BE lưu (51F67890 -> 51F-678.90), khách khỏi đoán
+              // phải chấm hay gạch ở đâu.
+              onBlur={() => patchForm({ plateNumber: normalizePlateOrKeep(form.plateNumber) })}
               placeholder="VD: 51F-678.90"
               autoComplete="off"
             />
@@ -179,7 +209,7 @@ export default function BuyMonthlyPassPage() {
             <select
               className={inputClass}
               value={form.vehicleTypeId}
-              onChange={(e) => patchForm({ vehicleTypeId: e.target.value })}
+              onChange={(e) => onVehicleTypeChange(e.target.value)}
               disabled={metaLoading}
             >
               <option value="">— Chọn loại xe —</option>
@@ -191,7 +221,12 @@ export default function BuyMonthlyPassPage() {
             </select>
           </Field>
 
-          <Field label="Tầng" required error={fieldErrors.floorId}>
+          <Field
+            label="Tầng"
+            required
+            error={fieldErrors.floorId}
+            hint={form.vehicleTypeId ? `Chỉ hiện tầng nhận ${selectedVtName || 'loại xe này'}` : 'Chọn loại xe trước để lọc tầng phù hợp'}
+          >
             <select
               className={inputClass}
               value={form.floorId}
@@ -199,13 +234,19 @@ export default function BuyMonthlyPassPage() {
               disabled={metaLoading}
             >
               <option value="">— Chọn tầng —</option>
-              {floors.map((f) => (
+              {floorOptions.map((f) => (
                 <option key={f.floor_id} value={f.floor_id}>
                   {f.floor_code} — {f.label}
                 </option>
               ))}
             </select>
           </Field>
+
+          {noFloorForVehicle && (
+            <div className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-700">
+              Bãi chưa có tầng nào nhận {selectedVtName || 'loại xe này'} — chọn loại xe khác hoặc liên hệ ban quản lý.
+            </div>
+          )}
 
           <Field label="Ngày bắt đầu" required error={fieldErrors.startDate}>
             <input
@@ -247,7 +288,7 @@ export default function BuyMonthlyPassPage() {
             type="submit"
             className="w-full"
             loading={submitting}
-            disabled={metaLoading || soldOut}
+            disabled={metaLoading || soldOut || noFloorForVehicle}
           >
             <TicketPlus className="h-4 w-4" />
             Mua vé &amp; thanh toán

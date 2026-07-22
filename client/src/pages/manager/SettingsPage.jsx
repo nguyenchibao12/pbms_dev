@@ -9,7 +9,13 @@ import { toast } from '../../components/ui/toast';
 // 11 field Manager được sửa (whitelist BE). GET trả thêm field khác (slot_suggest_strategy,
 // booking_*...) — CHỈ đọc/gửi lại đúng 11 key này, không đụng phần còn lại.
 const MONEY_GROUP = [
-  { key: 'booking_fee', label: 'Phí đặt chỗ', hint: 'VND — số ≥ 0' },
+  {
+    key: 'booking_fee',
+    label: 'Phí giữ chỗ (đặt trước)',
+    // Hay bị nhầm với tiền gửi xe. Nói rõ: thu MỘT LẦN lúc đặt, KHÔNG phải tiền gửi xe
+    // theo giờ (tiền đó nằm ở Quy tắc giá) và không trừ vào tiền gửi xe khi ra.
+    hint: 'VND — thu 1 lần khi khách đặt chỗ trước. KHÔNG phải tiền gửi xe theo giờ (xem Quy tắc giá) và không trừ vào tiền gửi xe.',
+  },
   { key: 'monthly_pass_price', label: 'Giá vé tháng', hint: 'VND — số ≥ 0' },
   { key: 'lost_ticket_fee', label: 'Phí mất vé', hint: 'VND — số ≥ 0' },
   { key: 'overstay_fee', label: 'Phụ thu quá giờ', hint: 'VND — số ≥ 0' },
@@ -176,7 +182,10 @@ export default function SettingsPage() {
 
       <form onSubmit={handleSubmit} className="space-y-6">
         <Card>
-          <CardHeader title="Giá & giới hạn" description="Phí dịch vụ và giới hạn thời gian gửi." />
+          <CardHeader
+            title="Giá & giới hạn"
+            description="Các khoản phụ thu một lần và giới hạn thời gian gửi. Tiền gửi xe tính theo giờ nằm ở trang Quy tắc giá."
+          />
           <div className="grid gap-4 sm:grid-cols-2">
             {MONEY_GROUP.map((f) => (
               <Field key={f.key} label={f.label} hint={f.hint} error={fieldErrors[f.key]}>
