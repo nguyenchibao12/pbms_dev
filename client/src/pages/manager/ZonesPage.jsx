@@ -339,7 +339,7 @@ export default function ZonesPage() {
           >
             <input type="number" min="0" className={inputClass} value={form.totalSlots} onChange={(e) => setForm({ ...form, totalSlots: e.target.value })} required />
           </Field>
-          <Field label="Capacity vé tháng (OR-03)" hint="Để trống = không giới hạn riêng" error={fieldErrors.monthlyPassCapacity}>
+          <Field label="Capacity vé tháng (OR-03)" hint="Để trống = không mở bán vé tháng cho khu này" error={fieldErrors.monthlyPassCapacity}>
             <input type="number" min="0" className={inputClass} value={form.monthlyPassCapacity} onChange={(e) => setForm({ ...form, monthlyPassCapacity: e.target.value })} />
           </Field>
           <div className="flex justify-end gap-2 pt-2">
