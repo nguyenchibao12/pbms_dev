@@ -6,8 +6,8 @@ import { inputClass } from '../../components/ui/Input';
 import Button from '../../components/ui/Button';
 import { toast } from '../../components/ui/toast';
 
-// 9 field Manager được sửa (whitelist BE). GET trả thêm field khác (slot_suggest_strategy,
-// booking_*...) — CHỈ đọc/gửi lại đúng 9 key này, không đụng phần còn lại.
+// 11 field Manager được sửa (whitelist BE). GET trả thêm field khác (slot_suggest_strategy,
+// booking_*...) — CHỈ đọc/gửi lại đúng 11 key này, không đụng phần còn lại.
 const MONEY_GROUP = [
   { key: 'booking_fee', label: 'Phí đặt chỗ', hint: 'VND — số ≥ 0' },
   { key: 'monthly_pass_price', label: 'Giá vé tháng', hint: 'VND — số ≥ 0' },
@@ -22,8 +22,16 @@ const REFUND_GROUP = [
   { key: 'pass_refund_bank_info_ttl_days', label: 'Hạn cập nhật STK nhận hoàn (ngày)', hint: 'Số nguyên ≥ 0', kind: 'int0' },
 ];
 
+// Hoàn phí GIỮ CHỖ (đặt chỗ) — khác nhóm trên (vé tháng). Mốc cutoff cho phép lẻ (0.5 = 30 phút)
+// nên dùng kind riêng 'hours0' với step 0.5, không ép số nguyên như 'int0'.
+const BOOKING_REFUND_GROUP = [
+  { key: 'booking_refund_cutoff_hours', label: 'Hủy trước giờ vào ≥ (giờ) mới được hoàn', hint: 'Số ≥ 0 — cho phép lẻ, VD 0.5 = 30 phút', kind: 'hours0' },
+  { key: 'booking_refund_percent', label: '% hoàn phí giữ chỗ', hint: '0 – 100 — đặt 0 là không hoàn', kind: 'percent' },
+];
+
 const EDITABLE_KEYS = [
   'booking_fee', 'monthly_pass_price', 'lost_ticket_fee', 'overstay_fee', 'max_parking_hours',
+  'booking_refund_cutoff_hours', 'booking_refund_percent',
   'pass_refund_trial_days', 'pass_refund_trial_percent', 'pass_refund_half_term_percent',
   'pass_refund_bank_info_ttl_days',
 ];
@@ -106,9 +114,14 @@ export default function SettingsPage() {
       const n = normalize(form[key]);
       if (n === null || Number.isNaN(n) || !Number.isInteger(n) || n < 0) errs[key] = 'Nhập số nguyên ≥ 0';
     }
-    for (const key of ['pass_refund_trial_percent', 'pass_refund_half_term_percent']) {
+    for (const key of ['pass_refund_trial_percent', 'pass_refund_half_term_percent', 'booking_refund_percent']) {
       const n = normalize(form[key]);
       if (n === null || Number.isNaN(n) || n < 0 || n > 100) errs[key] = 'Nhập số từ 0 đến 100';
+    }
+    // Mốc cutoff hoàn đặt chỗ: số thực ≥ 0 (0 = hủy lúc nào cũng được hoàn).
+    {
+      const n = normalize(form.booking_refund_cutoff_hours);
+      if (n === null || Number.isNaN(n) || n < 0) errs.booking_refund_cutoff_hours = 'Nhập số ≥ 0';
     }
     return errs;
   };
@@ -217,6 +230,28 @@ export default function SettingsPage() {
                   min="0"
                   max={f.kind === 'percent' ? '100' : undefined}
                   step="1"
+                  className={inputClass}
+                  value={form[f.key] ?? ''}
+                  onChange={(e) => setField(f.key, e.target.value)}
+                />
+              </Field>
+            ))}
+          </div>
+        </Card>
+
+        <Card>
+          <CardHeader
+            title="Chính sách hoàn tiền đặt chỗ"
+            description="Áp dụng khi khách hủy đơn giữ chỗ đã thanh toán."
+          />
+          <div className="grid gap-4 sm:grid-cols-2">
+            {BOOKING_REFUND_GROUP.map((f) => (
+              <Field key={f.key} label={f.label} hint={f.hint} error={fieldErrors[f.key]}>
+                <input
+                  type="number"
+                  min="0"
+                  max={f.kind === 'percent' ? '100' : undefined}
+                  step={f.kind === 'hours0' ? '0.5' : '1'}
                   className={inputClass}
                   value={form[f.key] ?? ''}
                   onChange={(e) => setField(f.key, e.target.value)}

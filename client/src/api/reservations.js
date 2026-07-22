@@ -27,4 +27,8 @@ export const reservationsApi = {
 
   // Preview: gợi ý chỗ tốt nhất (tùy chọn, có thể bỏ qua ở bản đầu).
   suggestSlot: (params) => api.get('/reservations/suggest-slot', { params }),
+
+  // Chính sách hoàn phí giữ chỗ (đọc settings booking_refund_*) — đổ số thật vào modal hủy.
+  // data: { cutoffHours, refundPercent }
+  refundPolicy: () => api.get('/reservations/refund-policy'),
 };
