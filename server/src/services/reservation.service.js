@@ -35,7 +35,6 @@ import { getParkingInsights, getUserParkingPreferences } from './prediction.serv
 import { getSession } from './session.service.js';
 import { recordWrongFloorIncident, recordIncident } from './incident.service.js';
 import { validateAndNormalizePlateVN } from '../utils/plateVN.js';
-import { assertGateVehicleType } from '../utils/gateVehicle.js';
 import { resolveFloorGate } from '../utils/gateResolve.js';
 import { assertReservationTransition, assertReservationQrUsable } from '../utils/stateGuards.js';
 import { resolveShiftWindow } from '../utils/shifts.js';
@@ -1105,7 +1104,6 @@ export const checkinReservation = async (staffUserId, data) => {
     if (gate.direction !== 'in') {
       throw new AppError('Check-in must use an IN gate', 400, 'VALIDATION_ERROR');
     }
-    assertGateVehicleType(gate, reservation.vehicle_type_id);
     if (gate.floor_id !== reservation.floor_id) {
       await recordWrongFloorIncident({
         gateFloorId: gate.floor_id,

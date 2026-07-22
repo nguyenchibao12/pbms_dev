@@ -158,11 +158,11 @@ const run = async () => {
   // --- Cổng cấp tòa nhà (floor_id = NULL) ----------------------------------
   await Gate.create({
     floor_id: null, gate_code: 'BLD-IN', direction: 'in',
-    vehicle_type_id: null, label: 'Cổng vào tòa nhà', is_active: true,
+    label: 'Cổng vào tòa nhà', is_active: true,
   });
   await Gate.create({
     floor_id: null, gate_code: 'BLD-OUT', direction: 'out',
-    vehicle_type_id: null, label: 'Cổng ra tòa nhà', is_active: true,
+    label: 'Cổng ra tòa nhà', is_active: true,
   });
 
   // --- Tầng + khu + chỗ + cổng tầng ---------------------------------------
@@ -179,11 +179,11 @@ const run = async () => {
 
     await Gate.create({
       floor_id: floor.floor_id, gate_code: `${code}-IN`, direction: 'in',
-      vehicle_type_id: null, label: `${label} - Cổng vào`, is_active: true,
+      label: `${label} - Cổng vào`, is_active: true,
     });
     await Gate.create({
       floor_id: floor.floor_id, gate_code: `${code}-OUT`, direction: 'out',
-      vehicle_type_id: null, label: `${label} - Cổng ra`, is_active: true,
+      label: `${label} - Cổng ra`, is_active: true,
     });
 
     // Mở bán vé tháng tường minh ~25% số slot (capacity=0 = không bán — xem passCapacity.js).
@@ -238,11 +238,11 @@ const run = async () => {
   });
   await Gate.create({
     floor_id: f3.floor_id, gate_code: 'F3-IN', direction: 'in',
-    vehicle_type_id: bike.vehicle_type_id, label: 'Tầng 3 - Cổng vào', is_active: true,
+    label: 'Tầng 3 - Cổng vào', is_active: true,
   });
   await Gate.create({
     floor_id: f3.floor_id, gate_code: 'F3-OUT', direction: 'out',
-    vehicle_type_id: bike.vehicle_type_id, label: 'Tầng 3 - Cổng ra', is_active: true,
+    label: 'Tầng 3 - Cổng ra', is_active: true,
   });
   const f3TotalSlots = Math.floor(F3_AREA / 1.8);
   const f3Zone = await Zone.create({

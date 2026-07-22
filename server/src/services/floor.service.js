@@ -12,6 +12,7 @@ import {
   slotAreaOf,
 } from '../utils/floorCapacity.js';
 import { buildZoneCode } from '../utils/zoneCode.js';
+import { buildGateCode } from '../utils/gateCode.js';
 
 /**
  * Mỗi cao độ chỉ được một tầng. floor_code unique nhưng floor_level thì không, nên trước đây
@@ -278,7 +279,6 @@ export const quickSetupFloor = async (payload) => {
       { transaction },
     );
 
-    const vehicleTypeIds = new Set();
     const createdZones = [];
     let areaUsed = 0; // m² đã phân bổ cho các khu — chặn vượt diện tích tầng
 
@@ -325,8 +325,6 @@ export const quickSetupFloor = async (payload) => {
         { transaction },
       );
 
-      vehicleTypeIds.add(zc.vehicleTypeId);
-
       const slotResult = await bulkGenerateSlots(
         zone.zone_id,
         {
@@ -334,7 +332,6 @@ export const quickSetupFloor = async (payload) => {
           // Mã chỗ tự sinh <mã khu>-NN (không còn dùng codePrefix/startIndex/padding).
           distanceStart: zc.distanceStart ?? null,
           distanceStep: zc.distanceStep ?? null,
-          slotType: zc.slotType ?? null,
         },
         transaction,
       );
@@ -344,37 +341,27 @@ export const quickSetupFloor = async (payload) => {
 
     const createdGates = [];
     if (gateOpts?.auto) {
-      const floorCode = floor.floor_code.toUpperCase();
-      for (const vtId of vehicleTypeIds) {
-        const vt = await VehicleType.findByPk(vtId, { transaction });
-        const typeCode = vt.type_code.toUpperCase();
-
-        for (const [direction, suffix] of [
-          ['in', 'IN'],
-          ['out', 'OUT'],
-        ]) {
-          const gateCode = `${floorCode}-${suffix}-${typeCode}`;
-          const gateDup = await Gate.findOne({
-            where: { floor_id: floor.floor_id, gate_code: gateCode },
-            transaction,
-          });
-          if (gateDup) {
-            throw new AppError(`Gate code "${gateCode}" already exists`, 409, 'CONFLICT');
-          }
-
-          const gate = await Gate.create(
-            {
-              floor_id: floor.floor_id,
-              gate_code: gateCode,
-              direction,
-              vehicle_type_id: vtId,
-              label: `Cổng ${suffix === 'IN' ? 'vào' : 'ra'} ${vt.type_name} — ${floor.label}`,
-              is_active: true,
-            },
-            { transaction },
-          );
-          createdGates.push(gate);
+      // Mỗi tầng chỉ 1 cổng IN + 1 cổng OUT (cổng không gắn loại xe) — mã tự sinh <TẦNG>-<IN|OUT>.
+      for (const [direction, dirLabel] of [['in', 'vào'], ['out', 'ra']]) {
+        const gateCode = buildGateCode(floor, direction);
+        const gateDup = await Gate.findOne({
+          where: { floor_id: floor.floor_id, gate_code: gateCode },
+          transaction,
+        });
+        if (gateDup) {
+          throw new AppError(`Gate code "${gateCode}" already exists`, 409, 'CONFLICT');
         }
+        const gate = await Gate.create(
+          {
+            floor_id: floor.floor_id,
+            gate_code: gateCode,
+            direction,
+            label: `Cổng ${dirLabel} — ${floor.label}`,
+            is_active: true,
+          },
+          { transaction },
+        );
+        createdGates.push(gate);
       }
     }
 
@@ -430,9 +417,6 @@ export const cloneFloor = async (sourceFloorId, payload) => {
       { transaction },
     );
 
-    const oldPrefix = source.floor_code.toUpperCase();
-    const newPrefix = floorCode.toUpperCase();
-
     for (const zone of source.zones) {
       const vt = await VehicleType.findByPk(zone.vehicle_type_id, { transaction });
       const newZone = await Zone.create(
@@ -454,7 +438,6 @@ export const cloneFloor = async (sourceFloorId, payload) => {
             zone_id: newZone.zone_id,
             slot_code: s.slot_code,
             status: 'available',
-            slot_type: s.slot_type,
             distance_to_gate: s.distance_to_gate,
           })),
           { transaction },
@@ -463,17 +446,12 @@ export const cloneFloor = async (sourceFloorId, payload) => {
     }
 
     for (const gate of source.gates) {
-      let gateCode = gate.gate_code;
-      if (gateCode.toUpperCase().startsWith(`${oldPrefix}-`)) {
-        gateCode = `${newPrefix}-${gateCode.slice(oldPrefix.length + 1)}`;
-      }
-
+      // Mã cổng tự sinh theo tầng mới + hướng (vd F1-IN → F4-IN); cổng không còn gắn loại xe.
       await Gate.create(
         {
           floor_id: newFloor.floor_id,
-          gate_code: gateCode,
+          gate_code: buildGateCode(newFloor, gate.direction),
           direction: gate.direction,
-          vehicle_type_id: gate.vehicle_type_id,
           label: gate.label,
           is_active: gate.is_active,
         },

@@ -1,9 +1,9 @@
-import { Gate, Floor, VehicleType } from '../models/index.js';
+import { Gate, Floor } from '../models/index.js';
 import { AppError } from '../utils/helpers.js';
+import { buildGateCode } from '../utils/gateCode.js';
 
 const gateIncludes = [
   { association: 'floor', attributes: ['floor_id', 'floor_code', 'label'] },
-  { association: 'vehicleType', attributes: ['vehicle_type_id', 'type_name', 'type_code'] },
 ];
 
 export const listGates = async (floorId) => {
@@ -28,6 +28,7 @@ export const getGate = async (id) => {
 
 // Mỗi phạm vi (1 tầng, hoặc cấp tòa nhà = floor_id NULL) chỉ được 1 cổng IN + 1 cổng OUT:
 // gateScan suy "xe đang ở đâu" từ cổng vừa quét, 2 cổng OUT cùng tầng thì câu đó có 2 đáp án.
+// Đây cũng là lý do mã cổng tự sinh được TRỌN VẸN từ (tầng, hướng) — không cần số thứ tự.
 const assertSingleDirectionGate = async (floorId, direction, excludeGateId = null) => {
   if (!direction) return;
   const existing = await Gate.findOne({ where: { floor_id: floorId, direction } });
@@ -43,28 +44,21 @@ const assertSingleDirectionGate = async (floorId, direction, excludeGateId = nul
 
 export const createGate = async (data) => {
   const floorId = data.floorId ?? null; // NULL = cổng cấp tòa nhà
+  let floor = null;
   if (floorId != null) {
-    const floor = await Floor.findByPk(floorId);
+    floor = await Floor.findByPk(floorId);
     if (!floor) throw new AppError('Floor not found', 404, 'NOT_FOUND');
   }
 
-  const existing = await Gate.findOne({
-    where: { floor_id: floorId, gate_code: data.gateCode },
-  });
-  if (existing) throw new AppError('Gate code already exists on this scope', 409, 'CONFLICT');
-
   await assertSingleDirectionGate(floorId, data.direction, null);
 
-  if (data.vehicleTypeId) {
-    const vt = await VehicleType.findByPk(data.vehicleTypeId);
-    if (!vt) throw new AppError('Vehicle type not found', 404, 'NOT_FOUND');
-  }
+  // Mã cổng do hệ thống sinh theo <TẦNG>-<IN|OUT> (BLD-IN/OUT cho cấp tòa) — không nhập tay.
+  const gateCode = buildGateCode(floor, data.direction);
 
   return Gate.create({
     floor_id: floorId,
-    gate_code: data.gateCode,
+    gate_code: gateCode,
     direction: data.direction,
-    vehicle_type_id: data.vehicleTypeId ?? null,
     label: data.label ?? null,
     is_active: data.isActive ?? true,
   });
@@ -75,19 +69,10 @@ export const updateGate = async (id, data) => {
   if (!gate) throw new AppError('Gate not found', 404, 'NOT_FOUND');
 
   const newFloorId = data.floorId !== undefined ? data.floorId : gate.floor_id;
+  let newFloor = null;
   if (newFloorId != null) {
-    const floor = await Floor.findByPk(newFloorId);
-    if (!floor) throw new AppError('Floor not found', 404, 'NOT_FOUND');
-  }
-
-  const newGateCode = data.gateCode ?? gate.gate_code;
-  if (newGateCode !== gate.gate_code || newFloorId !== gate.floor_id) {
-    const existing = await Gate.findOne({
-      where: { floor_id: newFloorId, gate_code: newGateCode },
-    });
-    if (existing && existing.gate_id !== gate.gate_id) {
-      throw new AppError('Gate code already exists on this scope', 409, 'CONFLICT');
-    }
+    newFloor = await Floor.findByPk(newFloorId);
+    if (!newFloor) throw new AppError('Floor not found', 404, 'NOT_FOUND');
   }
 
   const newDirection = data.direction ?? gate.direction;
@@ -95,18 +80,13 @@ export const updateGate = async (id, data) => {
     await assertSingleDirectionGate(newFloorId, newDirection, gate.gate_id);
   }
 
-  if (data.vehicleTypeId !== undefined) {
-    if (data.vehicleTypeId) {
-      const vt = await VehicleType.findByPk(data.vehicleTypeId);
-      if (!vt) throw new AppError('Vehicle type not found', 404, 'NOT_FOUND');
-    }
-  }
+  // Mã cổng là tự sinh theo (tầng, hướng) → đổi tầng/hướng thì sinh lại cho khớp (bỏ qua nếu client gửi).
+  const gateCode = buildGateCode(newFloor, newDirection);
 
   await gate.update({
     floor_id: newFloorId,
-    gate_code: newGateCode,
-    direction: data.direction ?? gate.direction,
-    vehicle_type_id: data.vehicleTypeId !== undefined ? data.vehicleTypeId : gate.vehicle_type_id,
+    gate_code: gateCode,
+    direction: newDirection,
     label: data.label !== undefined ? data.label : gate.label,
     is_active: data.isActive ?? gate.is_active,
   });

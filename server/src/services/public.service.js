@@ -50,7 +50,7 @@ export const getPublicAvailability = async () => {
     for (const zone of floor.zones || []) {
       const slotRows = await ParkingSlot.findAll({
         where: { zone_id: zone.zone_id },
-        attributes: ['slot_id', 'slot_code', 'status', 'slot_type'],
+        attributes: ['slot_id', 'slot_code', 'status'],
         order: [['slot_code', 'ASC']],
       });
 
@@ -58,7 +58,6 @@ export const getPublicAvailability = async () => {
         slotId: s.slot_id,
         slotCode: s.slot_code,
         status: s.status,
-        slotType: s.slot_type,
       }));
 
       const available = slots.filter((s) => s.status === 'available').length;

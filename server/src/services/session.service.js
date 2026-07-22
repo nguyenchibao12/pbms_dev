@@ -14,7 +14,6 @@ import { isSessionFreeUnderPass, isWithinPassWindow } from '../utils/passWindow.
 import { logSuggestion } from './aiLog.service.js';
 import { validateAndNormalizePlateVN } from '../utils/plateVN.js';
 import { assertBuildingOpenForCheckIn } from '../utils/buildingHours.js';
-import { assertGateVehicleType } from '../utils/gateVehicle.js';
 import { resolveFloorGate } from '../utils/gateResolve.js';
 import { getMaxParkingHours, getLostTicketFee, getOverstayFee } from '../utils/settings.js';
 import { assertSessionActive, buildRevokedQrToken } from '../utils/stateGuards.js';
@@ -23,7 +22,7 @@ import { parsePagination, paginatedResult } from '../utils/pagination.js';
 
 const sessionIncludes = [
   { association: 'slot', include: [{ association: 'zone', include: [{ association: 'floor' }] }] },
-  { association: 'gate', include: [{ association: 'floor' }, { association: 'vehicleType' }] },
+  { association: 'gate', include: [{ association: 'floor' }] },
   { association: 'vehicleType' },
   { association: 'monthlyPass' },
   { association: 'reservation', attributes: ['reservation_id', 'status', 'start_time', 'end_time'] },

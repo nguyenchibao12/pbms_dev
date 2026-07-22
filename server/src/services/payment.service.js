@@ -2,7 +2,6 @@ import sequelize from '../config/db.js';
 import { Payment, ParkingSession, Gate } from '../models/index.js';
 import { AppError } from '../utils/helpers.js';
 import { releaseSlot } from '../utils/slotSuggest.js';
-import { assertGateVehicleType } from '../utils/gateVehicle.js';
 import { resolveFloorGate } from '../utils/gateResolve.js';
 import {
   createPayOSPaymentLink,
@@ -133,7 +132,6 @@ const assertAndRecordExitGate = async (staffUserId, session, gateId) => {
   if (gate.direction !== 'out') {
     throw new AppError('Check-out phải dùng cổng RA (OUT)', 400, 'VALIDATION_ERROR');
   }
-  assertGateVehicleType(gate, session.vehicle_type_id);
   // Cổng cấp tòa nhà (floor_id = NULL) là điểm ra chung — bỏ qua kiểm tra trùng tầng.
   if (sessionFloorId && gate.floor_id != null && gate.floor_id !== sessionFloorId) {
     await recordIncident({
