@@ -154,7 +154,7 @@ export const bulkGenerateSlots = async (zoneId, opts, externalTransaction = null
 
   const existingSlots = await ParkingSlot.findAll({
     where: { zone_id: zoneId },
-    attributes: ['slot_code'],
+    attributes: ['slot_code', 'distance_to_gate'],   // + distance để NỐI TIẾP khoảng cách khi sinh thêm
     ...readOpt,
   });
   const existingCodes = new Set(existingSlots.map((s) => s.slot_code));
@@ -170,6 +170,26 @@ export const bulkGenerateSlots = async (zoneId, opts, externalTransaction = null
     if (m) maxNum = Math.max(maxNum, Number(m[1]));
   }
   const startNum = maxNum + 1;
+
+  // Khoảng cách tới cổng của LÔ MỚI:
+  //  - Có nhập "chỗ đầu" (distanceStart) → bắt đầu từ đó.
+  //  - KHÔNG nhập nhưng khu đã có chỗ có khoảng cách → NỐI TIẾP dãy cũ (xa nhất + 1 bước); bước suy từ
+  //    2 mốc lớn nhất nếu không nhập step. Nhờ vậy sinh THÊM không còn bỏ trống cột "Cách cổng"
+  //    (mã đã tự nối tiếp NN thì khoảng cách cũng nên nối tiếp cho nhất quán).
+  let step = distanceStep != null && distanceStep !== '' ? Number(distanceStep) : null;
+  let base = distanceStart != null && distanceStart !== '' ? Number(distanceStart) : null;
+  if (base == null) {
+    const dists = existingSlots
+      .map((s) => (s.distance_to_gate != null ? Number(s.distance_to_gate) : null))
+      .filter((d) => d != null)
+      .sort((a, b) => a - b);
+    if (dists.length > 0) {
+      if (step == null && dists.length >= 2) step = dists[dists.length - 1] - dists[dists.length - 2];
+      if (step == null) step = 0;
+      base = dists[dists.length - 1] + step;   // chỗ mới đầu tiên = xa nhất hiện có + 1 bước
+    }
+  }
+  if (step == null) step = 0;
 
   const toCreate = [];
   let skipped = 0;
@@ -187,11 +207,8 @@ export const bulkGenerateSlots = async (zoneId, opts, externalTransaction = null
     }
     existingCodes.add(code);
 
-    let distance = null;
-    if (distanceStart != null) {
-      const step = distanceStep != null ? Number(distanceStep) : 0;
-      distance = Number(distanceStart) + i * step;
-    }
+    // Dựa trên số CHỖ ĐÃ QUEUE (toCreate.length) để không bị lệch khi có mã bị skip → dãy liền mạch.
+    const distance = base != null ? base + toCreate.length * step : null;
 
     toCreate.push({
       zone_id: zoneId,
