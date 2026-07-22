@@ -3,7 +3,6 @@ import { Link, Navigate, useSearchParams } from 'react-router-dom';
 import { QRCodeSVG } from 'qrcode.react';
 import { CalendarPlus, RefreshCw, MapPin, CheckCircle2, CreditCard, SearchX } from 'lucide-react';
 import { reservationsApi } from '../../api/reservations';
-import { publicApi } from '../../api/public';
 import { formatShiftLabel } from '../../lib/shifts';
 import { formatFloorLabel } from '../../lib/floor';
 import { collectFloorOptions, inDateRange, matchPlate } from '../../lib/filters';
@@ -44,6 +43,13 @@ const formatLocation = (r) => {
 };
 
 const isCancellable = (status) => status === 'pending' || status === 'confirmed';
+
+// Số từ BE: chỉ nhận số hữu hạn ≥ 0, còn lại trả null để chỗ hiển thị rơi về câu chữ chung
+// thay vì bịa ra "0%" hay "NaN giờ".
+const readNum = (v) => {
+  const n = Number(v);
+  return Number.isFinite(n) && n >= 0 ? n : null;
+};
 
 // Mốc hoàn phí BE trả về theo GIỜ và có thể lẻ → đổi ra nhãn tiếng Việt:
 // 1 → "1 giờ", 0.5 → "30 phút", 1.5 → "1 giờ 30 phút". Trả '' khi không phải số dương
@@ -97,9 +103,12 @@ export default function MyReservationsPage() {
   const [cancelTarget, setCancelTarget] = useState(null);
   const [cancelLoading, setCancelLoading] = useState(false);
   const [repayingId, setRepayingId] = useState(null);
-  const [cutoffHours, setCutoffHours] = useState(null); // null = chưa đọc được → modal nói chung chung
+  const [refundPolicy, setRefundPolicy] = useState(null); // null = chưa đọc được → modal nói chung chung
   const [filters, setFilters] = useState(emptyFilters);
 
+  // Mốc giờ + % hoàn Manager chỉnh được, KHÔNG hardcode. Chưa đọc được → null.
+  const cutoffHours = readNum(refundPolicy?.cutoffHours);
+  const refundPercent = readNum(refundPolicy?.refundPercent);
   const cutoffText = formatCutoff(cutoffHours);
 
   const setFilter = (key, value) => setFilters((f) => ({ ...f, [key]: value }));
@@ -157,18 +166,17 @@ export default function MyReservationsPage() {
     load('initial');
   }, [load, paymentResult]);
 
-  // Mở modal hủy đơn đã thanh toán → đọc mốc hoàn phí THẬT (booking_refund_cutoff_hours) từ
-  // /public/info thay vì hardcode "1 giờ": bãi đổi cấu hình thì chữ trên màn đổi theo.
-  // Đọc lại MỖI LẦN mở modal (không cache theo phiên) để bãi đổi mốc giữa chừng vẫn hiện đúng;
-  // giá trị cũ được giữ trong lúc gọi nên không chớp chữ. Chỉ nhận số hợp lệ ≥ 0, lỗi thì nuốt.
+  // Mở modal hủy đơn đã thanh toán → đọc chính sách hoàn THẬT (mốc giờ + % hoàn) từ
+  // GET /reservations/refund-policy thay vì hardcode "1 giờ / 100%": Manager đổi cấu hình
+  // thì chữ trên màn đổi theo. Đọc lại MỖI LẦN mở modal (không cache theo phiên) để bãi đổi
+  // giữa chừng vẫn hiện đúng; giá trị cũ được giữ trong lúc gọi nên không chớp chữ. Lỗi thì nuốt.
   useEffect(() => {
     if (!cancelTarget || cancelTarget.status === 'pending') return undefined;
     let active = true;
-    publicApi
-      .info()
+    reservationsApi
+      .refundPolicy()
       .then((res) => {
-        const value = Number(res.data.data?.bookingRefundCutoffHours);
-        if (active && Number.isFinite(value) && value >= 0) setCutoffHours(value);
+        if (active && res.data.data) setRefundPolicy(res.data.data);
       })
       .catch(() => {});
     return () => { active = false; };
@@ -226,7 +234,8 @@ export default function MyReservationsPage() {
       if (refund?.eligible) {
         msg = `Đã hủy — sẽ hoàn ${fmtMoney(refund.amount)} phí giữ chỗ (xử lý trong vài ngày)`;
       } else if (refund?.applicable) {
-        msg = 'Đã hủy — hủy sát giờ vào nên phí giữ chỗ không được hoàn';
+        // % hoàn = 0 (bãi tắt hoàn) thì lý do KHÔNG phải "sát giờ" → ưu tiên câu BE trả về.
+        msg = data.message || 'Đã hủy — phí giữ chỗ không được hoàn theo chính sách hiện hành';
       }
       toast.success(msg);
       setCancelTarget(null);
@@ -488,8 +497,8 @@ export default function MyReservationsPage() {
           />
         }
       >
-        {/* Mốc hoàn phí lấy từ BE (xem effect đọc /public/info ở trên) — ĐỪNG hardcode lại số giờ
-            ở đây, bãi chỉnh cấu hình là chữ sai ngay mà không ai biết.
+        {/* Mốc giờ + % hoàn lấy từ BE (xem effect gọi /reservations/refund-policy ở trên) — ĐỪNG
+            hardcode lại ở đây, Manager chỉnh cấu hình là chữ sai ngay mà không ai biết.
             Số tiền hoàn CHÍNH XÁC vẫn do BE trả trong response hủy (xem handleCancel). */}
         {cancelTarget?.status === 'pending' ? (
           <p className="text-sm text-slate-600">
@@ -499,20 +508,28 @@ export default function MyReservationsPage() {
           <div className="space-y-3 text-sm text-slate-600">
             <p>Hủy đặt chỗ đã thanh toán? Mã QR sẽ ngừng hiệu lực. Chính sách hoàn phí giữ chỗ:</p>
             <ul className="space-y-1 rounded-lg bg-slate-50 px-4 py-3 text-slate-600">
-              {cutoffText && (
+              {/* Bãi tắt hoàn (% = 0): nói thẳng một câu, mốc giờ không còn ý nghĩa. */}
+              {refundPercent === 0 ? (
+                <li>· Đơn đã thanh toán: <strong>không hoàn</strong> phí giữ chỗ trong mọi trường hợp</li>
+              ) : (
                 <>
-                  <li>· Hủy trước giờ vào <strong>từ {cutoffText} trở lên</strong>: <strong>hoàn 100%</strong> phí giữ chỗ</li>
-                  <li>· Trong vòng <strong>{cutoffText}</strong> trước giờ vào: <strong>không hoàn</strong></li>
-                </>
-              )}
-              {/* Bãi đặt mốc = 0 tức là không có cửa sổ "sát giờ": hủy lúc nào cũng hoàn. */}
-              {cutoffHours === 0 && (
-                <li>· Hủy trước giờ vào: <strong>hoàn 100%</strong> phí giữ chỗ</li>
-              )}
-              {cutoffHours == null && (
-                <>
-                  <li>· Hủy <strong>sớm</strong> trước giờ vào: <strong>hoàn 100%</strong> phí giữ chỗ</li>
-                  <li>· Hủy <strong>sát giờ vào</strong>: <strong>không hoàn</strong></li>
+                  {cutoffText && (
+                    <>
+                      <li>· Hủy trước giờ vào <strong>từ {cutoffText} trở lên</strong>: <strong>hoàn {refundPercent ?? 100}%</strong> phí giữ chỗ</li>
+                      <li>· Trong vòng <strong>{cutoffText}</strong> trước giờ vào: <strong>không hoàn</strong></li>
+                    </>
+                  )}
+                  {/* Bãi đặt mốc = 0 tức là không có cửa sổ "sát giờ": hủy lúc nào cũng hoàn. */}
+                  {cutoffHours === 0 && (
+                    <li>· Hủy trước giờ vào: <strong>hoàn {refundPercent ?? 100}%</strong> phí giữ chỗ</li>
+                  )}
+                  {/* Chưa đọc được chính sách: KHÔNG bịa số % (Manager chỉnh được, 100% không còn chắc). */}
+                  {cutoffHours == null && (
+                    <>
+                      <li>· Hủy <strong>sớm</strong> trước giờ vào: được hoàn phí giữ chỗ theo chính sách hiện hành của bãi</li>
+                      <li>· Hủy <strong>sát giờ vào</strong>: <strong>không hoàn</strong></li>
+                    </>
+                  )}
                 </>
               )}
             </ul>
