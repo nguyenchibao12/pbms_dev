@@ -43,6 +43,10 @@ export const listStaffUpcoming = asyncHandler(async (_req, res) => {
   successResponse(res, list);
 });
 
+export const getRefundPolicy = asyncHandler(async (_req, res) => {
+  successResponse(res, reservationService.getReservationRefundPolicy());
+});
+
 export const staffLookupByQr = asyncHandler(async (req, res) => {
   const reservation = await reservationService.staffLookupReservationByQr(req.query.qrToken);
   successResponse(res, reservation);

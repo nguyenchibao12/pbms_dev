@@ -5,7 +5,8 @@ import { body } from 'express-validator';
  * Controller CHỈ ghi các key này (bỏ mọi key lạ client gửi kèm).
  *  - A (giá/giới hạn): booking_fee, monthly_pass_price, lost_ticket_fee, overstay_fee, max_parking_hours
  *  - B (chính sách hoàn tiền vé tháng): pass_refund_*
- * Nhóm C (booking_* vòng đời đặt chỗ) và D (AI suggest) CHƯA mở — xem handoff.
+ *  - C1 (chính sách hoàn tiền ĐẶT CHỖ): booking_refund_cutoff_hours, booking_refund_percent
+ * Phần còn lại Nhóm C (booking_* vòng đời khác) và D (AI suggest) CHƯA mở — xem handoff.
  */
 export const SYSTEM_FIELD_KEYS = [
   'booking_fee',
@@ -13,6 +14,8 @@ export const SYSTEM_FIELD_KEYS = [
   'lost_ticket_fee',
   'overstay_fee',
   'max_parking_hours',
+  'booking_refund_cutoff_hours',
+  'booking_refund_percent',
   'pass_refund_trial_days',
   'pass_refund_trial_percent',
   'pass_refund_half_term_percent',
@@ -39,6 +42,13 @@ export const updateSystemValidator = [
     .customSanitizer((v) => (v === '' ? null : v))
     .custom((v) => v === null || (Number.isInteger(Number(v)) && Number(v) >= 1))
     .withMessage('Số giờ gửi tối đa phải là số nguyên ≥ 1 hoặc bỏ trống (không giới hạn)'),
+  // C1 — chính sách hoàn tiền ĐẶT CHỖ (đơn giữ chỗ): mốc giờ cutoff + % hoàn trước cutoff.
+  body('booking_refund_cutoff_hours')
+    .optional()
+    .isFloat({ min: 0 })
+    .withMessage('Mốc giờ hoàn (trước giờ vào) phải là số ≥ 0')
+    .toFloat(),
+  percent('booking_refund_percent', '% hoàn phí giữ chỗ'),
   intMin0('pass_refund_trial_days', 'Số ngày đầu ưu đãi hoàn tiền'),
   percent('pass_refund_trial_percent', '% hoàn 3 ngày đầu'),
   percent('pass_refund_half_term_percent', '% hoàn tới nửa hạn'),
