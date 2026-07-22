@@ -591,6 +591,17 @@ export default function StaffOperationsPage() {
       total: zs.reduce((s, z) => s + (z.total || 0), 0),
     };
   };
+  // Tầng có phục vụ loại xe đang chọn không (theo availability). Chưa chọn loại xe HOẶC chưa
+  // tải được availability -> coi như CÓ, tránh ẩn nhầm sạch tầng khi dữ liệu chưa về.
+  const floorServesType = (floorId, vehicleTypeId) => {
+    if (!vehicleTypeId) return true;
+    const meta = floorMetaFor(floorId);
+    if (!meta) return true;
+    return (meta.zones || []).some((z) => String(z.vehicleTypeId) === String(vehicleTypeId));
+  };
+  // Chỉ hiện tầng phục vụ loại xe đang chọn: tầng riêng xe máy không hiện khi chọn ô tô
+  // (trước đây vẫn hiện kèm "0 trống" + báo "Tầng đầy 0/0" -> staff tưởng chờ lát có chỗ).
+  const visibleFloors = floors.filter((f) => floorServesType(f.floor_id, form.vehicleTypeId));
   const selectedFloorMeta = floorMetaFor(form.floorId);
   const selectedFloorFree = freeFor(selectedFloorMeta, form.vehicleTypeId);
   const selectedVtName = vehicleTypes.find((v) => String(v.vehicle_type_id) === String(form.vehicleTypeId))?.type_name;
@@ -645,17 +656,37 @@ export default function StaffOperationsPage() {
                 />
               </Field>
               <Field label="Loại xe" required error={fieldErrors.vehicleTypeId}>
-                <select className={inputClass} value={form.vehicleTypeId} onChange={(e) => setForm({ ...form, vehicleTypeId: e.target.value, zoneId: '' })} required>
+                <select
+                  className={inputClass}
+                  value={form.vehicleTypeId}
+                  onChange={(e) => {
+                    const vehicleTypeId = e.target.value;
+                    setForm((f) => ({ ...f, vehicleTypeId, zoneId: '' }));
+                    // Tầng đang chọn không phục vụ loại xe mới -> bỏ chọn tầng (kéo theo cổng/khu),
+                    // nếu không form sẽ giữ 1 tầng đã bị ẩn khỏi dropdown.
+                    if (form.floorId && !floorServesType(form.floorId, vehicleTypeId)) onFloorChange('');
+                  }}
+                  required
+                >
                   <option value="">— Chọn loại xe —</option>
                   {vehicleTypes.map((v) => (
                     <option key={v.vehicle_type_id} value={v.vehicle_type_id}>{v.type_name}</option>
                   ))}
                 </select>
               </Field>
-              <Field label="Tầng" required error={fieldErrors.floorId}>
+              <Field
+                label="Tầng"
+                required
+                error={fieldErrors.floorId}
+                hint={
+                  form.vehicleTypeId && visibleFloors.length === 0
+                    ? 'Chưa có tầng nào phục vụ loại xe này — báo Manager tạo khu cho loại xe.'
+                    : undefined
+                }
+              >
                 <select className={inputClass} value={form.floorId} onChange={(e) => onFloorChange(e.target.value)} required>
                   <option value="">— Chọn tầng —</option>
-                  {floors.map((f) => {
+                  {visibleFloors.map((f) => {
                     const fr = freeFor(floorMetaFor(f.floor_id), form.vehicleTypeId);
                     return (
                       <option key={f.floor_id} value={f.floor_id}>
