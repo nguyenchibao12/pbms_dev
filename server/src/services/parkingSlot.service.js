@@ -81,7 +81,6 @@ export const createParkingSlot = async (data) => {
     zone_id: data.zoneId,
     slot_code: slotCode,
     status,
-    slot_type: data.slotType || null,
     distance_to_gate: data.distanceToGate ?? null,
   });
 };
@@ -127,7 +126,6 @@ export const updateParkingSlot = async (id, data) => {
     zone_id: newZoneId,
     slot_code: newSlotCode,
     status: data.status ?? slot.status,
-    slot_type: data.slotType !== undefined ? data.slotType : slot.slot_type,
     distance_to_gate:
       data.distanceToGate !== undefined ? data.distanceToGate : slot.distance_to_gate,
   });
@@ -149,7 +147,6 @@ export const bulkGenerateSlots = async (zoneId, opts, externalTransaction = null
     count,
     distanceStart = null,
     distanceStep = null,
-    slotType = null,
   } = opts;
 
   const existingSlots = await ParkingSlot.findAll({
@@ -214,7 +211,6 @@ export const bulkGenerateSlots = async (zoneId, opts, externalTransaction = null
       zone_id: zoneId,
       slot_code: code,
       status: 'available',
-      slot_type: slotType || null,
       distance_to_gate: distance,
     });
   }

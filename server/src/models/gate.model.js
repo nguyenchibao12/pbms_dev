@@ -22,11 +22,6 @@ const Gate = sequelize.define(
       type: DataTypes.ENUM('in', 'out'),
       allowNull: false,
     },
-    vehicle_type_id: {
-      type: DataTypes.INTEGER,
-      allowNull: true,
-      comment: 'NULL = mọi loại xe; nên gán riêng ô tô / xe máy',
-    },
     label: {
       type: DataTypes.STRING(80),
       allowNull: true,

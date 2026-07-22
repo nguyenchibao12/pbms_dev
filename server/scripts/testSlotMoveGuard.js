@@ -41,7 +41,6 @@ const makeSlot = async (zoneId, status) => {
     zone_id: zoneId,
     slot_code: `TST${uniq}-${zoneId}-${String(slotSeq).padStart(2, '0')}`,
     status,
-    slot_type: null,
     distance_to_gate: null,
   });
   cleanup.slots.push(s.slot_id);
@@ -74,7 +73,7 @@ const run = async () => {
   console.log('=== TEST 4: đổi status TẠI CHỖ (không đổi khu) khi occupied vẫn cho (không dính guard) ===');
   // Guard chỉ chặn khi ĐỔI KHU. Cập nhật khác khu = giữ nguyên zone → không bị chặn bởi guard này.
   const s4 = await makeSlot(zoneA.zone_id, 'available');
-  const r4 = await grab(() => updateParkingSlot(s4.slot_id, { slotType: 'compact' }));
+  const r4 = await grab(() => updateParkingSlot(s4.slot_id, { distanceToGate: 5 }));
   check('cập nhật cùng khu OK', r4.ok === true, JSON.stringify(r4));
 };
 

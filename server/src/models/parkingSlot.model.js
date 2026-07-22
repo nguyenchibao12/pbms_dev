@@ -25,10 +25,6 @@ const ParkingSlot = sequelize.define(
       allowNull: false,
       defaultValue: 'available',
     },
-    slot_type: {
-      type: DataTypes.STRING(50),
-      allowNull: true,
-    },
     distance_to_gate: {
       type: DataTypes.DECIMAL(10, 2),
       allowNull: true,

@@ -29,9 +29,6 @@ Floor.belongsTo(VehicleType, { foreignKey: 'vehicle_type_id', as: 'vehicleType' 
 Floor.hasMany(Gate, { foreignKey: 'floor_id', as: 'gates' });
 Gate.belongsTo(Floor, { foreignKey: 'floor_id', as: 'floor' });
 
-VehicleType.hasMany(Gate, { foreignKey: 'vehicle_type_id', as: 'gates' });
-Gate.belongsTo(VehicleType, { foreignKey: 'vehicle_type_id', as: 'vehicleType' });
-
 VehicleType.hasMany(Zone, { foreignKey: 'vehicle_type_id', as: 'zones' });
 Zone.belongsTo(VehicleType, { foreignKey: 'vehicle_type_id', as: 'vehicleType' });
 

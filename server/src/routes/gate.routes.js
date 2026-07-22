@@ -47,8 +47,9 @@ router.get('/:id',
 
 router.post('/',
   /* #swagger.tags = ['Gates']
-     #swagger.summary = 'Thêm cổng (Manager)'
-     #swagger.requestBody = { required: true, content: { 'application/json': { example: { floorId: 1, gateCode: 'F1-IN-CAR', direction: 'in', vehicleTypeId: 1, label: 'Cổng vào ô tô' } } } } */
+     #swagger.summary = 'Thêm cổng (Manager) — mã cổng tự sinh theo <TẦNG>-<IN|OUT>'
+     #swagger.description = 'Mã cổng do hệ thống sinh (không gửi gateCode). Mỗi tầng/tòa chỉ 1 cổng IN + 1 OUT.'
+     #swagger.requestBody = { required: true, content: { 'application/json': { example: { floorId: 1, direction: 'in', label: 'Cổng vào tầng 1' } } } } */
   ...managerWrite, gateValidators.create, validate, gateController.create);
 
 router.put('/:id',

@@ -127,7 +127,6 @@ export const zoneValidators = {
     // Mã chỗ tự sinh theo <mã khu>-NN — không nhận codePrefix/startIndex/padding nữa.
     body('distanceStart').optional().isFloat({ min: 0 }).withMessage('distanceStart phải là số ≥ 0').toFloat(),
     body('distanceStep').optional().isFloat({ min: 0 }).withMessage('distanceStep phải là số ≥ 0').toFloat(),
-    body('slotType').optional().trim().isLength({ max: 50 }).withMessage('slotType tối đa 50 ký tự'),
   ],
   create: [
     body('floorId').isInt({ min: 1 }).withMessage('floorId không hợp lệ (số nguyên dương)').toInt(),
@@ -177,7 +176,6 @@ export const parkingSlotValidators = {
       .optional()
       .isIn(['available', 'maintenance', 'locked'])
       .withMessage('Trạng thái khi tạo chỉ nhận: available | maintenance | locked'),
-    body('slotType').optional().trim().isLength({ max: 50 }).withMessage('Loại chỗ (slotType) tối đa 50 ký tự'),
     body('distanceToGate').optional().isFloat({ min: 0 }).withMessage('Khoảng cách tới cổng phải là số ≥ 0').toFloat(),
   ],
   update: [
@@ -188,7 +186,6 @@ export const parkingSlotValidators = {
       .optional()
       .isIn(SLOT_STATUSES)
       .withMessage(`Trạng thái phải là một trong: ${SLOT_STATUSES.join(', ')}`),
-    body('slotType').optional().trim().isLength({ max: 50 }).withMessage('Loại chỗ (slotType) tối đa 50 ký tự'),
     body('distanceToGate').optional().isFloat({ min: 0 }).withMessage('Khoảng cách tới cổng phải là số ≥ 0').toFloat(),
   ],
 };
@@ -200,33 +197,18 @@ export const gateValidators = {
   create: [
     body('floorId').optional({ values: 'null' }).isInt({ min: 1 })
       .withMessage('floorId phải là số (bỏ trống = cổng cấp tòa nhà)').toInt(),
-    body('gateCode')
-      .trim()
-      .notEmpty().withMessage('Mã cổng không được để trống')
-      .bail()
-      .isLength({ max: 20 }).withMessage('Mã cổng tối đa 20 ký tự'),
+    // Mã cổng do hệ thống tự sinh theo <TẦNG>-<IN|OUT> (BLD-IN/OUT cấp tòa); bỏ qua nếu client gửi.
+    body('gateCode').optional().trim(),
     body('direction').isIn(['in', 'out']).withMessage('Hướng cổng chỉ nhận: in (vào) hoặc out (ra)'),
-    body('vehicleTypeId')
-      .optional({ values: 'null' })
-      .isInt({ min: 1 }).withMessage('vehicleTypeId không hợp lệ (số nguyên dương, hoặc null = mọi loại xe)')
-      .toInt(),
     body('label').optional().trim().isLength({ max: 80 }).withMessage('Tên cổng tối đa 80 ký tự'),
     body('isActive').optional().isBoolean().withMessage('isActive phải là true/false').toBoolean(),
   ],
   update: [
     ...idParam,
     body('floorId').optional().isInt({ min: 1 }).withMessage('floorId không hợp lệ (số nguyên dương)').toInt(),
-    body('gateCode')
-      .optional()
-      .trim()
-      .notEmpty().withMessage('Mã cổng không được để trống')
-      .bail()
-      .isLength({ max: 20 }).withMessage('Mã cổng tối đa 20 ký tự'),
+    // Mã cổng tự sinh; không nhập tay (đổi tầng/hướng sẽ sinh lại).
+    body('gateCode').optional().trim(),
     body('direction').optional().isIn(['in', 'out']).withMessage('Hướng cổng chỉ nhận: in (vào) hoặc out (ra)'),
-    body('vehicleTypeId')
-      .optional({ values: 'null' })
-      .isInt({ min: 1 }).withMessage('vehicleTypeId không hợp lệ (số nguyên dương, hoặc null = mọi loại xe)')
-      .toInt(),
     body('label').optional().trim().isLength({ max: 80 }).withMessage('Tên cổng tối đa 80 ký tự'),
     body('isActive').optional().isBoolean().withMessage('isActive phải là true/false').toBoolean(),
   ],

@@ -1,12 +1,11 @@
 import { Op } from 'sequelize';
 import sequelize from '../config/db.js';
-import { ParkingSlot, VehicleType } from '../models/index.js';
+import { ParkingSlot } from '../models/index.js';
 import { getSuggestStrategy, getSuggestScoreWeights } from './settings.js';
 
 export const DEFAULT_SCORE_WEIGHTS = {
   gate: 1,
   zone_balance: 0.5,
-  slot_type: 0.2,
   preference: 0.25,
 };
 
@@ -20,9 +19,9 @@ export const resolveScoreWeights = (strategy, customWeights) => {
     return { ...DEFAULT_SCORE_WEIGHTS, ...customWeights };
   }
   if (strategy === 'zone_balanced') {
-    return { gate: 0.4, zone_balance: 1, slot_type: 0 };
+    return { gate: 0.4, zone_balance: 1 };
   }
-  return { gate: 1, zone_balance: 0, slot_type: 0 };
+  return { gate: 1, zone_balance: 0 };
 };
 
 const computeZoneLoad = async (zoneIds) => {
@@ -62,17 +61,10 @@ const preferenceScore = (slot, userPrefs) => {
   return 0.5;
 };
 
-export const scoreSlot = (slot, { weights, zoneLoad, vehicleTypeCode, userPrefs }) => {
+export const scoreSlot = (slot, { weights, zoneLoad, userPrefs }) => {
   const gateScore = normInverseDistance(slot.distance_to_gate);
   const load = zoneLoad.get(slot.zone_id) ?? 0;
   const zoneScore = 1 - load;
-
-  let typeScore = 1;
-  if (slot.slot_type && vehicleTypeCode) {
-    const st = String(slot.slot_type).toLowerCase();
-    const vt = String(vehicleTypeCode).toLowerCase();
-    typeScore = st === vt || st.includes(vt) ? 1 : 0.3;
-  }
 
   const prefScore = preferenceScore(slot, userPrefs);
   const prefWeight = userPrefs ? (weights.preference ?? 0) : 0;
@@ -80,7 +72,6 @@ export const scoreSlot = (slot, { weights, zoneLoad, vehicleTypeCode, userPrefs 
   const score =
     weights.gate * gateScore +
     weights.zone_balance * zoneScore +
-    weights.slot_type * typeScore +
     prefWeight * prefScore;
 
   return {
@@ -88,7 +79,6 @@ export const scoreSlot = (slot, { weights, zoneLoad, vehicleTypeCode, userPrefs 
     breakdown: {
       gate: gateScore,
       zone: zoneScore,
-      slotType: typeScore,
       preference: prefScore,
     },
   };
@@ -96,14 +86,8 @@ export const scoreSlot = (slot, { weights, zoneLoad, vehicleTypeCode, userPrefs 
 
 export const rankSlots = async (
   slots,
-  { vehicleTypeId, vehicleTypeCode, weights, topN = null, userPrefs = null },
+  { weights, topN = null, userPrefs = null },
 ) => {
-  let typeCode = vehicleTypeCode;
-  if (!typeCode && vehicleTypeId) {
-    const vt = await VehicleType.findByPk(vehicleTypeId, { attributes: ['type_code'] });
-    typeCode = vt?.type_code;
-  }
-
   const zoneIds = [...new Set(slots.map((s) => s.zone_id))];
   const zoneLoad = await computeZoneLoad(zoneIds);
 
@@ -112,7 +96,6 @@ export const rankSlots = async (
       const { score, breakdown } = scoreSlot(slot, {
         weights,
         zoneLoad,
-        vehicleTypeCode: typeCode,
         userPrefs,
       });
       return { slot, score, breakdown };
@@ -129,7 +112,6 @@ export const pickBestSlot = async (slots, { vehicleTypeId, topN = 0, userPrefs =
   const strategy = getSuggestStrategy();
   const weights = resolveScoreWeights(strategy, getSuggestScoreWeights());
   const ranked = await rankSlots(slots, {
-    vehicleTypeId,
     weights,
     topN: topN || undefined,
     userPrefs,
@@ -149,7 +131,6 @@ export const buildScoreReason = (breakdown, { distanceToGate } = {}) => {
   const parts = [];
   if (breakdown?.gate > 0.55) parts.push('gần cổng');
   if (breakdown?.zone > 0.55) parts.push('khu ít tải');
-  if (breakdown?.slotType >= 0.95) parts.push('phù hợp loại xe');
   if (breakdown?.preference >= 0.95) parts.push('khu quen thuộc');
   else if (breakdown?.preference >= 0.7) parts.push('tầng hay dùng');
   if (parts.length === 0) parts.push('điểm tổng cao nhất');

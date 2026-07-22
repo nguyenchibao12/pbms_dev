@@ -1,16 +1,16 @@
 import { Gate } from '../models/index.js';
 import { AppError } from './helpers.js';
-import { assertGateVehicleType } from './gateVehicle.js';
 
 /**
  * Suy ra cổng cho 1 tầng theo chiều (in/out).
  *
- * - Có `gateId`: nạp + validate (active, đúng chiều, đúng tầng, đúng loại xe) — như cũ.
+ * - Có `gateId`: nạp + validate (active, đúng chiều, đúng tầng) — như cũ.
  * - Không có `gateId`: tự tìm cổng active duy nhất của tầng theo chiều đó (mỗi tầng
- *   hiện chỉ có 1 cổng IN + 1 cổng OUT nên không cần staff chọn tay).
+ *   chỉ có 1 cổng IN + 1 cổng OUT nên không cần staff chọn tay).
  *     • 0 cổng  → lỗi NO_GATE_FOR_FLOOR (Manager chưa tạo cổng).
- *     • >1 cổng → lọc theo loại xe; vẫn còn nhiều → lỗi MULTIPLE_GATES (cần chỉ định gateId).
+ *     • >1 cổng → lỗi MULTIPLE_GATES (data lỗi, cần chỉ định gateId).
  *
+ * `vehicleTypeId` giữ trong chữ ký cho tương thích chỗ gọi nhưng KHÔNG còn dùng — cổng đã bỏ gắn loại xe.
  * Lưu ý: hàm này KHÔNG ghi incident "wrong_floor". Các luồng cần ghi incident khi
  * cổng được chỉ định sai tầng (reservation check-in, check-out) tự xử lý nhánh có
  * gateId, chỉ gọi hàm này cho nhánh auto (gateId rỗng).
@@ -30,7 +30,6 @@ export const resolveFloorGate = async ({ floorId, direction, gateId = null, vehi
     if (floorId != null && gate.floor_id !== floorId) {
       throw new AppError('Gate does not belong to the selected floor', 400, 'VALIDATION_ERROR');
     }
-    if (vehicleTypeId != null) assertGateVehicleType(gate, vehicleTypeId);
     return gate;
   }
 
@@ -52,15 +51,9 @@ export const resolveFloorGate = async ({ floorId, direction, gateId = null, vehi
     );
   }
 
-  let pool = candidates;
-  if (vehicleTypeId != null) {
-    const matched = candidates.filter(
-      (g) => !g.vehicle_type_id || Number(g.vehicle_type_id) === Number(vehicleTypeId),
-    );
-    pool = matched.length ? matched : candidates;
-  }
-
-  if (pool.length > 1) {
+  // Mỗi tầng chỉ 1 cổng IN + 1 OUT (cổng không còn gắn loại xe) → về lý thuyết luôn còn đúng 1.
+  // Vẫn giữ guard MULTIPLE_GATES phòng data lỗi (2 cổng cùng chiều 1 tầng).
+  if (candidates.length > 1) {
     throw new AppError(
       `Tầng có nhiều cổng ${dirLabel} — cần chỉ định gateId`,
       409,
@@ -68,7 +61,5 @@ export const resolveFloorGate = async ({ floorId, direction, gateId = null, vehi
     );
   }
 
-  const gate = pool[0];
-  if (vehicleTypeId != null) assertGateVehicleType(gate, vehicleTypeId);
-  return gate;
+  return candidates[0];
 };
