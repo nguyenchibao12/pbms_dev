@@ -33,9 +33,9 @@ export function friendlyReservationError(err) {
   if (m.includes('gate not found') || m.includes('inactive')) {
     return 'Cổng không tồn tại hoặc đang tắt — chọn cổng khác.';
   }
-  // Quá sớm (ngoài khung, sớm hơn 15 phút cho phép)
-  if (m.includes('quá sớm') || m.includes('too early')) {
-    return 'Chưa tới giờ vào — chỉ được cho vào sớm tối đa 15 phút trước khung giờ đặt.';
+  // Chưa tới giờ ca (BE bỏ ân hạn: chặn mọi lượt vào trước start_time)
+  if (m.includes('quá sớm') || m.includes('too early') || m.includes('chưa tới giờ')) {
+    return 'Chưa tới giờ ca đã đặt — vui lòng quay lại đúng giờ vào.';
   }
   // Quá giờ (no-show)
   if (m.includes('too late') || m.includes('window ended') || m.includes('quá giờ')) {
@@ -60,7 +60,7 @@ export function friendlyReservationError(err) {
   return raw || 'Thao tác thất bại, vui lòng thử lại.';
 }
 
-const EARLY_GRACE_MS = 15 * 60 * 1000; // BE cho vào sớm tối đa 15 phút
+const EARLY_GRACE_MS = 0; // BE đã bỏ ân hạn vào sớm (CHECKIN_EARLY_GRACE_MS=0) — cửa sổ vào khít [start_time, end_time]
 const ENDING_SOON_MS = 30 * 60 * 1000; // dưới 30 phút là "sắp hết giờ"
 
 /**
@@ -78,7 +78,7 @@ export function reservationCheckinBadge(reservation) {
   if (now > end) {
     return { label: 'Quá giờ', className: `${base} bg-red-50 text-red-600` };
   }
-  // Đã trong khung được phép cho vào (từ start - 15 phút đến end)
+  // Đã trong khung được phép cho vào (từ start_time đến end_time — không còn ân hạn sớm)
   if (start == null || now >= start - EARLY_GRACE_MS) {
     if (end - now <= ENDING_SOON_MS) {
       return { label: 'Sắp hết giờ', className: `${base} bg-amber-50 text-amber-700` };
