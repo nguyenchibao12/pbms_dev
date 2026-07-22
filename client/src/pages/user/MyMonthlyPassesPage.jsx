@@ -39,6 +39,19 @@ const refundPctLabel = (value) => {
   return pct > 0 ? `hoàn ${pct}%` : 'không hoàn';
 };
 
+const fmtMoney = (value) => `${Number(value || 0).toLocaleString('vi-VN')} ₫`;
+
+// Mốc thời gian đầy đủ (ngày hủy, ngày hoàn tiền) — khác fmtDate chỉ có ngày hiệu lực.
+const fmtDateTime = (value) => {
+  if (!value) return '—';
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? '—' : d.toLocaleString('vi-VN');
+};
+
+// Khoản đã trả cho vé: ưu tiên payment 'success', 'refunded' là đã trả rồi được hoàn lại.
+const paidPaymentOf = (pass) =>
+  (pass.payments || []).find((p) => p.status === 'success' || p.status === 'refunded') || null;
+
 // Nhãn trạng thái cho dropdown lọc — giữ đúng chữ trên Badge của từng vé.
 const STATUS_OPTIONS = [
   { value: 'pending', label: 'Chờ xử lý' },
@@ -295,6 +308,8 @@ export default function MyMonthlyPassesPage() {
               pass.qr_token &&
               !String(pass.qr_token).startsWith('revoked-');
             const cancellable = pass.status === 'pending' || pass.status === 'active';
+            const showCancelInfo = pass.status === 'cancelled';
+            const cancelledPaid = showCancelInfo ? paidPaymentOf(pass) : null;
             return (
               <Card key={pass.pass_id}>
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -341,11 +356,34 @@ export default function MyMonthlyPassesPage() {
                         Đã hết hạn
                       </span>
                     )}
-                    {pass.status === 'cancelled' && (
-                      <span className="text-xs text-slate-500">Vé đã hủy</span>
-                    )}
                   </div>
                 </div>
+
+                {/* Vé đã hủy: trước đây chỉ có chữ "Vé đã hủy" nên khách không biết hủy lúc nào
+                    và đã trả bao nhiêu. Số tiền hoàn CỐ TÌNH không hiện — % hoàn do BE tính
+                    (computePassRefundPercent), tính lại ở FE là lệch cấu hình, hiện sai cho khách. */}
+                {showCancelInfo && (
+                  <div className="mt-4 space-y-2 border-t border-slate-100 pt-4 text-sm">
+                    <div className="flex flex-wrap gap-x-6 gap-y-1 text-slate-600">
+                      {/* Bảng vé chưa có cột cancelled_at — updated_at chính là lần đổi cuối,
+                          tức lúc hủy (đã báo BE). */}
+                      <span>Thời điểm hủy: <strong className="text-slate-700">{fmtDateTime(pass.updated_at)}</strong></span>
+                      {cancelledPaid && (
+                        <span>Đã thanh toán: <strong className="text-slate-700">{fmtMoney(cancelledPaid.amount)}</strong></span>
+                      )}
+                    </div>
+                    {cancelledPaid ? (
+                      <p className="rounded-lg bg-amber-50 px-3 py-2 text-amber-700">
+                        Vui lòng đợi bộ phận hoàn tiền xử lý. Nhớ cập nhật số tài khoản ngân hàng
+                        trong hồ sơ để nhận tiền hoàn.
+                      </p>
+                    ) : (
+                      <p className="rounded-lg bg-slate-50 px-3 py-2 text-slate-500">
+                        Vé chưa thanh toán nên không phát sinh hoàn tiền.
+                      </p>
+                    )}
+                  </div>
+                )}
 
                 {showQr && (
                   <div className="mt-4 flex flex-col items-center gap-3 border-t border-slate-100 pt-4 sm:flex-row sm:justify-between">
