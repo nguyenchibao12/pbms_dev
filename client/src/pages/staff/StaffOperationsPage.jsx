@@ -3,7 +3,7 @@ import { QRCodeSVG } from 'qrcode.react';
 import { Camera } from 'lucide-react';
 import { sessionsApi } from '../../api/sessions';
 import { staffReservationsApi } from '../../api/staffReservations';
-import { floorsApi, vehicleTypesApi, gatesApi, zonesApi } from '../../api/masterData';
+import { floorsApi, vehicleTypesApi, gatesApi } from '../../api/masterData';
 import { friendlyReservationError, reservationCheckinBadge } from '../../lib/reservationStatus';
 import { publicApi } from '../../api/public';
 import { validateCheckinForm } from '../../lib/validate';
@@ -33,7 +33,7 @@ const fmtElapsed = (timeIn) => {
   return h > 0 ? `${h}h ${mins % 60}p` : `${mins}p`;
 };
 
-const emptyCheckin = { plateNumber: '', vehicleTypeId: '', floorId: '', gateId: '', zoneId: '' };
+const emptyCheckin = { plateNumber: '', vehicleTypeId: '', floorId: '', gateId: '' };
 
 // 5 loại sự cố Staff được phép báo (mirror server STAFF_CREATABLE_INCIDENT_TYPES + nhãn VN).
 // needLink: BE bắt buộc gắn 1 thực thể (vd phiên xe) cho các loại này.
@@ -84,7 +84,6 @@ export default function StaffOperationsPage() {
   const [floors, setFloors] = useState([]);
   const [vehicleTypes, setVehicleTypes] = useState([]);
   const [gates, setGates] = useState([]); // cổng IN theo tầng đã chọn
-  const [zones, setZones] = useState([]); // khu theo tầng đã chọn (tùy chọn)
   const [availability, setAvailability] = useState([]); // số chỗ trống theo tầng/khu
 
   // Check-in
@@ -357,23 +356,21 @@ export default function StaffOperationsPage() {
     runSessionLookup(lkQr);
   };
 
-  // Khi đổi tầng: nạp cổng IN + khu của tầng đó, reset cổng/khu đã chọn.
+  // Khi đổi tầng: nạp cổng IN của tầng đó, reset cổng đã chọn.
   const onFloorChange = async (floorId) => {
-    setForm((f) => ({ ...f, floorId, gateId: '', zoneId: '' }));
+    setForm((f) => ({ ...f, floorId, gateId: '' }));
     if (!floorId) {
       setGates([]);
-      setZones([]);
       return;
     }
     try {
-      const [gRes, zRes] = await Promise.all([gatesApi.list(floorId), zonesApi.list(floorId)]);
+      const gRes = await gatesApi.list(floorId);
       const inGates = (gRes.data.data || []).filter((g) => g.direction === 'in' && g.is_active);
       setGates(inGates);
       // BE tự suy cổng khi tầng chỉ có 1 cổng IN -> tự điền sẵn, staff khỏi chọn.
       if (inGates.length === 1) setForm((f) => ({ ...f, gateId: String(inGates[0].gate_id) }));
-      setZones(zRes.data.data || []);
     } catch {
-      toast.error('Không tải được cổng/khu của tầng');
+      toast.error('Không tải được cổng của tầng');
     }
   };
 
@@ -390,7 +387,6 @@ export default function StaffOperationsPage() {
         vehicleTypeId: Number(form.vehicleTypeId),
         floorId: Number(form.floorId),
         ...(form.gateId ? { gateId: Number(form.gateId) } : {}), // BE tự suy nếu bỏ trống
-        ...(form.zoneId ? { zoneId: Number(form.zoneId) } : {}),
       };
       const { data } = await sessionsApi.checkin(payload);
       setLastCheckin(data.data);
@@ -605,9 +601,6 @@ export default function StaffOperationsPage() {
   const selectedFloorMeta = floorMetaFor(form.floorId);
   const selectedFloorFree = freeFor(selectedFloorMeta, form.vehicleTypeId);
   const selectedVtName = vehicleTypes.find((v) => String(v.vehicle_type_id) === String(form.vehicleTypeId))?.type_name;
-  // Khu của tầng đang chọn, lọc theo loại xe (để staff khỏi chọn nhầm khu khác loại).
-  const visibleZones = zones.filter((z) => !form.vehicleTypeId || String(z.vehicle_type_id) === String(form.vehicleTypeId));
-  const zoneAvailById = (zoneId) => (selectedFloorMeta?.zones || []).find((z) => String(z.zoneId) === String(zoneId)) || null;
 
   return (
     <div>
@@ -661,8 +654,8 @@ export default function StaffOperationsPage() {
                   value={form.vehicleTypeId}
                   onChange={(e) => {
                     const vehicleTypeId = e.target.value;
-                    setForm((f) => ({ ...f, vehicleTypeId, zoneId: '' }));
-                    // Tầng đang chọn không phục vụ loại xe mới -> bỏ chọn tầng (kéo theo cổng/khu),
+                    setForm((f) => ({ ...f, vehicleTypeId }));
+                    // Tầng đang chọn không phục vụ loại xe mới -> bỏ chọn tầng (kéo theo cổng),
                     // nếu không form sẽ giữ 1 tầng đã bị ẩn khỏi dropdown.
                     if (form.floorId && !floorServesType(form.floorId, vehicleTypeId)) onFloorChange('');
                   }}
@@ -714,20 +707,6 @@ export default function StaffOperationsPage() {
                     ))}
                   </select>
                 )}
-              </Field>
-              <Field label="Khu vực (tùy chọn)" hint="Để trống = hệ thống tự chọn chỗ trống">
-                <select className={inputClass} value={form.zoneId} onChange={(e) => setForm({ ...form, zoneId: e.target.value })} disabled={!form.floorId}>
-                  <option value="">— Tự động —</option>
-                  {visibleZones.map((z) => {
-                    const za = zoneAvailById(z.zone_id);
-                    const full = za ? za.available === 0 : false;
-                    return (
-                      <option key={z.zone_id} value={z.zone_id} disabled={full}>
-                        {z.zone_code} — {z.label}{za ? ` (${za.available}/${za.total} trống)` : ''}{full ? ' — đầy' : ''}
-                      </option>
-                    );
-                  })}
-                </select>
               </Field>
               {form.floorId && selectedFloorFree && (
                 <div className={`rounded-lg px-3 py-2 text-sm ${selectedFloorFree.available === 0 ? 'bg-red-50 text-red-600' : 'bg-emerald-50 text-emerald-700'}`}>
