@@ -3,6 +3,7 @@ import { Link, Navigate, useSearchParams } from 'react-router-dom';
 import { QRCodeSVG } from 'qrcode.react';
 import { CalendarPlus, RefreshCw, MapPin, CheckCircle2, CreditCard, SearchX } from 'lucide-react';
 import { reservationsApi } from '../../api/reservations';
+import { publicApi } from '../../api/public';
 import { formatShiftLabel } from '../../lib/shifts';
 import { formatFloorLabel } from '../../lib/floor';
 import { collectFloorOptions, inDateRange, matchPlate } from '../../lib/filters';
@@ -44,6 +45,18 @@ const formatLocation = (r) => {
 
 const isCancellable = (status) => status === 'pending' || status === 'confirmed';
 
+// Mốc hoàn phí BE trả về theo GIỜ và có thể lẻ → đổi ra nhãn tiếng Việt:
+// 1 → "1 giờ", 0.5 → "30 phút", 1.5 → "1 giờ 30 phút". Trả '' khi không phải số dương
+// (chưa đọc được, hoặc bãi tắt mốc bằng 0) để chỗ hiển thị tự rơi về câu chữ khác.
+const formatCutoff = (hours) => {
+  const mins = Math.round(Number(hours) * 60);
+  if (!Number.isFinite(mins) || mins <= 0) return '';
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  if (!h) return `${m} phút`;
+  return m ? `${h} giờ ${m} phút` : `${h} giờ`;
+};
+
 // QR còn mở được barie (đơn còn "sống"): confirmed = chờ vào, checked_in = xe đang trong bãi
 // nhưng vẫn phải quét chính mã đó ở cổng tầng + cổng ra khi rời bãi.
 const QR_LIVE_STATUSES = ['confirmed', 'checked_in'];
@@ -84,7 +97,10 @@ export default function MyReservationsPage() {
   const [cancelTarget, setCancelTarget] = useState(null);
   const [cancelLoading, setCancelLoading] = useState(false);
   const [repayingId, setRepayingId] = useState(null);
+  const [cutoffHours, setCutoffHours] = useState(null); // null = chưa đọc được → modal nói chung chung
   const [filters, setFilters] = useState(emptyFilters);
+
+  const cutoffText = formatCutoff(cutoffHours);
 
   const setFilter = (key, value) => setFilters((f) => ({ ...f, [key]: value }));
 
@@ -140,6 +156,23 @@ export default function MyReservationsPage() {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     load('initial');
   }, [load, paymentResult]);
+
+  // Mở modal hủy đơn đã thanh toán → đọc mốc hoàn phí THẬT (booking_refund_cutoff_hours) từ
+  // /public/info thay vì hardcode "1 giờ": bãi đổi cấu hình thì chữ trên màn đổi theo.
+  // Đọc lại MỖI LẦN mở modal (không cache theo phiên) để bãi đổi mốc giữa chừng vẫn hiện đúng;
+  // giá trị cũ được giữ trong lúc gọi nên không chớp chữ. Chỉ nhận số hợp lệ ≥ 0, lỗi thì nuốt.
+  useEffect(() => {
+    if (!cancelTarget || cancelTarget.status === 'pending') return undefined;
+    let active = true;
+    publicApi
+      .info()
+      .then((res) => {
+        const value = Number(res.data.data?.bookingRefundCutoffHours);
+        if (active && Number.isFinite(value) && value >= 0) setCutoffHours(value);
+      })
+      .catch(() => {});
+    return () => { active = false; };
+  }, [cancelTarget]);
 
   // Khách bấm "back" từ PayOS → trang khôi phục từ bfcache, spinner "Trả tiếp" còn kẹt.
   // Reset lại state khi trang quay lại từ bfcache để nút dùng được ngay (khỏi F5).
@@ -455,8 +488,8 @@ export default function MyReservationsPage() {
           />
         }
       >
-        {/* Cutoff hoàn phí = booking_refund_cutoff_hours (mặc định 1 giờ, chỉ chỉnh qua env,
-            KHÔNG nằm trong whitelist Settings) → cố định, hardcode "1 giờ" ở text mô tả là đủ.
+        {/* Mốc hoàn phí lấy từ BE (xem effect đọc /public/info ở trên) — ĐỪNG hardcode lại số giờ
+            ở đây, bãi chỉnh cấu hình là chữ sai ngay mà không ai biết.
             Số tiền hoàn CHÍNH XÁC vẫn do BE trả trong response hủy (xem handleCancel). */}
         {cancelTarget?.status === 'pending' ? (
           <p className="text-sm text-slate-600">
@@ -466,8 +499,22 @@ export default function MyReservationsPage() {
           <div className="space-y-3 text-sm text-slate-600">
             <p>Hủy đặt chỗ đã thanh toán? Mã QR sẽ ngừng hiệu lực. Chính sách hoàn phí giữ chỗ:</p>
             <ul className="space-y-1 rounded-lg bg-slate-50 px-4 py-3 text-slate-600">
-              <li>· Hủy trước giờ vào <strong>từ 1 giờ trở lên</strong>: <strong>hoàn 100%</strong> phí giữ chỗ</li>
-              <li>· Trong vòng <strong>1 giờ</strong> trước giờ vào: <strong>không hoàn</strong></li>
+              {cutoffText && (
+                <>
+                  <li>· Hủy trước giờ vào <strong>từ {cutoffText} trở lên</strong>: <strong>hoàn 100%</strong> phí giữ chỗ</li>
+                  <li>· Trong vòng <strong>{cutoffText}</strong> trước giờ vào: <strong>không hoàn</strong></li>
+                </>
+              )}
+              {/* Bãi đặt mốc = 0 tức là không có cửa sổ "sát giờ": hủy lúc nào cũng hoàn. */}
+              {cutoffHours === 0 && (
+                <li>· Hủy trước giờ vào: <strong>hoàn 100%</strong> phí giữ chỗ</li>
+              )}
+              {cutoffHours == null && (
+                <>
+                  <li>· Hủy <strong>sớm</strong> trước giờ vào: <strong>hoàn 100%</strong> phí giữ chỗ</li>
+                  <li>· Hủy <strong>sát giờ vào</strong>: <strong>không hoàn</strong></li>
+                </>
+              )}
             </ul>
             <p className="text-xs text-slate-400">
               Chỗ sẽ được trả lại bãi. Số tiền hoàn chính xác hiển thị sau khi xác nhận hủy.
