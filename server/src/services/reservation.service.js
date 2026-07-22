@@ -42,6 +42,7 @@ import { resolveShiftWindow } from '../utils/shifts.js';
 import {
   getBookingFee as getBookingFeeFromSettings,
   getBookingRefundCutoffHours,
+  getBookingRefundPercent,
   getBookingMaxAdvanceDays,
   getBookingMaxDurationHours,
   getPassRefundPolicy,
@@ -561,6 +562,16 @@ export const markReservationNoShow = async (reservationId) => {
   return getReservation(reservationId);
 };
 
+/**
+ * Chính sách hoàn phí giữ chỗ hiện hành (đọc từ settings) — cho modal hủy đặt chỗ của User hiện
+ * đúng số đã cấu hình thay vì hardcode. Mirror monthlyPass.getRefundPolicy.
+ *   cutoffHours: hủy trước giờ vào ≥ ngần này → được hoàn; refundPercent: % hoàn khi trong hạn đó.
+ */
+export const getReservationRefundPolicy = () => ({
+  cutoffHours: getBookingRefundCutoffHours(),
+  refundPercent: getBookingRefundPercent(),
+});
+
 /** User tự hủy đặt chỗ của mình (pending/confirmed) + chính sách hoàn phí theo cutoff. */
 export const cancelUserReservation = async (userId, reservationId) => {
   const reservation = await Reservation.findByPk(reservationId);
@@ -583,14 +594,16 @@ export const cancelUserReservation = async (userId, reservationId) => {
     );
   }
 
-  // Chính sách hoàn phí booking theo thời gian: hủy confirmed trước giờ vào >= cutoff → được hoàn
+  // Chính sách hoàn phí booking theo thời gian: hủy confirmed trước giờ vào >= cutoff → được hoàn.
+  // % hoàn (booking_refund_percent) do Manager cấu hình; sát giờ (trong cutoff) luôn 0%.
   const wasConfirmed = reservation.status === 'confirmed';
   const cutoffHours = getBookingRefundCutoffHours();
+  const refundPercent = getBookingRefundPercent();
   const msUntilStart = new Date(reservation.start_time).getTime() - Date.now();
   const beforeCutoff = msUntilStart >= cutoffHours * 60 * 60 * 1000;
   // reason cho FE hiển thị đúng lý do: 'not_paid' (chưa có thanh toán thành công —
-  // vd đơn seed/demo hoặc chưa trả tiền) | 'late_cancel' (sát giờ) | 'refund_created'.
-  let refund = { applicable: wasConfirmed, eligible: false, amount: 0, cutoffHours, reason: 'not_paid' };
+  // vd đơn seed/demo hoặc chưa trả tiền) | 'late_cancel' (sát giờ / chính sách 0%) | 'refund_created'.
+  let refund = { applicable: wasConfirmed, eligible: false, amount: 0, cutoffHours, refundPercent, reason: 'not_paid' };
 
   await sequelize.transaction(async (transaction) => {
     assertReservationTransition(reservation.status, 'cancelled');
@@ -626,7 +639,9 @@ export const cancelUserReservation = async (userId, reservationId) => {
         // Chưa trả tiền → hủy link, không có gì để hoàn
         await payment.update({ status: 'failed' }, { transaction });
       } else if (payment.status === 'success') {
-        if (beforeCutoff) {
+        // Tiền hoàn = phí giữ chỗ × % hoàn cấu hình (làm tròn đồng). % = 0 ⇒ không hoàn dù trước cutoff.
+        const refundAmount = Math.round((Number(payment.amount) * refundPercent) / 100);
+        if (beforeCutoff && refundAmount > 0) {
           // Payment GIỮ 'success' (tiền chưa hoàn thật) — tạo RefundRequest cho trang
           // hoàn tiền của Admin; completeRefund mới đổi payment sang 'refunded'
           // (dùng chung hạ tầng với monthly pass, migration 006).
@@ -635,8 +650,8 @@ export const cancelUserReservation = async (userId, reservationId) => {
               reservation_id: reservationId,
               payment_id: payment.payment_id,
               user_id: reservation.user_id,
-              percent: 100,
-              amount: Number(payment.amount),
+              percent: refundPercent,
+              amount: refundAmount,
               status: 'pending',
               requested_at: new Date(),
             },
@@ -646,21 +661,23 @@ export const cancelUserReservation = async (userId, reservationId) => {
           refund = {
             applicable: true,
             eligible: true,
-            amount: Number(payment.amount),
+            amount: refundAmount,
+            percent: refundPercent,
             cutoffHours,
             bankInfoTtlDays,
             reason: 'refund_created',
             instructions:
-              `Bạn được hoàn ${Number(payment.amount).toLocaleString('vi-VN')}đ — vui lòng cập nhật ` +
+              `Bạn được hoàn ${refundAmount.toLocaleString('vi-VN')}đ — vui lòng cập nhật ` +
               `tài khoản ngân hàng trong hồ sơ trong vòng ${bankInfoTtlDays} ngày để nhận tiền.`,
           };
         } else {
-          // Hủy sát giờ → mất phí giữ chỗ (payment giữ nguyên 'success')
+          // Hủy sát giờ (trong cutoff) HOẶC chính sách hoàn 0% → mất phí giữ chỗ (payment giữ 'success')
           refund = {
             applicable: true,
             eligible: false,
             amount: 0,
             cutoffHours,
+            refundPercent,
             reason: 'late_cancel',
             forfeitedAmount: Number(payment.amount),
           };

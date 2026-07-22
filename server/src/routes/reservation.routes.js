@@ -79,7 +79,11 @@ router.get(
   validate,
   reservationController.suggestSlotPreview,
 );
-// LƯU Ý: '/:id' (route bắt-tất) phải nằm DƯỚI mọi route chữ cụ thể như '/mine', '/staff/*', '/checkin', '/window-availability', '/suggest-slot'.
+router.get('/refund-policy',
+  /* #swagger.tags = ['Reservations']
+     #swagger.summary = 'Chính sách hoàn phí hủy đặt chỗ (đọc từ settings, cho modal hủy của User)' */
+  ...authenticated, reservationController.getRefundPolicy);
+// LƯU Ý: '/:id' (route bắt-tất) phải nằm DƯỚI mọi route chữ cụ thể như '/mine', '/staff/*', '/checkin', '/window-availability', '/suggest-slot', '/refund-policy'.
 router.get('/:id',
   /* #swagger.tags = ['Reservations']
      #swagger.summary = 'Chi tiết đặt chỗ' */

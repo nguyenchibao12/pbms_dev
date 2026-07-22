@@ -34,6 +34,8 @@ const DEFAULT_SYSTEM = {
   max_parking_hours: null,
   // Hủy đặt chỗ confirmed trước giờ vào >= ngần này (giờ) → hoàn phí booking; sát giờ → không hoàn
   booking_refund_cutoff_hours: 1,
+  // % hoàn phí giữ chỗ khi hủy TRƯỚC cutoff (0–100). Trong cutoff (sát giờ) luôn 0%. 100 = hoàn đủ.
+  booking_refund_percent: 100,
   // Đơn pending quá ngần này (phút) chưa thanh toán → job nền tự hủy + nhả slot (3.3)
   booking_pending_ttl_minutes: 15,
   // Ân hạn sau end_time (phút) — chung 1 núm cho no-show (job) LẪN phụ thu lố giờ (detectReservationOverstay).
@@ -79,6 +81,10 @@ const envSystemDefaults = () => ({
     process.env.BOOKING_REFUND_CUTOFF_HOURS != null && process.env.BOOKING_REFUND_CUTOFF_HOURS !== ''
       ? Number(process.env.BOOKING_REFUND_CUTOFF_HOURS)
       : DEFAULT_SYSTEM.booking_refund_cutoff_hours,
+  booking_refund_percent:
+    process.env.BOOKING_REFUND_PERCENT != null && process.env.BOOKING_REFUND_PERCENT !== ''
+      ? Number(process.env.BOOKING_REFUND_PERCENT)
+      : DEFAULT_SYSTEM.booking_refund_percent,
   booking_pending_ttl_minutes:
     process.env.BOOKING_PENDING_TTL_MINUTES != null && process.env.BOOKING_PENDING_TTL_MINUTES !== ''
       ? Number(process.env.BOOKING_PENDING_TTL_MINUTES)
@@ -161,6 +167,12 @@ export const getMaxParkingHours = () => {
 export const getBookingRefundCutoffHours = () => {
   const v = getSystemSettingsSync().booking_refund_cutoff_hours;
   return v != null && v >= 0 ? Number(v) : 1;
+};
+
+/** % hoàn phí giữ chỗ khi hủy TRƯỚC cutoff (0–100). Ngoài khoảng ⇒ mặc định 100. */
+export const getBookingRefundPercent = () => {
+  const v = getSystemSettingsSync().booking_refund_percent;
+  return v != null && v >= 0 && v <= 100 ? Number(v) : 100;
 };
 
 export const getBookingPendingTtlMinutes = () => {
