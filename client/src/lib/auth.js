@@ -23,7 +23,13 @@ export function canRoleAccessPath(roleName, path) {
   if (base.startsWith('/admin')) return roleName === 'Admin';
   if (base.startsWith('/manager')) return roleName === 'Manager';
   if (base.startsWith('/staff')) return roleName === 'Staff';
-  if (base.startsWith('/reservations') || base.startsWith('/monthly-pass')) return roleName === 'User';
+  if (
+    base.startsWith('/reservations') ||
+    base.startsWith('/monthly-pass') ||
+    base.startsWith('/parking') ||
+    base.startsWith('/profile')
+  )
+    return roleName === 'User';
   return true;
 }
 
