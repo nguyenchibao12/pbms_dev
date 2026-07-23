@@ -65,6 +65,40 @@ const overstayLabel = (reason) =>
       ? 'quá GIỜ GỬI TỐI ĐA của bãi'
       : 'lố giờ';
 
+// Loai phien -> note nho duoi bien so o bang [2]. Muc dich: nhin bang la biet ngay
+// xe nao chiu luat lo gio nao, khoi tuong he thong bo sot.
+//   walk_in / auto_registered -> chan bang "Gio gui toi da" (Manager set)
+//   reservation               -> chan bang end_time cua don da dat
+//   monthly_pass              -> KHONG bi danh lo gio (BE: "Ve thang: khung rieng, monthly lo")
+const SESSION_TYPE_NOTE = {
+  walk_in: 'Khách vãng lai',
+  auto_registered: 'Vãng lai (tự động)',
+  reservation: 'Đặt chỗ qua app',
+  monthly_pass: 'Vé tháng — không tính lố giờ',
+};
+
+// Khung gio da dat: "07:00–11:00 23/7" (cung ngay) hoac "23/7 22:00 → 24/7 06:00" (qua dem).
+// Doc tu s.reservation — BE da include san start_time/end_time trong listActive.
+const fmtWindow = (r) => {
+  if (!r?.start_time || !r?.end_time) return null;
+  const s = new Date(r.start_time);
+  const e = new Date(r.end_time);
+  const hm = (d) => d.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
+  const dm = (d) => `${d.getDate()}/${d.getMonth() + 1}`;
+  return s.toDateString() === e.toDateString()
+    ? `${hm(s)}–${hm(e)} ${dm(s)}`
+    : `${dm(s)} ${hm(s)} → ${dm(e)} ${hm(e)}`;
+};
+
+// Note duoi bien so: loai phien, kem KHUNG GIO neu la dat cho (moc tinh lo gio cua don).
+const sessionTypeNote = (s) => {
+  if (s.session_type === 'reservation') {
+    const w = fmtWindow(s.reservation);
+    return w ? `Đặt chỗ · ${w}` : SESSION_TYPE_NOTE.reservation;
+  }
+  return SESSION_TYPE_NOTE[s.session_type] || null;
+};
+
 /* ─────────────────── [1] Hang so — Check-in (xe vao) ─────────────────── */
 
 const emptyCheckin = { plateNumber: '', vehicleTypeId: '', floorId: '', gateId: '' };
@@ -897,7 +931,17 @@ export default function StaffOperationsPage() {
                       <td className="px-4 py-3 font-mono font-medium text-slate-800">
                         {s.plate_number}
                         {s.overstay && (
-                          <span className="ml-2 rounded bg-red-100 px-1.5 py-0.5 text-xs font-medium text-red-700">Quá giờ</span>
+                          <span
+                            className="ml-2 rounded bg-red-100 px-1.5 py-0.5 text-xs font-medium text-red-700"
+                            title={`Lý do: ${overstayLabel(s.overstayReason)}`}
+                          >
+                            Quá giờ
+                          </span>
+                        )}
+                        {sessionTypeNote(s) && (
+                          <span className="mt-0.5 block font-sans text-xs font-normal text-slate-400">
+                            {sessionTypeNote(s)}
+                          </span>
                         )}
                       </td>
                       <td className="px-4 py-3">{s.vehicleType?.type_name || '—'}</td>
