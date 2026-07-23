@@ -36,12 +36,14 @@ export const updateSystemValidator = [
   money('monthly_pass_price', 'Giá vé tháng'),
   money('lost_ticket_fee', 'Phí mất vé'),
   money('overstay_fee', 'Phụ thu quá giờ'),
-  // max_parking_hours: null/bỏ trống = không giới hạn; hoặc số nguyên ≥ 1.
+  // max_parking_hours: null/bỏ trống = không giới hạn; hoặc số > 0 (CHO PHÉP LẺ để hỗ trợ đơn vị
+  // nhỏ hơn giờ — FE gửi GIỜ đã quy đổi, vd chọn "Phút" nhập 90 → 1.5). Consumer nhân giờ×3.6e6 ms
+  // nên số lẻ chạy đúng (1.5 → 90 phút). Trước đây ép số nguyên ≥ 1 nên không đặt được 30/90 phút.
   body('max_parking_hours')
     .optional({ nullable: true })
     .customSanitizer((v) => (v === '' ? null : v))
-    .custom((v) => v === null || (Number.isInteger(Number(v)) && Number(v) >= 1))
-    .withMessage('Số giờ gửi tối đa phải là số nguyên ≥ 1 hoặc bỏ trống (không giới hạn)'),
+    .custom((v) => v === null || (Number.isFinite(Number(v)) && Number(v) > 0))
+    .withMessage('Giờ gửi tối đa phải là số > 0 (cho phép lẻ) hoặc bỏ trống (không giới hạn)'),
   // C1 — chính sách hoàn tiền ĐẶT CHỖ (đơn giữ chỗ): mốc giờ cutoff + % hoàn trước cutoff.
   body('booking_refund_cutoff_hours')
     .optional()
