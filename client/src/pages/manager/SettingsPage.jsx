@@ -63,9 +63,9 @@ const pickUnit = (h) => {
   if (Number.isInteger(h)) return 'hours';
   return nearlyInt(h * 60) ? 'minutes' : 'hours';
 };
-// number|null (giờ) → {value, unit} cho ô nhập.
+// number|null (giờ) → {value, unit} cho ô nhập. Không giới hạn (null) hiện thành 0.
 const hoursToDuration = (h) => {
-  if (h === null || Number.isNaN(h)) return { value: '', unit: 'hours' };
+  if (h === null || Number.isNaN(h)) return { value: '0', unit: 'hours' };
   const unit = pickUnit(h);
   return { value: String(fromHours(h, unit)), unit };
 };
@@ -73,7 +73,6 @@ const hoursToDuration = (h) => {
 export default function SettingsPage() {
   const [initial, setInitial] = useState(null); // {key: number|null} — mốc so sánh
   const [form, setForm] = useState({}); // {key: string} — giá trị ô nhập
-  const [maxUnlimited, setMaxUnlimited] = useState(false);
   // Ô "Giờ gửi tối đa" nhập theo đơn vị chọn — giữ riêng, không dùng form.max_parking_hours.
   const [maxDuration, setMaxDuration] = useState({ value: '', unit: 'hours' });
   const [loading, setLoading] = useState(true);
@@ -97,7 +96,6 @@ export default function SettingsPage() {
         }
         setInitial(base);
         setForm(formVals);
-        setMaxUnlimited(base.max_parking_hours === null);
         setMaxDuration(hoursToDuration(base.max_parking_hours));
       } catch (err) {
         setError(err.response?.data?.error?.message || 'Không tải được cấu hình hệ thống');
@@ -111,10 +109,12 @@ export default function SettingsPage() {
   }, []);
 
   // Giờ gửi tối đa quy về GIỜ (number|null|NaN) — nguồn để so sánh/gửi/validate.
+  // 0 = KHÔNG giới hạn → gửi null (BE lưu null; getMaxParkingHours() coi <= 0 là không giới hạn).
+  // Bỏ trống coi như chưa hợp lệ (NaN) — muốn vô hạn thì nhập 0 cho rõ ý.
   const maxHoursValue = () => {
-    if (maxUnlimited) return null;
     const n = normalize(maxDuration.value);
-    if (n === null || Number.isNaN(n)) return n;
+    if (n === null || Number.isNaN(n)) return NaN;
+    if (n === 0) return null;
     return toHours(n, maxDuration.unit);
   };
 
@@ -133,7 +133,7 @@ export default function SettingsPage() {
     }
     return payload;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initial, form, maxUnlimited, maxDuration]);
+  }, [initial, form, maxDuration]);
 
   const hasChanges = Object.keys(changedPayload).length > 0;
 
@@ -146,11 +146,12 @@ export default function SettingsPage() {
       const n = normalize(form[key]);
       if (n === null || Number.isNaN(n) || n < 0) errs[key] = 'Nhập số ≥ 0';
     }
-    if (!maxUnlimited) {
-      // Cho phép lẻ (90 phút = 1.5 giờ) — chỉ cần > 0 sau khi quy đổi ra giờ.
-      const n = maxHoursValue();
-      if (n === null || Number.isNaN(n) || n <= 0) {
-        errs.max_parking_hours = 'Nhập số > 0, hoặc tick "Không giới hạn"';
+    {
+      // Số nguyên theo ĐƠN VỊ đang chọn (90 phút vẫn là số nguyên, gửi đi thành 1.5 giờ).
+      // 0 = không giới hạn.
+      const n = normalize(maxDuration.value);
+      if (n === null || Number.isNaN(n) || n < 0 || !Number.isInteger(n)) {
+        errs.max_parking_hours = 'Nhập số nguyên ≥ 0 (0 = không giới hạn)';
       }
     }
     for (const key of ['pass_refund_trial_days', 'pass_refund_bank_info_ttl_days']) {
@@ -193,7 +194,6 @@ export default function SettingsPage() {
       }
       setInitial(base);
       setForm(formVals);
-      setMaxUnlimited(base.max_parking_hours === null);
       setMaxDuration(hoursToDuration(base.max_parking_hours));
       toast.success(res.data.message || 'Đã lưu cấu hình hệ thống');
     } catch (err) {
@@ -232,7 +232,7 @@ export default function SettingsPage() {
             ))}
             <Field
               label="Giờ gửi tối đa trước khi tính quá giờ"
-              hint={maxUnlimited ? 'Không giới hạn thời gian gửi' : 'Số > 0 — chọn đơn vị Phút hoặc Giờ (VD 90 phút = 1.5 giờ)'}
+              hint="Nhập số nguyên — 0 là không giới hạn. Chọn đơn vị Phút hoặc Giờ (VD 90 phút = 1,5 giờ)"
               error={fieldErrors.max_parking_hours}
             >
               <div className="flex gap-2">
@@ -240,11 +240,10 @@ export default function SettingsPage() {
                   <input
                     type="number"
                     min="0"
-                    step="any"
+                    step="1"
                     className={inputClass}
                     value={maxDuration.value}
                     onChange={(e) => setMaxDuration((d) => ({ ...d, value: e.target.value }))}
-                    disabled={maxUnlimited}
                   />
                 </div>
                 <div className="w-28 shrink-0">
@@ -260,7 +259,6 @@ export default function SettingsPage() {
                         return { value: String(fromHours(toHours(n, d.unit), unit)), unit };
                       })
                     }
-                    disabled={maxUnlimited}
                   >
                     {DURATION_UNITS.map((u) => (
                       <option key={u.id} value={u.id}>{u.label}</option>
@@ -268,15 +266,6 @@ export default function SettingsPage() {
                   </select>
                 </div>
               </div>
-              <label className="mt-2 flex items-center gap-2 text-sm text-slate-600">
-                <input
-                  type="checkbox"
-                  className="h-4 w-4 rounded border-slate-300 text-brand focus:ring-brand/30"
-                  checked={maxUnlimited}
-                  onChange={(e) => setMaxUnlimited(e.target.checked)}
-                />
-                Không giới hạn
-              </label>
             </Field>
           </div>
         </Card>
