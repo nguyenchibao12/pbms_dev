@@ -43,8 +43,9 @@ export function validatePlateNumber(value, field = 'plateNumber') {
 /**
  * Validate form tầng: bắt buộc mã tầng, tên hiển thị, cấp tầng.
  * Chế độ single (1 loại xe cho cả tầng) bắt buộc thêm loại xe + diện tích tầng > 0.
+ * requireVehicleType=false khi đang ĐỔI chế độ zoned→single: BE tự lấy loại xe của khu duy nhất.
  */
-export function validateFloorForm(form) {
+export function validateFloorForm(form, { requireVehicleType = true } = {}) {
   const errors = mergeErrors(
     validateRequiredText(form.floorCode, 'floorCode', 'mã tầng'),
     validateRequiredText(form.label, 'label', 'tên hiển thị'),
@@ -53,7 +54,7 @@ export function validateFloorForm(form) {
     errors.floorLevel = 'Vui lòng nhập cấp tầng';
   }
   if (form.layoutMode === 'single') {
-    if (!form.vehicleTypeId) {
+    if (requireVehicleType && !form.vehicleTypeId) {
       errors.vehicleTypeId = 'Tầng 1 loại xe cần chọn loại xe';
     }
     const area = Number(form.areaM2);

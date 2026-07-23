@@ -91,24 +91,25 @@ export default function FloorsPage() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    const errors = validateFloorForm(form); // validate phía client trước
+    // Đổi chế độ thì không bắt chọn loại xe — BE tự suy từ khu duy nhất của tầng.
+    const errors = validateFloorForm(form, { requireVehicleType: !modeChanged }); // validate phía client trước
     setFieldErrors(errors);
     if (Object.keys(errors).length) return;
     setError('');
     setSubmitting(true);
     try {
       if (editing) {
-        // BE chặn đổi layout_mode → chỉ gửi các field cho sửa.
         const payload = {
           floorCode: form.floorCode.trim(),
           floorLevel: Number(form.floorLevel),
           label: form.label.trim(),
+          layoutMode: form.layoutMode,
         };
         if (form.layoutMode === 'single' || form.areaM2 !== '') {
           payload.areaM2 = form.areaM2 === '' ? null : Number(form.areaM2);
         }
-        // Tầng single: cho đổi loại xe ở đây (BE phải cascade sang khu mặc định — xem handoff).
-        if (form.layoutMode === 'single' && form.vehicleTypeId) {
+        // Chỉ gửi loại xe khi GIỮ nguyên chế độ single — lúc đổi chế độ BE tự đặt loại xe.
+        if (form.layoutMode === 'single' && !modeChanged && form.vehicleTypeId) {
           payload.vehicleTypeId = Number(form.vehicleTypeId);
         }
         await floorsApi.update(editing.floor_id, payload);
@@ -152,6 +153,9 @@ export default function FloorsPage() {
     vehicleTypes.find((t) => t.vehicle_type_id === id)?.type_name || '—';
 
   const isSingle = form.layoutMode === 'single';
+  // Chế độ gốc của tầng đang sửa — để biết form có đang ĐỔI chế độ hay không.
+  const originalMode = editing ? editing.layout_mode || 'zoned' : null;
+  const modeChanged = Boolean(editing) && form.layoutMode !== originalMode;
 
   const setFilter = (key, value) => setFilters((f) => ({ ...f, [key]: value }));
 
@@ -300,31 +304,33 @@ export default function FloorsPage() {
             <input className={inputClass} value={form.label} onChange={(e) => setForm({ ...form, label: e.target.value })} placeholder="Hầm B1" required />
           </Field>
 
-          {/* Chế độ bố trí: chọn khi tạo; khi sửa BE chặn đổi chế độ nên chỉ hiển thị read-only. */}
-          {editing ? (
-            <Field label="Chế độ bố trí" hint="Không thể đổi chế độ sau khi tạo tầng">
-              <input
-                className={`${inputClass} cursor-not-allowed bg-slate-50 text-slate-500`}
-                value={isSingle ? '1 loại xe cho cả tầng (single)' : 'Phân khu theo loại xe (zoned)'}
-                disabled
-                readOnly
-              />
-            </Field>
-          ) : (
-            <Field label="Chế độ bố trí" required>
-              <select
-                className={inputClass}
-                value={form.layoutMode}
-                onChange={(e) => setForm({ ...form, layoutMode: e.target.value })}
-              >
-                <option value="zoned">Phân khu theo loại xe (thêm khu sau)</option>
-                <option value="single">1 loại xe cho cả tầng (tự tạo 1 khu)</option>
-              </select>
-            </Field>
-          )}
+          {/* Chế độ bố trí: khi sửa vẫn đổi được, nhưng về single thì BE ràng "tầng còn đúng 1 khu". */}
+          <Field
+            label="Chế độ bố trí"
+            required
+            hint={
+              !editing
+                ? undefined
+                : modeChanged
+                  ? isSingle
+                    ? 'Loại xe cấp tầng sẽ lấy theo khu duy nhất đang có'
+                    : 'Tầng sẽ bỏ loại xe cấp tầng, giữ nguyên khu hiện có và cho thêm khu mới'
+                  : 'Đổi được: sang phân khu (zoned) luôn cho; về 1 loại xe (single) chỉ khi tầng còn đúng 1 khu và đã nhập diện tích'
+            }
+          >
+            <select
+              className={inputClass}
+              value={form.layoutMode}
+              onChange={(e) => setForm({ ...form, layoutMode: e.target.value })}
+            >
+              <option value="zoned">Phân khu theo loại xe (thêm khu sau)</option>
+              <option value="single">1 loại xe cho cả tầng (tự tạo 1 khu)</option>
+            </select>
+          </Field>
 
-          {/* Single: bắt buộc loại xe + diện tích. Đổi loại xe ở đây là nơi duy nhất (khu khóa loại xe). */}
-          {isSingle && (
+          {/* Single: bắt buộc loại xe + diện tích. Đổi loại xe ở đây là nơi duy nhất (khu khóa loại xe).
+              Lúc ĐỔI chế độ sang single thì ẩn — BE tự lấy loại xe của khu duy nhất. */}
+          {isSingle && !modeChanged && (
             <Field
               label="Loại xe"
               required
@@ -347,7 +353,7 @@ export default function FloorsPage() {
           {/* Diện tích tầng: bắt buộc cho single; tùy chọn cho zoned (đặt để giới hạn). */}
           <Field
             label={isSingle ? 'Diện tích tầng (m²)' : 'Diện tích tầng (m²) — tùy chọn'}
-            required={isSingle && !editing}
+            required={isSingle}
             error={fieldErrors.areaM2}
             hint={isSingle ? 'Dùng để suy ra sức chứa tầng' : 'Để trống = không giới hạn diện tích'}
           >
