@@ -131,19 +131,49 @@ export const updateFloor = async (id, data) => {
     if (existing) throw new AppError('Floor code already exists', 409, 'CONFLICT');
   }
 
-  // Đổi chế độ tầng đang có dữ liệu rất rủi ro → chặn, yêu cầu tạo tầng mới.
+  // Đổi CHẾ ĐỘ bố trí (layout_mode) — MỞ CÓ ĐIỀU KIỆN theo chiều an toàn, thay vì khóa cứng.
+  // layout_mode ràng cấu trúc khu/chỗ/sức chứa nên chỉ cho đổi khi KHÔNG phá dữ liệu:
+  //  - single -> zoned: chỉ NỚI LỎNG (mở tạo nhiều khu), giữ khu sẵn có, bỏ loại xe cấp tầng.
+  //  - zoned -> single: CHỈ khi tầng còn ĐÚNG 1 khu (gộp nhiều khu = mồ côi chỗ/vé); loại xe cấp
+  //    tầng lấy theo khu đó + cần diện tích để suy sức chứa. Ràng "1 khu" đã đủ để không phá dữ liệu
+  //    (khu duy nhất giữ nguyên chỗ/xe/vé), nên không cần chặn thêm theo phiên/vé đang treo.
+  let newVehicleTypeId = floor.vehicle_type_id;
+  let newLayoutMode = floor.layout_mode;
+  let changingVehicleType = false;
+  let modeSwitched = false;
+
   if (data.layoutMode && data.layoutMode !== floor.layout_mode) {
-    throw new AppError(
-      'Không thể đổi layout_mode của tầng đã tạo. Tạo tầng mới với chế độ mong muốn.',
-      409,
-      'CONFLICT',
-    );
+    if (data.layoutMode === 'zoned') {
+      newLayoutMode = 'zoned';
+      newVehicleTypeId = null; // tầng zoned không gắn loại xe ở cấp tầng
+    } else {
+      const zoneCount = await Zone.count({ where: { floor_id: floor.floor_id } });
+      if (zoneCount !== 1) {
+        throw new AppError(
+          `Chỉ chuyển sang "1 loại xe (single)" khi tầng còn ĐÚNG 1 khu (hiện có ${zoneCount}). ` +
+            'Xóa bớt khu về còn 1 rồi thử lại.',
+          409,
+          'CONFLICT',
+        );
+      }
+      const onlyZone = await Zone.findOne({ where: { floor_id: floor.floor_id } });
+      const areaForSingle =
+        data.areaM2 != null ? Number(data.areaM2) : floor.area_m2 == null ? null : Number(floor.area_m2);
+      if (areaForSingle == null || areaForSingle <= 0) {
+        throw new AppError(
+          'Chuyển sang "1 loại xe (single)" cần nhập diện tích tầng (areaM2 > 0) để suy sức chứa.',
+          400,
+          'VALIDATION_ERROR',
+        );
+      }
+      newLayoutMode = 'single';
+      newVehicleTypeId = onlyZone.vehicle_type_id; // loại xe cấp tầng = loại xe của khu duy nhất
+    }
+    modeSwitched = true;
   }
 
-  // Đổi loại xe của tầng (chỉ áp cho tầng single — cả tầng 1 loại, không qua khu).
-  let newVehicleTypeId = floor.vehicle_type_id;
-  let changingVehicleType = false;
-  if (data.vehicleTypeId != null && Number(data.vehicleTypeId) !== floor.vehicle_type_id) {
+  // Đổi loại xe của tầng (chỉ áp cho tầng single) — BỎ QUA khi đang chuyển chế độ (đã tự set ở trên).
+  if (!modeSwitched && data.vehicleTypeId != null && Number(data.vehicleTypeId) !== floor.vehicle_type_id) {
     if (floor.layout_mode !== 'single') {
       throw new AppError(
         'Chỉ tầng 1 loại xe (single) mới đặt loại xe ở cấp tầng. Tầng phân khu đổi loại xe tại từng khu.',
@@ -199,6 +229,7 @@ export const updateFloor = async (id, data) => {
     label: data.label ?? floor.label,
     area_m2: newArea,
     vehicle_type_id: newVehicleTypeId,
+    layout_mode: newLayoutMode,
   });
 
   // Single: đổi diện tích HOẶC loại xe → đồng bộ khu mặc định (loại xe + sức chứa).
