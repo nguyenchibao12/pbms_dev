@@ -4,6 +4,7 @@ import { validatePricingRuleForm } from '../../lib/validate';
 import Modal from '../../components/ui/Modal';
 import Field, { ErrorAlert } from '../../components/ui/Field';
 import { inputClass } from '../../components/ui/Input';
+import MoneyInput from '../../components/ui/MoneyInput';
 import Button from '../../components/ui/Button';
 import { toast } from '../../components/ui/toast';
 
@@ -68,7 +69,8 @@ export default function PricingRulesPage() {
     setForm({
       vehicleTypeId: String(item.vehicle_type_id),
       unit: String(item.unit),
-      baseRate: String(item.base_rate),
+      // base_rate là DECIMAL → BE trả "25000.00"; ô tiền chỉ nhận số nguyên nên bỏ phần .00.
+      baseRate: String(Math.round(Number(item.base_rate) || 0)),
       effectiveFrom: toDatetimeLocal(item.effective_from),
       effectiveTo: toDatetimeLocal(item.effective_to),
     });
@@ -193,7 +195,7 @@ export default function PricingRulesPage() {
             <input type="number" min="1" className={inputClass} value={form.unit} onChange={(e) => setForm({ ...form, unit: e.target.value })} required />
           </Field>
           <Field label="Đơn giá (VND)" required error={fieldErrors.baseRate}>
-            <input type="number" min="0" step="1000" className={inputClass} value={form.baseRate} onChange={(e) => setForm({ ...form, baseRate: e.target.value })} required />
+            <MoneyInput value={form.baseRate} onChange={(v) => setForm({ ...form, baseRate: v })} required />
           </Field>
           <Field label="Hiệu lực từ" required error={fieldErrors.effectiveFrom}>
             <input type="datetime-local" className={inputClass} value={form.effectiveFrom} onChange={(e) => setForm({ ...form, effectiveFrom: e.target.value })} required />
