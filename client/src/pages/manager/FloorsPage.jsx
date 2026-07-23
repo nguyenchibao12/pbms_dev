@@ -34,7 +34,7 @@ export default function FloorsPage() {
   const [form, setForm] = useState(emptyForm);
   const [filters, setFilters] = useState(emptyFilters);
 
-  // Tải danh sách tầng + loại xe, sau đó lấy capacity từng tầng (diện tích đã dùng / còn trống).
+  // Tải danh sách tầng + loại xe. capacity (diện tích đã dùng / còn trống) đi kèm luôn trong list.
   const load = async () => {
     setLoading(true);
     try {
@@ -43,16 +43,8 @@ export default function FloorsPage() {
       setItems(floors);
       setVehicleTypes(typesRes.data.data);
 
-      // capacity chỉ có ở GET /floors/:id → lấy song song cho các tầng có giới hạn diện tích.
-      const detailed = await Promise.all(
-        floors.map((f) =>
-          floorsApi
-            .get(f.floor_id)
-            .then((res) => [f.floor_id, res.data.data.capacity])
-            .catch(() => [f.floor_id, null]),
-        ),
-      );
-      setCapacities(Object.fromEntries(detailed));
+      // GET /floors đã trả sẵn capacity → không gọi GET /floors/:id từng tầng nữa (bỏ N+1).
+      setCapacities(Object.fromEntries(floors.map((f) => [f.floor_id, f.capacity ?? null])));
     } catch (err) {
       setError(err.response?.data?.error?.message || 'Không tải được danh sách tầng');
     } finally {
