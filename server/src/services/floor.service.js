@@ -31,8 +31,25 @@ const assertFloorLevelFree = async (floorLevel, { excludeFloorId } = {}, transac
   }
 };
 
-export const listFloors = async () =>
-  Floor.findAll({ order: [['floor_level', 'ASC']] });
+// Kèm luôn capacity (diện tích đã dùng / còn trống) cho TỪNG tầng ngay trong list, để FE khỏi phải
+// gọi GET /floors/:id từng tầng (bỏ N+1 request ở trang Floors). Thêm field, không phá nơi khác dùng list.
+export const listFloors = async () => {
+  const floors = await Floor.findAll({ order: [['floor_level', 'ASC']] });
+  return Promise.all(
+    floors.map(async (floor) => {
+      const areaUsed = await computeFloorAreaUsed(floor.floor_id, {});
+      const areaM2 = floor.area_m2 != null ? Number(floor.area_m2) : null;
+      return {
+        ...floor.toJSON(),
+        capacity: {
+          areaM2,
+          areaUsedM2: Number(areaUsed.toFixed(2)),
+          areaFreeM2: areaM2 != null ? Number((areaM2 - areaUsed).toFixed(2)) : null,
+        },
+      };
+    }),
+  );
+};
 
 export const getFloor = async (id) => {
   const floor = await Floor.findByPk(id, {
