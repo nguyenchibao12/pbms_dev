@@ -33,6 +33,15 @@ ok('30A-12345', '30A-123.45', 'ô tô 5 số liền → tự chấm');
 ok('51F-123.45', '51F-123.45', 'ô tô có dấu chấm');
 ok('30AB-123.45', '30AB-123.45', 'ô tô 2 chữ (2025)');
 
+console.log('=== CHUẨN HÓA TẬP KÝ TỰ SERI: thêm U, bỏ Q/R/W ===');
+ok('29U-123.45', '29U-123.45', 'ô tô seri U (trước đây bị chặn oan)');
+ok('30U-12345', '30U-123.45', 'ô tô U 5 số liền → tự chấm');
+ok('29-U1 23456', '29U1-234.56', 'xe máy seri U');
+reject('30Q-123.45', 'Q không cấp cho biển dân sự');
+reject('30W-123.45', 'W không cấp cho biển dân sự');
+reject('51W-999.99', 'W không cấp cho biển dân sự');
+reject('29R-1234', 'R dành rơ-moóc — không nhận ở bãi này');
+
 console.log('=== VẪN PHẢI TỪ CHỐI (không nới lỏng quá tay) ===');
 reject('', 'rỗng');
 reject('82-H3 942', 'chỉ 3 số → không hợp lệ');
