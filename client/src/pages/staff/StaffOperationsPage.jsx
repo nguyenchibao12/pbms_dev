@@ -804,7 +804,13 @@ export default function StaffOperationsPage() {
                 error={fieldErrors.floorId}
                 hint={
                   form.vehicleTypeId && visibleFloors.length === 0
-                    ? 'Chưa có tầng nào phục vụ loại xe này — báo Manager tạo khu cho loại xe.'
+                    ? (
+                      // To do — khong the check-in loai xe nay. Bo mau xam mac dinh cua Field
+                      // (text-slate-400) de staff thay ngay thay vi tuong chi la chu thich.
+                      <span className="font-medium text-red-600">
+                        Chưa có tầng nào phục vụ loại xe này — báo Manager tạo khu cho loại xe.
+                      </span>
+                    )
                     : undefined
                 }
               >
