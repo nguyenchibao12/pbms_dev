@@ -59,6 +59,14 @@ export const floorValidators = {
       .optional({ values: 'null' })
       .isFloat({ gt: 0 }).withMessage('Diện tích tầng (areaM2) phải > 0')
       .toFloat(),
+    // Cho đổi chế độ bố trí CÓ ĐIỀU KIỆN (service tự chặn chiều nguy hiểm: zoned→single cần đúng 1 khu).
+    body('layoutMode')
+      .optional()
+      .isIn(['single', 'zoned']).withMessage('layoutMode chỉ nhận: single (1 loại xe) hoặc zoned (phân khu)'),
+    body('vehicleTypeId')
+      .optional({ values: 'null' })
+      .isInt({ min: 1 }).withMessage('vehicleTypeId không hợp lệ (số nguyên dương)')
+      .toInt(),
   ],
   quickSetup: [
     body('floor.floorCode')
