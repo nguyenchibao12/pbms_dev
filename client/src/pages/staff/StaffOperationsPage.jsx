@@ -18,6 +18,26 @@ import QrScanner from '../../components/QrScanner';
 import { incidentsApi } from '../../api/incidents';
 import { staffPassesApi } from '../../api/staffPasses';
 
+/* ============================================================================
+   BAN DO FILE — 7 tab xep DUNG thu tu hien tren man hinh.
+
+   Moi tab co 3 manh mang CUNG so hieu (hang so / state+logic / giao dien).
+   Go Ctrl+F so hieu trong ngoac vuong de ra du ca 3 manh:
+
+     [1] CHECK-IN (XE VAO)    bien so -> loai xe -> tang -> cong vao (IN)
+     [2] PHIEN HOAT DONG      + [2M] modal Xe ra (check-out, mo tu tab [4])
+     [3] DAT CHO VAO          + [3M] modal Cho xe vao
+     [4] TRA CUU XE (QR)
+     [5] THU TIEN MAT (RA)
+     [6] SU CO
+     [7] VE THANG
+     [0] dung chung cho nhieu tab
+
+   Thu tu trong file:  hang so -> state+logic tung tab -> giao dien tung tab.
+   ============================================================================ */
+
+/* ─────────────────────── [0] Helper dung chung ─────────────────────── */
+
 // Lấy floor_id của phiên (từ chỗ đỗ, fallback sang cổng vào) — để lọc cổng RA cùng tầng.
 const sessionFloorId = (s) => s?.slot?.zone?.floor?.floor_id ?? s?.gate?.floor_id ?? null;
 
@@ -34,7 +54,22 @@ const fmtElapsed = (timeIn) => {
   return h > 0 ? `${h}h ${mins % 60}p` : `${mins}p`;
 };
 
+// Lố giờ có 2 lý do khác nhau (BE trả overstayReason) — nói đúng để Manager không tưởng
+// liên quan "Giờ gửi tối đa": reservation_window = ở quá khung đã đặt (không liên quan giờ gửi
+// tối đa); walk_in_max_hours = quá giờ gửi tối đa của bãi.
+// Dùng ở [2M] modal Xe ra và [5] Thu tiền mặt.
+const overstayLabel = (reason) =>
+  reason === 'reservation_window'
+    ? 'ở quá KHUNG ĐẶT CHỖ đã đăng ký'
+    : reason === 'walk_in_max_hours'
+      ? 'quá GIỜ GỬI TỐI ĐA của bãi'
+      : 'lố giờ';
+
+/* ─────────────────── [1] Hang so — Check-in (xe vao) ─────────────────── */
+
 const emptyCheckin = { plateNumber: '', vehicleTypeId: '', floorId: '', gateId: '' };
+
+/* ────────────────────────── [6] Hang so — Su co ────────────────────────── */
 
 // 5 loại sự cố Staff được phép báo (mirror server STAFF_CREATABLE_INCIDENT_TYPES + nhãn VN).
 // needLink: BE bắt buộc gắn 1 thực thể (vd phiên xe) cho các loại này.
@@ -51,17 +86,8 @@ const INCIDENT_STATUS_BADGE = {
   resolved: 'bg-emerald-50 text-emerald-700',
 };
 
-// Lố giờ có 2 lý do khác nhau (BE trả overstayReason) — nói đúng để Manager không tưởng
-// liên quan "Giờ gửi tối đa": reservation_window = ở quá khung đã đặt (không liên quan giờ gửi
-// tối đa); walk_in_max_hours = quá giờ gửi tối đa của bãi.
-const overstayLabel = (reason) =>
-  reason === 'reservation_window'
-    ? 'ở quá KHUNG ĐẶT CHỖ đã đăng ký'
-    : reason === 'walk_in_max_hours'
-      ? 'quá GIỜ GỬI TỐI ĐA của bãi'
-      : 'lố giờ';
+/* ───────────────────────── [7] Hang so — Ve thang ───────────────────────── */
 
-// Vé tháng (tab tra cứu của Staff).
 const PASS_STATUS_OPTIONS = [
   ['pending', 'Chờ thanh toán'],
   ['active', 'Đang hiệu lực'],
@@ -79,108 +105,22 @@ const fmtPassDate = (v) => (v ? new Date(v).toLocaleDateString('vi-VN') : '—')
 const hhmm = (t) => (t ? String(t).slice(0, 5) : '—');
 
 export default function StaffOperationsPage() {
-  const [tab, setTab] = useState('checkin'); // 'checkin' | 'active' | 'reservation' | 'booth' | 'incident'
+  /* ==========================================================================
+     [0] DUNG CHUNG — tab dang mo, danh muc, tai du lieu luc mo trang
+     ========================================================================== */
 
-  // Dữ liệu danh mục cho dropdown
+  const [tab, setTab] = useState('checkin'); // 'checkin' | 'active' | 'reservation' | 'lookup' | 'booth' | 'incident' | 'passes'
+
+  // Danh mục cho dropdown: floors dùng ở [1] và [7], vehicleTypes dùng ở [1].
   const [floors, setFloors] = useState([]);
   const [vehicleTypes, setVehicleTypes] = useState([]);
-  const [gates, setGates] = useState([]); // cổng IN theo tầng đã chọn
-  const [availability, setAvailability] = useState([]); // số chỗ trống theo tầng/khu
+  const [availability, setAvailability] = useState([]); // số chỗ trống theo tầng/khu — [1] đọc
 
-  // Check-in
-  const [form, setForm] = useState(emptyCheckin);
-  const [fieldErrors, setFieldErrors] = useState({});
-  const [checkinError, setCheckinError] = useState('');
-  const [submitting, setSubmitting] = useState(false);
-  const [lastCheckin, setLastCheckin] = useState(null);
-
-  // Xe đang đỗ
-  const [active, setActive] = useState([]);
-  const [loadingActive, setLoadingActive] = useState(true);
-  const [fees, setFees] = useState({}); // { [sessionId]: feeResult }
-
-  // Xe ra (check-out)
-  const [coSession, setCoSession] = useState(null); // phiên đang check-out (null = đóng modal)
-  const [coGates, setCoGates] = useState([]); // cổng OUT của tầng phiên đó
-  const [coGateId, setCoGateId] = useState('');
-  const [coLost, setCoLost] = useState(false); // mất vé
-  const [coOverstay, setCoOverstay] = useState(false); // phụ thu lố giờ (staff chủ động tick)
-  const [coPreview, setCoPreview] = useState(null); // phí tạm tính
-  const [coResult, setCoResult] = useState(null); // kết quả sau check-out
-  const [coError, setCoError] = useState('');
-  const [coSubmitting, setCoSubmitting] = useState(false);
-
-  // Đặt chỗ vào (reservation check-in)
-  const [resQr, setResQr] = useState(''); // mã QR nhập/quét để tra cứu
-  const [resLookupError, setResLookupError] = useState('');
-  const [resLooking, setResLooking] = useState(false);
-  const [upcoming, setUpcoming] = useState([]); // đơn confirmed chờ vào
-  const [loadingUpcoming, setLoadingUpcoming] = useState(true);
-  const [ciRes, setCiRes] = useState(null); // đơn đang cho vào (null = đóng modal)
-  const [ciGates, setCiGates] = useState([]); // cổng IN của tầng đã đặt
-  const [ciGateId, setCiGateId] = useState('');
-  const [ciError, setCiError] = useState('');
-  const [ciSubmitting, setCiSubmitting] = useState(false);
-
-  // Tra cứu phiên đang đỗ bằng QR (xem chi tiết xe rồi cho ra / sửa biển số).
-  const [lkQr, setLkQr] = useState('');
-  const [lkLooking, setLkLooking] = useState(false);
-  const [lkError, setLkError] = useState('');
-  const [lkSession, setLkSession] = useState(null); // phiên tra được (null = chưa tra)
-
-  // Booth thu tiền mặt (xe ra) — tra cứu bằng QR HOẶC biển số (khi khách mất vé). BE tự suy cổng.
-  const [boothQr, setBoothQr] = useState('');
-  const [boothPlate, setBoothPlate] = useState(''); // tra theo biển số khi khách MẤT VÉ (không có QR)
-  const [boothLost, setBoothLost] = useState(false);
-  const [boothOverstay, setBoothOverstay] = useState(false); // phụ thu lố giờ (staff chủ động tick)
-  const [boothLooking, setBoothLooking] = useState(false);
-  const [boothError, setBoothError] = useState('');
-  const [boothPreview, setBoothPreview] = useState(null); // { session, fee } sau khi tra cứu
-  const [boothSubmitting, setBoothSubmitting] = useState(false);
-  const [boothResult, setBoothResult] = useState(null); // kết quả sau khi thu tiền mặt
-
-  // Quét QR bằng camera dùng chung cho 2 tab: 'reservation' (đặt chỗ vào) | 'booth' (thu tiền mặt) | null.
+  // Quét QR bằng camera dùng chung 3 tab: [3] đặt chỗ vào | [4] tra cứu xe | [5] thu tiền mặt.
   const [scanTarget, setScanTarget] = useState(null);
 
-  // Sự cố (incident) — Staff báo + xem sự cố của mình.
-  const [incidents, setIncidents] = useState([]);
-  const [loadingIncidents, setLoadingIncidents] = useState(false);
-  const [incForm, setIncForm] = useState({ type: '', description: '', sessionId: '' });
-  const [incFieldErrors, setIncFieldErrors] = useState({});
-  const [incError, setIncError] = useState('');
-  const [incSubmitting, setIncSubmitting] = useState(false);
-
-  // Vé tháng — tab tra cứu (danh sách phân trang + bộ lọc trạng thái/tầng/biển số).
-  const [passes, setPasses] = useState({ items: [], total: 0, page: 1, limit: 50, pages: 0 });
-  const [passLoading, setPassLoading] = useState(false);
-  const [passFilters, setPassFilters] = useState({ status: '', floorId: '', plate: '' });
-
-  const loadActive = async () => {
-    setLoadingActive(true);
-    try {
-      const { data } = await sessionsApi.listActive();
-      // listActive trả phân trang { items, total, ... }
-      setActive(data.data?.items || []);
-    } catch (err) {
-      toast.error(err.response?.data?.error?.message || 'Không tải được danh sách xe đang đỗ');
-    } finally {
-      setLoadingActive(false);
-    }
-  };
-
-  const loadUpcoming = async () => {
-    setLoadingUpcoming(true);
-    try {
-      const { data } = await staffReservationsApi.upcoming();
-      setUpcoming(data.data || []);
-    } catch (err) {
-      toast.error(err.response?.data?.error?.message || 'Không tải được danh sách đặt chỗ');
-    } finally {
-      setLoadingUpcoming(false);
-    }
-  };
-
   // Số chỗ trống theo tầng/khu (GET /public/availability) — cập nhật dropdown + panel.
+  // Gọi lại sau mỗi thao tác đổi số chỗ: [1] check-in, [2M] xe ra, [3] cho vào, [5] thu tiền mặt.
   const loadAvailability = async () => {
     try {
       const { data } = await publicApi.availability();
@@ -190,71 +130,9 @@ export default function StaffOperationsPage() {
     }
   };
 
-  // Sự cố do chính staff này báo (BE lọc theo reporter khi role = Staff).
-  const loadIncidents = async () => {
-    setLoadingIncidents(true);
-    try {
-      const { data } = await incidentsApi.list({ limit: 50 });
-      setIncidents(data.data?.items || []);
-    } catch (err) {
-      toast.error(err.response?.data?.error?.message || 'Không tải được danh sách sự cố');
-    } finally {
-      setLoadingIncidents(false);
-    }
-  };
-
-  // Gửi báo sự cố. Loại lost_ticket/wrong_info/overstay/wrong_zone BE bắt buộc gắn 1 phiên.
-  const submitIncident = async (e) => {
-    e.preventDefault();
-    const errs = {};
-    if (!incForm.type) errs.type = 'Chọn loại sự cố';
-    if (!incForm.description.trim()) errs.description = 'Nhập mô tả';
-    const typeMeta = STAFF_INCIDENT_TYPES.find((t) => t.value === incForm.type);
-    if (typeMeta?.needLink && !incForm.sessionId) errs.sessionId = 'Loại này cần gắn 1 xe đang đỗ';
-    setIncFieldErrors(errs);
-    if (Object.keys(errs).length) return;
-    setIncError('');
-    setIncSubmitting(true);
-    try {
-      await incidentsApi.create({
-        type: incForm.type,
-        description: incForm.description.trim(),
-        ...(incForm.sessionId ? { sessionId: Number(incForm.sessionId) } : {}),
-      });
-      toast.success('Đã báo sự cố');
-      setIncForm({ type: '', description: '', sessionId: '' });
-      setIncFieldErrors({});
-      loadIncidents();
-    } catch (err) {
-      setIncError(err.response?.data?.error?.message || 'Báo sự cố thất bại');
-    } finally {
-      setIncSubmitting(false);
-    }
-  };
-
-  // Tra cứu vé tháng (Staff) — lọc trạng thái/tầng/biển số, phân trang.
-  const loadPasses = async (f = passFilters, page = 1) => {
-    setPassLoading(true);
-    try {
-      const params = { page };
-      if (f.status) params.status = f.status;
-      if (f.floorId) params.floorId = f.floorId;
-      if (f.plate.trim()) params.plate = f.plate.trim();
-      const { data } = await staffPassesApi.list(params);
-      setPasses(data.data);
-    } catch (err) {
-      toast.error(err.response?.data?.error?.message || 'Không tải được danh sách vé tháng');
-    } finally {
-      setPassLoading(false);
-    }
-  };
-
-  const handlePassSearch = (e) => {
-    e.preventDefault();
-    loadPasses(passFilters, 1);
-  };
-
   // Tải danh mục + danh sách xe đang đỗ + đặt chỗ sắp tới + số chỗ trống khi mở trang.
+  // Các loadXxx() nằm ở section của tab tương ứng bên dưới — gọi được vì callback của
+  // useEffect chỉ chạy SAU khi render xong, lúc đó mọi const đã được gán.
   useEffect(() => {
     (async () => {
       try {
@@ -264,98 +142,27 @@ export default function StaffOperationsPage() {
       } catch {
         toast.error('Không tải được danh mục tầng/loại xe');
       }
-      loadActive();
-      loadUpcoming();
-      loadAvailability();
-      loadIncidents();
-      loadPasses();
+      loadActive();      // [2]
+      loadUpcoming();    // [3]
+      loadAvailability();// [0]
+      loadIncidents();   // [6]
+      loadPasses();      // [7]
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Mở modal "Cho xe vào" cho 1 đơn đặt chỗ: nạp cổng VÀO (IN) cùng tầng đã đặt.
-  const openReservationCheckin = async (reservation) => {
-    setCiRes(reservation);
-    setCiGateId('');
-    setCiError('');
-    setCiGates([]);
-    const floorId = reservationFloorId(reservation);
-    if (!floorId) return;
-    try {
-      const gRes = await gatesApi.list(floorId);
-      const inGates = (gRes.data.data || []).filter((g) => g.direction === 'in' && g.is_active);
-      setCiGates(inGates);
-      if (inGates.length === 1) setCiGateId(String(inGates[0].gate_id)); // 1 cổng IN -> tự chọn
-    } catch {
-      setCiError('Không tải được cổng vào của tầng đã đặt');
-    }
-  };
+  /* ==========================================================================
+     [1] TAB CHECK-IN (XE VAO) — state + logic
+         Giao dien o duoi: tim "[1] TAB CHECK-IN" phan JSX.
+         Thu tu tren man hinh: bien so -> loai xe -> tang -> cong vao (IN)
+     ========================================================================== */
 
-  // Tra cứu đơn theo mã QR (từ ô nhập tay HOẶC camera) rồi mở modal cho vào.
-  const runReservationLookup = async (raw) => {
-    const token = String(raw || '').trim();
-    if (!token) return;
-    setResLookupError('');
-    setResLooking(true);
-    try {
-      const { data } = await staffReservationsApi.lookup(token);
-      setResQr('');
-      openReservationCheckin(data.data);
-    } catch (err) {
-      setResLookupError(friendlyReservationError(err));
-    } finally {
-      setResLooking(false);
-    }
-  };
-
-  const handleReservationLookup = (e) => {
-    e.preventDefault();
-    runReservationLookup(resQr);
-  };
-
-  const handleReservationCheckin = async (e) => {
-    e.preventDefault();
-    setCiError('');
-    setCiSubmitting(true);
-    try {
-      await staffReservationsApi.checkin({
-        reservationId: ciRes.reservation_id,
-        ...(ciGateId ? { gateId: Number(ciGateId) } : {}), // BE tự suy cổng IN nếu bỏ trống
-      });
-      toast.success('Cho xe đặt chỗ vào bãi thành công');
-      setCiRes(null);
-      loadActive();
-      loadUpcoming();
-      loadAvailability();
-    } catch (err) {
-      setCiError(friendlyReservationError(err));
-    } finally {
-      setCiSubmitting(false);
-    }
-  };
-
-  // Tra cứu phiên đang đỗ theo mã QR (từ ô nhập tay HOẶC camera).
-  const runSessionLookup = async (raw) => {
-    const token = String(raw || '').trim();
-    if (!token) return;
-    setLkError('');
-    setLkLooking(true);
-    try {
-      const { data } = await sessionsApi.staffLookup(token);
-      setLkSession(data.data);
-      setLkQr('');
-    } catch (err) {
-      setLkSession(null);
-      setLkError(err.response?.data?.error?.message || 'Không tìm thấy xe đang gửi với mã QR này');
-    } finally {
-      setLkLooking(false);
-    }
-  };
-
-  const handleSessionLookup = (e) => {
-    e.preventDefault();
-    runSessionLookup(lkQr);
-  };
+  const [form, setForm] = useState(emptyCheckin);
+  const [gates, setGates] = useState([]); // cổng IN theo tầng đã chọn
+  const [fieldErrors, setFieldErrors] = useState({});
+  const [checkinError, setCheckinError] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [lastCheckin, setLastCheckin] = useState(null);
 
   // Khi đổi tầng: nạp cổng IN của tầng đó, reset cổng đã chọn.
   const onFloorChange = async (floorId) => {
@@ -402,6 +209,57 @@ export default function StaffOperationsPage() {
     }
   };
 
+  // ── [1] Giá trị dẫn xuất — CHẠY NGAY lúc render, nên phải khai báo theo đúng
+  //    thứ tự phụ thuộc: floorMetaFor -> freeFor / floorServesType -> visibleFloors.
+
+  // Số chỗ trống cho tầng đang chọn (theo loại xe nếu đã chọn) — dùng cho dropdown + panel.
+  const floorMetaFor = (floorId) => availability.find((f) => String(f.floorId) === String(floorId)) || null;
+  const freeFor = (floorMeta, vehicleTypeId) => {
+    if (!floorMeta) return null;
+    if (!vehicleTypeId) return { available: floorMeta.available, total: floorMeta.total };
+    const zs = (floorMeta.zones || []).filter((z) => String(z.vehicleTypeId) === String(vehicleTypeId));
+    return {
+      available: zs.reduce((s, z) => s + (z.available || 0), 0),
+      total: zs.reduce((s, z) => s + (z.total || 0), 0),
+    };
+  };
+  // Tầng có phục vụ loại xe đang chọn không (theo availability). Chưa chọn loại xe HOẶC chưa
+  // tải được availability -> coi như CÓ, tránh ẩn nhầm sạch tầng khi dữ liệu chưa về.
+  const floorServesType = (floorId, vehicleTypeId) => {
+    if (!vehicleTypeId) return true;
+    const meta = floorMetaFor(floorId);
+    if (!meta) return true;
+    return (meta.zones || []).some((z) => String(z.vehicleTypeId) === String(vehicleTypeId));
+  };
+  // Chỉ hiện tầng phục vụ loại xe đang chọn: tầng riêng xe máy không hiện khi chọn ô tô
+  // (trước đây vẫn hiện kèm "0 trống" + báo "Tầng đầy 0/0" -> staff tưởng chờ lát có chỗ).
+  const visibleFloors = floors.filter((f) => floorServesType(f.floor_id, form.vehicleTypeId));
+  const selectedFloorMeta = floorMetaFor(form.floorId);
+  const selectedFloorFree = freeFor(selectedFloorMeta, form.vehicleTypeId);
+  const selectedVtName = vehicleTypes.find((v) => String(v.vehicle_type_id) === String(form.vehicleTypeId))?.type_name;
+
+  /* ==========================================================================
+     [2] TAB PHIEN HOAT DONG — state + logic
+         Giao dien o duoi: tim "[2] TAB PHIEN HOAT DONG" phan JSX.
+     ========================================================================== */
+
+  const [active, setActive] = useState([]);
+  const [loadingActive, setLoadingActive] = useState(true);
+  const [fees, setFees] = useState({}); // { [sessionId]: feeResult } — [2] và [4] cùng đọc
+
+  const loadActive = async () => {
+    setLoadingActive(true);
+    try {
+      const { data } = await sessionsApi.listActive();
+      // listActive trả phân trang { items, total, ... }
+      setActive(data.data?.items || []);
+    } catch (err) {
+      toast.error(err.response?.data?.error?.message || 'Không tải được danh sách xe đang đỗ');
+    } finally {
+      setLoadingActive(false);
+    }
+  };
+
   const handlePreviewFee = async (session) => {
     try {
       const { data } = await sessionsApi.previewFee({ sessionId: session.session_id });
@@ -422,6 +280,23 @@ export default function StaffOperationsPage() {
       toast.error(err.response?.data?.error?.message || 'Sửa biển số thất bại');
     }
   };
+
+  /* ==========================================================================
+     [2M] MODAL XE RA (CHECK-OUT) — mo tu [4] Tra cuu xe (QR)
+          Giao dien o duoi: tim "[2M] MODAL XE RA" phan JSX.
+          Xu ly xe VE THANG / MIEN PHI (ghi method='free'). Xe phai tra tien mat
+          thi dung tab [5] Thu tien mat — API khac (cash-checkout).
+     ========================================================================== */
+
+  const [coSession, setCoSession] = useState(null); // phiên đang check-out (null = đóng modal)
+  const [coGates, setCoGates] = useState([]); // cổng OUT của tầng phiên đó
+  const [coGateId, setCoGateId] = useState('');
+  const [coLost, setCoLost] = useState(false); // mất vé
+  const [coOverstay, setCoOverstay] = useState(false); // phụ thu lố giờ (staff chủ động tick)
+  const [coPreview, setCoPreview] = useState(null); // phí tạm tính
+  const [coResult, setCoResult] = useState(null); // kết quả sau check-out
+  const [coError, setCoError] = useState('');
+  const [coSubmitting, setCoSubmitting] = useState(false);
 
   // Mở modal Xe ra: nạp cổng RA (OUT) cùng tầng + xem trước phí.
   const openCheckout = async (session) => {
@@ -500,6 +375,151 @@ export default function StaffOperationsPage() {
     }
   };
 
+  /* ==========================================================================
+     [3] TAB DAT CHO VAO (RESERVATION CHECK-IN) — state + logic
+         Giao dien o duoi: tim "[3] TAB DAT CHO VAO" phan JSX.
+     ========================================================================== */
+
+  const [resQr, setResQr] = useState(''); // mã QR nhập/quét để tra cứu
+  const [resLookupError, setResLookupError] = useState('');
+  const [resLooking, setResLooking] = useState(false);
+  const [upcoming, setUpcoming] = useState([]); // đơn confirmed chờ vào
+  const [loadingUpcoming, setLoadingUpcoming] = useState(true);
+
+  const loadUpcoming = async () => {
+    setLoadingUpcoming(true);
+    try {
+      const { data } = await staffReservationsApi.upcoming();
+      setUpcoming(data.data || []);
+    } catch (err) {
+      toast.error(err.response?.data?.error?.message || 'Không tải được danh sách đặt chỗ');
+    } finally {
+      setLoadingUpcoming(false);
+    }
+  };
+
+  // Tra cứu đơn theo mã QR (từ ô nhập tay HOẶC camera) rồi mở modal cho vào.
+  const runReservationLookup = async (raw) => {
+    const token = String(raw || '').trim();
+    if (!token) return;
+    setResLookupError('');
+    setResLooking(true);
+    try {
+      const { data } = await staffReservationsApi.lookup(token);
+      setResQr('');
+      openReservationCheckin(data.data);
+    } catch (err) {
+      setResLookupError(friendlyReservationError(err));
+    } finally {
+      setResLooking(false);
+    }
+  };
+
+  const handleReservationLookup = (e) => {
+    e.preventDefault();
+    runReservationLookup(resQr);
+  };
+
+  /* ==========================================================================
+     [3M] MODAL CHO XE DAT CHO VAO
+          Giao dien o duoi: tim "[3M] MODAL CHO XE DAT CHO VAO" phan JSX.
+     ========================================================================== */
+
+  const [ciRes, setCiRes] = useState(null); // đơn đang cho vào (null = đóng modal)
+  const [ciGates, setCiGates] = useState([]); // cổng IN của tầng đã đặt
+  const [ciGateId, setCiGateId] = useState('');
+  const [ciError, setCiError] = useState('');
+  const [ciSubmitting, setCiSubmitting] = useState(false);
+
+  // Mở modal "Cho xe vào" cho 1 đơn đặt chỗ: nạp cổng VÀO (IN) cùng tầng đã đặt.
+  const openReservationCheckin = async (reservation) => {
+    setCiRes(reservation);
+    setCiGateId('');
+    setCiError('');
+    setCiGates([]);
+    const floorId = reservationFloorId(reservation);
+    if (!floorId) return;
+    try {
+      const gRes = await gatesApi.list(floorId);
+      const inGates = (gRes.data.data || []).filter((g) => g.direction === 'in' && g.is_active);
+      setCiGates(inGates);
+      if (inGates.length === 1) setCiGateId(String(inGates[0].gate_id)); // 1 cổng IN -> tự chọn
+    } catch {
+      setCiError('Không tải được cổng vào của tầng đã đặt');
+    }
+  };
+
+  const handleReservationCheckin = async (e) => {
+    e.preventDefault();
+    setCiError('');
+    setCiSubmitting(true);
+    try {
+      await staffReservationsApi.checkin({
+        reservationId: ciRes.reservation_id,
+        ...(ciGateId ? { gateId: Number(ciGateId) } : {}), // BE tự suy cổng IN nếu bỏ trống
+      });
+      toast.success('Cho xe đặt chỗ vào bãi thành công');
+      setCiRes(null);
+      loadActive();
+      loadUpcoming();
+      loadAvailability();
+    } catch (err) {
+      setCiError(friendlyReservationError(err));
+    } finally {
+      setCiSubmitting(false);
+    }
+  };
+
+  /* ==========================================================================
+     [4] TAB TRA CUU XE (QR) — state + logic
+         Giao dien o duoi: tim "[4] TAB TRA CUU XE (QR)" phan JSX.
+     ========================================================================== */
+
+  // Tra cứu phiên đang đỗ bằng QR (xem chi tiết xe rồi cho ra / sửa biển số).
+  const [lkQr, setLkQr] = useState('');
+  const [lkLooking, setLkLooking] = useState(false);
+  const [lkError, setLkError] = useState('');
+  const [lkSession, setLkSession] = useState(null); // phiên tra được (null = chưa tra)
+
+  // Tra cứu phiên đang đỗ theo mã QR (từ ô nhập tay HOẶC camera).
+  const runSessionLookup = async (raw) => {
+    const token = String(raw || '').trim();
+    if (!token) return;
+    setLkError('');
+    setLkLooking(true);
+    try {
+      const { data } = await sessionsApi.staffLookup(token);
+      setLkSession(data.data);
+      setLkQr('');
+    } catch (err) {
+      setLkSession(null);
+      setLkError(err.response?.data?.error?.message || 'Không tìm thấy xe đang gửi với mã QR này');
+    } finally {
+      setLkLooking(false);
+    }
+  };
+
+  const handleSessionLookup = (e) => {
+    e.preventDefault();
+    runSessionLookup(lkQr);
+  };
+
+  /* ==========================================================================
+     [5] TAB THU TIEN MAT (XE RA) — state + logic
+         Giao dien o duoi: tim "[5] TAB THU TIEN MAT" phan JSX.
+     ========================================================================== */
+
+  // Booth thu tiền mặt (xe ra) — tra cứu bằng QR HOẶC biển số (khi khách mất vé). BE tự suy cổng.
+  const [boothQr, setBoothQr] = useState('');
+  const [boothPlate, setBoothPlate] = useState(''); // tra theo biển số khi khách MẤT VÉ (không có QR)
+  const [boothLost, setBoothLost] = useState(false);
+  const [boothOverstay, setBoothOverstay] = useState(false); // phụ thu lố giờ (staff chủ động tick)
+  const [boothLooking, setBoothLooking] = useState(false);
+  const [boothError, setBoothError] = useState('');
+  const [boothPreview, setBoothPreview] = useState(null); // { session, fee } sau khi tra cứu
+  const [boothSubmitting, setBoothSubmitting] = useState(false);
+  const [boothResult, setBoothResult] = useState(null); // kết quả sau khi thu tiền mặt
+
   // Booth: tra cứu phí xe ra. Hỗ trợ QR (thường) HOẶC biển số (khi khách MẤT VÉ).
   // lookup = { qrToken } | { plateNumber } | { sessionId }. lost = tính phụ thu mất vé.
   const lookupBooth = async (lookup, lost = boothLost, over = boothOverstay) => {
@@ -577,31 +597,98 @@ export default function StaffOperationsPage() {
     setBoothError('');
   };
 
-  // Số chỗ trống cho tầng đang chọn (theo loại xe nếu đã chọn) — dùng cho dropdown + panel.
-  const floorMetaFor = (floorId) => availability.find((f) => String(f.floorId) === String(floorId)) || null;
-  const freeFor = (floorMeta, vehicleTypeId) => {
-    if (!floorMeta) return null;
-    if (!vehicleTypeId) return { available: floorMeta.available, total: floorMeta.total };
-    const zs = (floorMeta.zones || []).filter((z) => String(z.vehicleTypeId) === String(vehicleTypeId));
-    return {
-      available: zs.reduce((s, z) => s + (z.available || 0), 0),
-      total: zs.reduce((s, z) => s + (z.total || 0), 0),
-    };
+  /* ==========================================================================
+     [6] TAB SU CO — state + logic
+         Giao dien o duoi: tim "[6] TAB SU CO" phan JSX.
+     ========================================================================== */
+
+  // Sự cố (incident) — Staff báo + xem sự cố của mình.
+  const [incidents, setIncidents] = useState([]);
+  const [loadingIncidents, setLoadingIncidents] = useState(false);
+  const [incForm, setIncForm] = useState({ type: '', description: '', sessionId: '' });
+  const [incFieldErrors, setIncFieldErrors] = useState({});
+  const [incError, setIncError] = useState('');
+  const [incSubmitting, setIncSubmitting] = useState(false);
+
+  // Sự cố do chính staff này báo (BE lọc theo reporter khi role = Staff).
+  const loadIncidents = async () => {
+    setLoadingIncidents(true);
+    try {
+      const { data } = await incidentsApi.list({ limit: 50 });
+      setIncidents(data.data?.items || []);
+    } catch (err) {
+      toast.error(err.response?.data?.error?.message || 'Không tải được danh sách sự cố');
+    } finally {
+      setLoadingIncidents(false);
+    }
   };
-  // Tầng có phục vụ loại xe đang chọn không (theo availability). Chưa chọn loại xe HOẶC chưa
-  // tải được availability -> coi như CÓ, tránh ẩn nhầm sạch tầng khi dữ liệu chưa về.
-  const floorServesType = (floorId, vehicleTypeId) => {
-    if (!vehicleTypeId) return true;
-    const meta = floorMetaFor(floorId);
-    if (!meta) return true;
-    return (meta.zones || []).some((z) => String(z.vehicleTypeId) === String(vehicleTypeId));
+
+  // Gửi báo sự cố. Loại lost_ticket/wrong_info/overstay/wrong_zone BE bắt buộc gắn 1 phiên.
+  const submitIncident = async (e) => {
+    e.preventDefault();
+    const errs = {};
+    if (!incForm.type) errs.type = 'Chọn loại sự cố';
+    if (!incForm.description.trim()) errs.description = 'Nhập mô tả';
+    const typeMeta = STAFF_INCIDENT_TYPES.find((t) => t.value === incForm.type);
+    if (typeMeta?.needLink && !incForm.sessionId) errs.sessionId = 'Loại này cần gắn 1 xe đang đỗ';
+    setIncFieldErrors(errs);
+    if (Object.keys(errs).length) return;
+    setIncError('');
+    setIncSubmitting(true);
+    try {
+      await incidentsApi.create({
+        type: incForm.type,
+        description: incForm.description.trim(),
+        ...(incForm.sessionId ? { sessionId: Number(incForm.sessionId) } : {}),
+      });
+      toast.success('Đã báo sự cố');
+      setIncForm({ type: '', description: '', sessionId: '' });
+      setIncFieldErrors({});
+      loadIncidents();
+    } catch (err) {
+      setIncError(err.response?.data?.error?.message || 'Báo sự cố thất bại');
+    } finally {
+      setIncSubmitting(false);
+    }
   };
-  // Chỉ hiện tầng phục vụ loại xe đang chọn: tầng riêng xe máy không hiện khi chọn ô tô
-  // (trước đây vẫn hiện kèm "0 trống" + báo "Tầng đầy 0/0" -> staff tưởng chờ lát có chỗ).
-  const visibleFloors = floors.filter((f) => floorServesType(f.floor_id, form.vehicleTypeId));
-  const selectedFloorMeta = floorMetaFor(form.floorId);
-  const selectedFloorFree = freeFor(selectedFloorMeta, form.vehicleTypeId);
-  const selectedVtName = vehicleTypes.find((v) => String(v.vehicle_type_id) === String(form.vehicleTypeId))?.type_name;
+
+  /* ==========================================================================
+     [7] TAB VE THANG — state + logic
+         Giao dien o duoi: tim "[7] TAB VE THANG" phan JSX.
+     ========================================================================== */
+
+  // Vé tháng — tab tra cứu (danh sách phân trang + bộ lọc trạng thái/tầng/biển số).
+  const [passes, setPasses] = useState({ items: [], total: 0, page: 1, limit: 50, pages: 0 });
+  const [passLoading, setPassLoading] = useState(false);
+  const [passFilters, setPassFilters] = useState({ status: '', floorId: '', plate: '' });
+
+  // Tra cứu vé tháng (Staff) — lọc trạng thái/tầng/biển số, phân trang.
+  const loadPasses = async (f = passFilters, page = 1) => {
+    setPassLoading(true);
+    try {
+      const params = { page };
+      if (f.status) params.status = f.status;
+      if (f.floorId) params.floorId = f.floorId;
+      if (f.plate.trim()) params.plate = f.plate.trim();
+      const { data } = await staffPassesApi.list(params);
+      setPasses(data.data);
+    } catch (err) {
+      toast.error(err.response?.data?.error?.message || 'Không tải được danh sách vé tháng');
+    } finally {
+      setPassLoading(false);
+    }
+  };
+
+  const handlePassSearch = (e) => {
+    e.preventDefault();
+    loadPasses(passFilters, 1);
+  };
+
+  /* ==========================================================================
+     GIAO DIEN — thu tu duoi day khop DUNG thu tu thanh tab tren man hinh:
+     [1] Check-in -> [2] Phien hoat dong -> [3] Dat cho vao -> [4] Tra cuu QR
+     -> [5] Thu tien mat -> [6] Su co -> [7] Ve thang -> cac modal.
+     ========================================================================== */
 
   return (
     <div>
@@ -610,7 +697,7 @@ export default function StaffOperationsPage() {
         <p className="mt-1 text-sm text-slate-500">Ghi nhận xe vào, theo dõi xe đang đỗ và xem trước phí.</p>
       </div>
 
-      {/* Chuyển mục nội bộ */}
+      {/* Chuyển mục nội bộ — thứ tự nút ở đây = thứ tự các khối JSX bên dưới */}
       <div className="mb-6 inline-flex rounded-xl border border-slate-200 bg-surface-raised p-1">
         {[
           { id: 'checkin', label: 'Check-in (xe vào)' },
@@ -633,13 +720,17 @@ export default function StaffOperationsPage() {
         ))}
       </div>
 
-      {/* TAB CHECK-IN */}
+      {/* ═══════════════════ [1] TAB CHECK-IN (XE VAO) ═══════════════════
+          Thu tu tren man hinh: [1.1] bien so -> [1.2] loai xe -> [1.3] tang
+          -> [1.4] cong vao (IN) -> [1.5] bang so cho trong -> [1.6] nut gui.
+          State + logic: tim "[1] TAB CHECK-IN (XE VAO)" phia tren.        */}
       {tab === 'checkin' && (
         <div className="grid gap-6 lg:grid-cols-2">
           <Card>
             <h2 className="mb-4 text-lg font-semibold text-slate-800">Ghi nhận xe vào</h2>
             <ErrorAlert message={checkinError} className="mb-4" />
             <form onSubmit={handleCheckin} className="space-y-4">
+              {/* [1.1] Biển số xe */}
               <Field label="Biển số xe" required error={fieldErrors.plateNumber} hint={PLATE_VN_HINT}>
                 <input
                   className={inputClass}
@@ -652,6 +743,7 @@ export default function StaffOperationsPage() {
                   required
                 />
               </Field>
+              {/* [1.2] Loại xe — đổi loại xe sẽ lọc lại danh sách tầng ở [1.3] */}
               <Field label="Loại xe" required error={fieldErrors.vehicleTypeId}>
                 <select
                   className={inputClass}
@@ -671,6 +763,7 @@ export default function StaffOperationsPage() {
                   ))}
                 </select>
               </Field>
+              {/* [1.3] Tầng — chỉ hiện tầng phục vụ loại xe đã chọn; tầng kín thì khóa luôn */}
               <Field
                 label="Tầng"
                 required
@@ -696,6 +789,7 @@ export default function StaffOperationsPage() {
                   })}
                 </select>
               </Field>
+              {/* [1.4] Cổng vào (IN) — nạp theo tầng ở [1.3]; 1 cổng thì tự chọn */}
               <Field label="Cổng vào (IN)" error={fieldErrors.gateId} hint={form.floorId ? 'Cổng do hệ thống tự chọn theo tầng' : 'Chọn tầng trước'}>
                 {!form.floorId ? (
                   <div className={`${inputClass} text-slate-400`}>— Chọn tầng trước —</div>
@@ -715,6 +809,7 @@ export default function StaffOperationsPage() {
                   </select>
                 )}
               </Field>
+              {/* [1.5] Băng số chỗ trống của tầng đang chọn */}
               {form.floorId && selectedFloorFree && (
                 <div className={`rounded-lg px-3 py-2 text-sm ${selectedFloorFree.available === 0 ? 'bg-red-50 text-red-600' : 'bg-emerald-50 text-emerald-700'}`}>
                   {selectedFloorFree.available === 0
@@ -722,6 +817,7 @@ export default function StaffOperationsPage() {
                     : `Còn ${selectedFloorFree.available}/${selectedFloorFree.total} chỗ${selectedVtName ? ` cho ${selectedVtName}` : ''}`}
                 </div>
               )}
+              {/* [1.6] Nút gửi -> handleCheckin. Khóa khi tầng chưa có cổng IN hoặc đã kín chỗ */}
               <Button
                 type="submit"
                 className="brand-gradient w-full border-0 shadow-(--shadow-soft)"
@@ -733,7 +829,7 @@ export default function StaffOperationsPage() {
             </form>
           </Card>
 
-          {/* Kết quả check-in gần nhất */}
+          {/* [1.7] Kết quả check-in gần nhất (cột phải) — QR làm vé cho khách */}
           <div>
             {lastCheckin ? (
               <Card className="border-brand/30 bg-brand-light/40">
@@ -767,7 +863,10 @@ export default function StaffOperationsPage() {
         </div>
       )}
 
-      {/* TAB XE ĐANG ĐỖ */}
+      {/* ═══════════════════ [2] TAB PHIEN HOAT DONG ═══════════════════
+          Bang xe dang trong bai (chi xem + bao lo gio + sua bien so).
+          Cho xe ra: tab [4] Tra cuu QR (ve thang/mien phi) hoac [5] Thu tien mat.
+          State + logic: tim "[2] TAB PHIEN HOAT DONG" phia tren.        */}
       {tab === 'active' && (
         <Card padding={false}>
           <div className="flex items-center justify-between px-5 py-4">
@@ -815,11 +914,11 @@ export default function StaffOperationsPage() {
                       </td>
                       <td className="space-x-3 px-4 py-3 text-right whitespace-nowrap">
                         <button type="button" onClick={() => handlePreviewFee(s)} className="font-medium text-brand hover:underline">Xem phí</button>
-                        <button type="button" onClick={() => openCheckout(s)} className="font-medium text-emerald-600 hover:underline">Xe ra</button>
                         {s.overstay && (
                           <button
                             type="button"
                             onClick={() => {
+                              // Điền sẵn form ở [6] Sự cố rồi nhảy sang tab đó.
                               setIncForm({ type: 'overstay', description: `Xe ${s.plate_number} đỗ quá giờ${s.overstayHours ? ` (~${s.overstayHours}h)` : ''}`, sessionId: String(s.session_id) });
                               setIncFieldErrors({});
                               setIncError('');
@@ -841,7 +940,9 @@ export default function StaffOperationsPage() {
         </Card>
       )}
 
-      {/* TAB ĐẶT CHỖ VÀO (RESERVATION CHECK-IN) */}
+      {/* ═══════════════ [3] TAB DAT CHO VAO (RESERVATION CHECK-IN) ═══════════════
+          Quet/nhap QR dat cho + bang don cho vao. Nut "Cho xe vao" mo modal [3M].
+          State + logic: tim "[3] TAB DAT CHO VAO" phia tren.                    */}
       {tab === 'reservation' && (
         <div className="space-y-6">
           {/* Tra cứu bằng mã QR */}
@@ -917,7 +1018,9 @@ export default function StaffOperationsPage() {
         </div>
       )}
 
-      {/* TAB TRA CỨU XE (QR) — quét mã QR trên vé để mở đúng phiên đang đỗ rồi cho ra */}
+      {/* ═══════════════════ [4] TAB TRA CUU XE (QR) ═══════════════════
+          Quet ma QR tren ve de mo dung phien dang do roi cho ra (modal [2M]).
+          State + logic: tim "[4] TAB TRA CUU XE (QR)" phia tren.            */}
       {tab === 'lookup' && (
         <div className="max-w-xl space-y-6">
           <Card>
@@ -965,7 +1068,9 @@ export default function StaffOperationsPage() {
         </div>
       )}
 
-      {/* TAB BOOTH — THU TIỀN MẶT XE RA (chốt BLD-OUT, tra cứu bằng QR; cổng do BE tự suy) */}
+      {/* ═══════════════ [5] TAB THU TIEN MAT (XE RA) ═══════════════
+          Chot BLD-OUT: tra cuu bang QR hoac bien so; cong do BE tu suy.
+          State + logic: tim "[5] TAB THU TIEN MAT" phia tren.          */}
       {tab === 'booth' && (
         <div className="max-w-xl">
           <Card>
@@ -1062,7 +1167,9 @@ export default function StaffOperationsPage() {
         </div>
       )}
 
-      {/* TAB SỰ CỐ — Staff báo sự cố + xem sự cố của mình */}
+      {/* ═══════════════════════ [6] TAB SU CO ═══════════════════════
+          Staff bao su co + xem su co cua minh. Nut "Bao lo gio" o [2] nhay vao day.
+          State + logic: tim "[6] TAB SU CO" phia tren.                          */}
       {tab === 'incident' && (
         <div className="grid gap-6 lg:grid-cols-2">
           {/* Báo sự cố mới */}
@@ -1149,7 +1256,9 @@ export default function StaffOperationsPage() {
         </div>
       )}
 
-      {/* TAB VÉ THÁNG — Staff tra cứu vé tháng theo trạng thái / tầng / biển số */}
+      {/* ═══════════════════════ [7] TAB VE THANG ═══════════════════════
+          Staff tra cuu ve thang theo trang thai / tang / bien so.
+          State + logic: tim "[7] TAB VE THANG" phia tren.                */}
       {tab === 'passes' && (
         <div className="space-y-4">
           <Card>
@@ -1230,7 +1339,8 @@ export default function StaffOperationsPage() {
         </div>
       )}
 
-      {/* MODAL CHO XE ĐẶT CHỖ VÀO */}
+      {/* ═══════════ [3M] MODAL CHO XE DAT CHO VAO — mo tu tab [3] ═══════════
+          State + logic: tim "[3M] MODAL CHO XE DAT CHO VAO" phia tren.      */}
       <Modal
         open={!!ciRes}
         title={`Cho xe vào — ${ciRes?.plate_number || ''}`}
@@ -1271,7 +1381,8 @@ export default function StaffOperationsPage() {
         </form>
       </Modal>
 
-      {/* MODAL XE RA (CHECK-OUT) */}
+      {/* ═════════ [2M] MODAL XE RA (CHECK-OUT) — mo tu tab [4] Tra cuu QR ═════════
+          State + logic: tim "[2M] MODAL XE RA" phia tren.                       */}
       <Modal
         open={!!coSession}
         title={`Xe ra — ${coSession?.plate_number || ''}`}
@@ -1351,7 +1462,7 @@ export default function StaffOperationsPage() {
         )}
       </Modal>
 
-      {/* Overlay quét QR bằng camera — dùng chung cho tab Đặt chỗ vào & Thu tiền mặt */}
+      {/* Overlay quét QR bằng camera — dùng chung cho tab [3] Đặt chỗ vào, [4] Tra cứu, [5] Thu tiền mặt */}
       {scanTarget && (
         <QrScanner
           onClose={() => setScanTarget(null)}
