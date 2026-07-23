@@ -4,9 +4,10 @@
  * Hỗ trợ cả định dạng cũ còn lưu hành.
  */
 
-// Seri cá nhân: không dùng I, J, O, Q, W (R dành rơ moóc)
-const L = '[A-HK-NP-TV-Z]';
-const L2 = '[A-HK-NP-TV-Z]{2}';
+// Seri hợp lệ: A–Z trừ I, J, O, Q, R, W (R dành rơ-moóc, không nhận ở bãi này).
+// Tập cho phép: A B C D E F G H K L M N P S T U V X Y Z (20 chữ).
+const L = '[A-HK-NPS-VX-Z]'; // A-H, K-N, P, S-V, X-Z
+const L2 = '[A-HK-NPS-VX-Z]{2}';
 
 const PATTERNS = [
   {
