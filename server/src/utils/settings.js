@@ -163,6 +163,11 @@ export const getMaxParkingHours = () => {
   return v != null && v > 0 ? Number(v) : null;
 };
 
+// export const getMaxParkingHours = () => {
+//   const v = getSystemSettingsSync().max_parking_hours;   // giờ hiểu là PHÚT
+//   return v != null && v > 0 ? Number(v) / 60 : null;     // ← ÷60, chỉ 1 chỗ
+// };
+
 export const getBookingRefundCutoffHours = () => {
   const v = getSystemSettingsSync().booking_refund_cutoff_hours;
   return v != null && v >= 0 ? Number(v) : 1;
