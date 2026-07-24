@@ -52,6 +52,15 @@ export const computePassEndDate = (startDateStr) => {
   return `${dt.getFullYear()}-${pad2(dt.getMonth() + 1)}-${pad2(dt.getDate())}`;
 };
 
+/**Cố định 1 tháng, nhưng có thể truyền month > 1 để tính endDate cho vé gia hạn nhiều tháng */
+// export const computePassEndDate = (startDateStr, month = 1) => {
+//   const [y, m, d] = String(startDateStr).split('-').map(Number);
+//   const dt = new Date(y, m - 1, d);
+//   dt.setMonth(dt.getMonth() + month);
+//   dt.setDate(dt.getDate() - 1);
+//   return `${dt.getFullYear()}-${pad2(dt.getMonth() + 1)}-${pad2(dt.getDate())}`;
+// };
+
 /** Khung giờ hằng ngày của vé tháng = giờ mở cửa tòa (snapshot lúc mua) */
 const buildingDailyWindow = () => {
   const cfg = getBuildingSettingsSync();
@@ -563,8 +572,9 @@ export const computePassRefundPercent = (pass, now = new Date()) => {
   if (dayIndex <= 0) return 100;                       // hủy TRƯỚC ngày hiệu lực → chưa dùng gì → 100%
   if (dayIndex <= policy.trialDays) return policy.trialPercent;
   const totalDays = Math.floor((end - start) / DAY) + 1;
-  if (dayIndex <= Math.floor(totalDays / 2)) return policy.halfTermPercent;
-  return 0;                                            // quá nửa hạn: đã dùng phần lớn vé → không hoàn
+  if (dayIndex <= Math.floor(totalDays / 2)) return policy.halfTermPercent;  // quá nửa hạn: đã dùng phần lớn vé → không hoàn
+  //if (dayIndex <= Math.floor(totalDays * 3/4)) return 30; // Phần dùng nếu cần chỉnh nhanh hạn vd: 3/4 hạn -> đã dùng phần lớn vé → hoàn 30% (chưa dùng nhiều).
+  return 0;                                            
 };
 
 /**

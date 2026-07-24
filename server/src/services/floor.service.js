@@ -33,8 +33,13 @@ const assertFloorLevelFree = async (floorLevel, { excludeFloorId } = {}, transac
 
 // Kèm luôn capacity (diện tích đã dùng / còn trống) cho TỪNG tầng ngay trong list, để FE khỏi phải
 // gọi GET /floors/:id từng tầng (bỏ N+1 request ở trang Floors). Thêm field, không phá nơi khác dùng list.
+
+//export const listFloors = async ({ vehicle_type_id: vehicleTypeId }) => {   // chưa dùng filter theo loại xe, để FE tự lọc theo nhu cầu.
 export const listFloors = async () => {
-  const floors = await Floor.findAll({ order: [['floor_level', 'ASC']] });
+  //const where = vehicle_type_id ? { vehicle_type_id: vehicleTypeId } : {};  // chưa dùng filter theo loại xe, để FE tự lọc theo nhu cầu.
+  const floors = await Floor.findAll({
+    //where: {is_active: true},        // chưa có is_active, để FE tự lọc theo nhu cầu (vd chỉ show tầng có cổng).
+    order: [['floor_level', 'ASC']] });
   return Promise.all(
     floors.map(async (floor) => {
       const areaUsed = await computeFloorAreaUsed(floor.floor_id, {});
@@ -46,6 +51,7 @@ export const listFloors = async () => {
           areaUsedM2: Number(areaUsed.toFixed(2)),
           areaFreeM2: areaM2 != null ? Number((areaM2 - areaUsed).toFixed(2)) : null,
         },
+        //zoneCount: await Zone.count({ where: { floor_id: floor.floor_id } }), // Trong trường hợp cần hiển thị số khu/sô cổng mỗi tầng, FE có thể gọi GET /floors/:id rồi lấy zones.length.
       };
     }),
   );
