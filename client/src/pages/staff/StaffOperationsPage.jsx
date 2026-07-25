@@ -25,7 +25,7 @@ import { staffPassesApi } from '../../api/staffPasses';
    Go Ctrl+F so hieu trong ngoac vuong de ra du ca 3 manh:
 
      [1] CHECK-IN (XE VAO)    bien so -> loai xe -> tang -> cong vao (IN)
-     [2] PHIEN HOAT DONG      + [2M] modal Xe ra (check-out, mo tu tab [4])
+     [2] PHIEN HOAT DONG      + [2M] modal Xe ra (check-out)
      [3] DAT CHO VAO          + [3M] modal Cho xe vao
      [4] TRA CUU XE (QR)
      [5] THU TIEN MAT (RA)
@@ -316,10 +316,10 @@ export default function StaffOperationsPage() {
   };
 
   /* ==========================================================================
-     [2M] MODAL XE RA (CHECK-OUT) — mo tu [4] Tra cuu xe (QR)
-          Giao dien o duoi: tim "[2M] MODAL XE RA" phan JSX.
-          Xu ly xe VE THANG / MIEN PHI (ghi method='free'). Xe phai tra tien mat
-          thi dung tab [5] Thu tien mat — API khac (cash-checkout).
+     [2M] MODAL XE RA (CHECK-OUT) — chon cong ra (OUT) + xac nhan cho xe ra.
+          Mo bang openCheckout(session). Xu ly xe VE THANG / MIEN PHI
+          (ghi method='free'). Xe phai tra tien mat thi dung tab [5] Thu tien mat
+          — API khac (cash-checkout).
      ========================================================================== */
 
   const [coSession, setCoSession] = useState(null); // phiên đang check-out (null = đóng modal)
@@ -904,8 +904,8 @@ export default function StaffOperationsPage() {
       )}
 
       {/* ═══════════════════ [2] TAB PHIEN HOAT DONG ═══════════════════
-          Bang xe dang trong bai (chi xem + bao lo gio + sua bien so).
-          Cho xe ra: tab [4] Tra cuu QR (ve thang/mien phi) hoac [5] Thu tien mat.
+          Bang xe dang trong bai (xem + bao lo gio + sua bien so).
+          Cho xe ra: tab [5] Thu tien mat.
           State + logic: tim "[2] TAB PHIEN HOAT DONG" phia tren.        */}
       {tab === 'active' && (
         <Card padding={false}>
@@ -1075,7 +1075,7 @@ export default function StaffOperationsPage() {
         <div className="max-w-xl space-y-6">
           <Card>
             <h2 className="mb-1 text-lg font-semibold text-slate-800">Tra cứu xe đang gửi</h2>
-            <p className="mb-4 text-sm text-slate-500">Quét / nhập mã QR trên vé của khách để xem xe đang đỗ và cho xe ra.</p>
+            <p className="mb-4 text-sm text-slate-500">Quét / nhập mã QR trên vé của khách để xem thông tin xe đang đỗ và phí tạm tính.</p>
             <ErrorAlert message={lkError} className="mb-4" />
             <form onSubmit={handleSessionLookup} className="flex flex-col gap-3 sm:flex-row">
               <input
@@ -1111,7 +1111,6 @@ export default function StaffOperationsPage() {
               </dl>
               <div className="mt-4 flex flex-wrap justify-end gap-2">
                 <Button type="button" variant="secondary" onClick={() => handlePreviewFee(lkSession)}>Xem phí</Button>
-                <Button type="button" className="brand-gradient border-0" onClick={() => openCheckout(lkSession)}>Xe ra</Button>
               </div>
             </Card>
           )}
@@ -1431,7 +1430,7 @@ export default function StaffOperationsPage() {
         </form>
       </Modal>
 
-      {/* ═════════ [2M] MODAL XE RA (CHECK-OUT) — mo tu tab [4] Tra cuu QR ═════════
+      {/* ═════════ [2M] MODAL XE RA (CHECK-OUT) — chon cong OUT + xac nhan ═════════
           State + logic: tim "[2M] MODAL XE RA" phia tren.                       */}
       <Modal
         open={!!coSession}
