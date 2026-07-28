@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Outlet, Link, NavLink } from 'react-router-dom';
+import { Outlet, Link, NavLink, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useLogout } from '../hooks/useLogout';
 import { getRoleName, roleLabels } from '../lib/auth';
@@ -20,11 +20,27 @@ const navLinkClass = ({ isActive }) =>
   }`;
 
 // Danh sách menu — dùng chung cho sidebar desktop lẫn drawer mobile.
+// Mục thường: NavLink tự so pathname. Mục có `query` (trang một-route-nhiều-tab như Staff):
+// NavLink chỉ nhìn pathname nên mọi mục sẽ cùng sáng → phải tự so ?tab= và ép isActive.
 function NavList({ tabs, onNavigate }) {
+  const location = useLocation();
+  const currentQuery =
+    new URLSearchParams(location.search).get('tab') || tabs.find((t) => t.isDefault)?.query || null;
+
   return (
     <nav className="space-y-1 px-3 py-4">
       {tabs.map((tab) => (
-        <NavLink key={tab.to} to={tab.to} end={tab.end} className={navLinkClass} onClick={onNavigate}>
+        <NavLink
+          key={tab.to}
+          to={tab.to}
+          end={tab.end}
+          className={
+            tab.query
+              ? () => navLinkClass({ isActive: tab.query === currentQuery })
+              : navLinkClass
+          }
+          onClick={onNavigate}
+        >
           {tab.label}
         </NavLink>
       ))}
