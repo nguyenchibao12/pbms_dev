@@ -107,10 +107,10 @@ const run = async () => {
 
   // --- Users ---------------------------------------------------------------
   const accounts = [
-    ['admin', '123456', 'System Administrator', ROLES.ADMIN, 'admin@pbms.local'],
-    ['manager', '123456', 'Quản lý bãi', ROLES.MANAGER, 'manager@pbms.local'],
-    ['staff', '123456', 'Nhân viên trực cổng', ROLES.STAFF, 'staff@pbms.local'],
-    ['user', '123456', 'Khách đặt chỗ', ROLES.USER, 'user@pbms.local'],
+    ['admin', '123456', 'Trần Quốc Bảo', ROLES.ADMIN, 'admin@pbms.vn'],
+    ['manager', '123456', 'Phạm Thị Hương', ROLES.MANAGER, 'manager@pbms.vn'],
+    ['staff', '123456', 'Lê Văn Cường', ROLES.STAFF, 'staff@pbms.vn'],
+    ['user', '123456', 'Nguyễn Minh An', ROLES.USER, 'minhan@pbms.vn'],
   ];
   const users = {};
   for (const [username, pw, fullName, roleName, email] of accounts) {
@@ -213,7 +213,7 @@ const run = async () => {
   };
 
   // Hầm B1 — hầm gửi xe một phần, nhỏ hơn tháp (hầm & tháp là 2 chuỗi riêng, không ràng buộc chéo).
-  await createZonedFloor({ code: 'B1', level: -1, label: 'Hầm B1', areaM2: FLOOR_AREA.B1 });
+  const b1 = await createZonedFloor({ code: 'B1', level: -1, label: 'Hầm B1', areaM2: FLOOR_AREA.B1 });
 
   // floors[0] = F1 — phần demo bên dưới (đặt chỗ, phiên đang đỗ) bám vào tầng này.
   const floors = [];
@@ -268,7 +268,7 @@ const run = async () => {
   // Ân hạn vào sớm đã bỏ (grace=0) → đơn chờ-check-in phải thuộc CA ĐANG diễn ra (start ≤ now) mới
   // check-in được ngay. Dùng chung parkedShift cho cả đơn confirmed lẫn xe đang đỗ.
   const parkedShift = shiftWindowContaining(now);
-  const resPlate = normalizePlateVN('51F-67890');
+  const resPlate = normalizePlateVN('30A-123.45');
   const resQr = generateQrToken();
   const reservation = await Reservation.create({
     user_id: users.user.user_id,
@@ -293,7 +293,7 @@ const run = async () => {
   });
   await occSlot.update({ status: 'occupied' });
 
-  const inPlate = normalizePlateVN('51F-11111');
+  const inPlate = normalizePlateVN('51G-234.56');
   const inResQr = generateQrToken();
   const inReservation = await Reservation.create({
     user_id: users.user.user_id,
@@ -339,7 +339,7 @@ const run = async () => {
     gate_id: f1InGate.gate_id,
     slot_id: walkSlot ? walkSlot.slot_id : null,
     vehicle_type_id: car.vehicle_type_id,
-    plate_number: normalizePlateVN('51W-999.99'),
+    plate_number: normalizePlateVN('43A-567.89'),
     time_in: new Date(now.getTime() - 3 * 60 * 60 * 1000), // đỗ ~3h
     gate_stage: 'on_floor', // đang trên tầng → sẵn sàng test check-OUT + lố giờ
     qr_token: walkQr,
@@ -355,9 +355,9 @@ const run = async () => {
   const d1 = new Date(now.getTime() + 24 * 60 * 60 * 1000); // ngày mai
   const d2 = new Date(now.getTime() + 48 * 60 * 60 * 1000); // ngày kia
   const windows = [
-    { plate: '51F-30001', start: atHour(d1, 6), end: atHour(d1, 12), shift: 'morning' },
-    { plate: '51F-30002', start: atHour(d1, 18), end: atHour(d1, 22), shift: 'evening' },
-    { plate: '51F-30003', start: atHour(d2, 6), end: atHour(d2, 12), shift: 'morning' },
+    { plate: '29A-543.21', start: atHour(d1, 6), end: atHour(d1, 12), shift: 'morning' },
+    { plate: '60A-456.78', start: atHour(d1, 18), end: atHour(d1, 22), shift: 'evening' },
+    { plate: '92C-220.11', start: atHour(d2, 6), end: atHour(d2, 12), shift: 'morning' },
   ];
   const multiReservations = [];
   for (const w of windows) {
@@ -409,21 +409,21 @@ const run = async () => {
   users.user2 = await UserAccount.create({
     username: 'user2',
     password_hash: await hash('123456'),
-    full_name: 'Khách có STK hoàn tiền',
+    full_name: 'Vũ Thị Thu Hằng',
     role_id: roles[ROLES.USER],
-    email: 'user2@pbms.local',
+    email: 'hangvu@pbms.vn',
     is_active: true,
     email_verified: true,
     bank_name: 'Vietcombank',
     bank_account_number: '0071000123456',
-    bank_account_holder: 'KHACH CO STK',
+    bank_account_holder: 'VU THI THU HANG',
   });
   users.chuaverify = await UserAccount.create({
     username: 'chuaverify',
     password_hash: await hash('123456'),
-    full_name: 'Khách chưa xác minh email',
+    full_name: 'Đỗ Hoàng Long',
     role_id: roles[ROLES.USER],
-    email: 'chuaverify@pbms.local',
+    email: 'longdo@pbms.vn',
     is_active: true,
     email_verified: false, // login phải bị 403 EMAIL_NOT_VERIFIED
   });
@@ -601,14 +601,14 @@ const run = async () => {
   const passWindow = { valid_from_time: '06:00:00', valid_to_time: '22:00:00' };
   const passActive = await MonthlyPass.create({
     user_id: users.user.user_id, vehicle_type_id: bike.vehicle_type_id, floor_id: f3.floor_id,
-    plate_number: normalizePlateVN('51M-50001'), ...passWindow,
+    plate_number: normalizePlateVN('59V1-501.01'), ...passWindow,
     start_date: new Date(now.getTime() - 7 * DAY), end_date: new Date(now.getTime() + 23 * DAY),
     status: 'active', qr_token: generateQrToken(),
   });
   await makePayment({ pass_id: passActive.pass_id, amount: 500000, status: 'success', paid_at: new Date(now.getTime() - 7 * DAY) });
   const passPending = await MonthlyPass.create({
     user_id: users.user2.user_id, vehicle_type_id: bike.vehicle_type_id, floor_id: f3.floor_id,
-    plate_number: normalizePlateVN('51M-50002'), ...passWindow,
+    plate_number: normalizePlateVN('59V2-502.02'), ...passWindow,
     start_date: new Date(now.getTime() + 1 * DAY), end_date: new Date(now.getTime() + 31 * DAY),
     status: 'pending', qr_token: null, // chưa thanh toán thì chưa có QR
   });
@@ -618,7 +618,7 @@ const run = async () => {
   });
   const passExpired = await MonthlyPass.create({
     user_id: users.user.user_id, vehicle_type_id: bike.vehicle_type_id, floor_id: f3.floor_id,
-    plate_number: normalizePlateVN('51M-50003'), ...passWindow,
+    plate_number: normalizePlateVN('59V3-503.03'), ...passWindow,
     start_date: new Date(now.getTime() - 40 * DAY), end_date: new Date(now.getTime() - 1 * DAY),
     status: 'expired', qr_token: generateQrToken(), // hết hạn GIỮ token — cổng chặn theo status
   });
@@ -641,6 +641,129 @@ const run = async () => {
     resolved_at: new Date(now.getTime() - 1 * HOUR),
     description: `Đơn ${noshowResv.plate_number} quá giờ không check-in — đã đánh no-show và nhả chỗ`,
   });
+
+  // ================= VOLUME DEMO — dữ liệu "thật hơn" cho dashboard =================
+  // Khách hàng có tên thật + lịch sử lượt gửi ĐÃ HOÀN TẤT (doanh thu), đơn đặt sắp tới rải
+  // nhiều tầng, và 2 xe đang đỗ ở tầng khác — để biểu đồ/thống kê nhìn có sức sống.
+  // MỌI biển số dưới đây đã qua validateAndNormalizePlateVN — hợp lệ theo Thông tư 79/2024.
+  const f1Bike = floors[0].bikeZone;
+  const f2 = floors[1].floor;
+  const f2Car = floors[1].carZone;
+  const f2Bike = floors[1].bikeZone;
+
+  const moreCustomers = [
+    ['tuanbui', 'Bùi Anh Tuấn', 'tuanbui@pbms.vn'],
+    ['maihoang', 'Hoàng Thị Mai', 'maihoang@pbms.vn'],
+    ['thangngo', 'Ngô Đức Thắng', 'thangngo@pbms.vn'],
+    ['trangdang', 'Đặng Thu Trang', 'trangdang@pbms.vn'],
+    ['hoatrinh', 'Trịnh Văn Hòa', 'hoatrinh@pbms.vn'],
+  ];
+  const customers = [users.user, users.user2];
+  for (const [username, fullName, email] of moreCustomers) {
+    customers.push(
+      await UserAccount.create({
+        username, password_hash: await hash('123456'), full_name: fullName,
+        role_id: roles[ROLES.USER], email, is_active: true, email_verified: true,
+      }),
+    );
+  }
+
+  const RATE = { CAR: 15000, BIKE: 5000, CAR7: 20000 };
+  const inGateOf = (floorId) => Gate.findOne({ where: { floor_id: floorId, direction: 'in' } });
+  const firstSlotOf = (zoneId) =>
+    ParkingSlot.findOne({ where: { zone_id: zoneId }, order: [['slot_id', 'ASC']] });
+
+  // 1 lượt gửi ĐÃ HOÀN TẤT = reservation completed + payment giữ chỗ + session exited + payment
+  // phí gửi. Session 'exited' nên KHÔNG chiếm slot hiện tại → an toàn tạo số lượng lớn.
+  const seedCompletedVisit = async ({ customer, floor, zone, vehicleType, plate, daysAgo, shiftId, hours }) => {
+    const win = shiftWindowOn(-daysAgo, shiftId);
+    const p = normalizePlateVN(plate);
+    const fee = hours * RATE[vehicleType.type_code];
+    const resv = await Reservation.create({
+      user_id: customer.user_id, vehicle_type_id: vehicleType.vehicle_type_id,
+      floor_id: floor.floor_id, zone_id: zone.zone_id, slot_id: null,
+      plate_number: p, start_time: win.start, end_time: win.end,
+      status: 'completed', reservation_type: shiftId, qr_token: generateQrToken(),
+    });
+    await paySuccess(resv.reservation_id);
+    const gate = await inGateOf(floor.floor_id);
+    const slot = await firstSlotOf(zone.zone_id);
+    const sess = await ParkingSession.create({
+      user_id: customer.user_id, reservation_id: resv.reservation_id,
+      gate_id: gate.gate_id, slot_id: slot.slot_id, vehicle_type_id: vehicleType.vehicle_type_id,
+      plate_number: p, time_in: win.start, time_out: new Date(win.start.getTime() + hours * HOUR),
+      gate_stage: 'exited', qr_token: `revoked-hist-${resv.reservation_id}`,
+      check_in_by: users.staff.user_id, check_out_by: users.staff.user_id,
+      session_type: 'reservation', status: 'completed', calculated_fee: fee,
+    });
+    await makePayment({ session_id: sess.session_id, amount: fee, status: 'success', paid_at: sess.time_out });
+  };
+
+  const visits = [
+    { floor: f1, zone: f1Car, vt: car, plate: '30E-678.90', daysAgo: 1, shift: 'morning', hours: 3 },
+    { floor: f2, zone: f2Car, vt: car, plate: '29B-111.22', daysAgo: 1, shift: 'afternoon', hours: 2 },
+    { floor: b1.floor, zone: b1.carZone, vt: car, plate: '43C-334.55', daysAgo: 2, shift: 'evening', hours: 4 },
+    { floor: f1, zone: f1Car, vt: car, plate: '51H-999.88', daysAgo: 2, shift: 'morning', hours: 5 },
+    { floor: f2, zone: f2Car, vt: car, plate: '47B-778.99', daysAgo: 3, shift: 'afternoon', hours: 2 },
+    { floor: b1.floor, zone: b1.carZone, vt: car, plate: '61A-123.45', daysAgo: 4, shift: 'morning', hours: 6 },
+    { floor: f1, zone: f1Car, vt: car, plate: '65B-456.78', daysAgo: 5, shift: 'evening', hours: 3 },
+    { floor: f3, zone: f3Zone, vt: bike, plate: '59F1-234.56', daysAgo: 1, shift: 'morning', hours: 4 },
+    { floor: f1, zone: f1Bike, vt: bike, plate: '59H1-345.67', daysAgo: 2, shift: 'afternoon', hours: 3 },
+    { floor: f2, zone: f2Bike, vt: bike, plate: '60B2-456.78', daysAgo: 2, shift: 'evening', hours: 5 },
+    { floor: f3, zone: f3Zone, vt: bike, plate: '43P1-678.90', daysAgo: 3, shift: 'morning', hours: 2 },
+    { floor: b1.floor, zone: b1.bikeZone, vt: bike, plate: '92T1-112.23', daysAgo: 4, shift: 'afternoon', hours: 4 },
+    { floor: f3, zone: f3Zone, vt: bike, plate: '51N1-334.45', daysAgo: 5, shift: 'morning', hours: 6 },
+    { floor: f1, zone: f1Bike, vt: bike, plate: '47L1-556.67', daysAgo: 6, shift: 'evening', hours: 3 },
+  ];
+  let vIdx = 0;
+  for (const v of visits) {
+    await seedCompletedVisit({
+      customer: customers[vIdx % customers.length],
+      floor: v.floor, zone: v.zone, vehicleType: v.vt,
+      plate: v.plate, daysAgo: v.daysAgo, shiftId: v.shift, hours: v.hours,
+    });
+    vIdx++;
+  }
+
+  // Đơn đặt SẮP TỚI rải tầng khác (F2, B1) — "đơn sắp tới" không dồn hết vào F1.
+  const upcoming = [
+    { floor: f2, zone: f2Car, vt: car, plate: '30AB-123.45', shift: 'morning', dayOffset: 1 },
+    { floor: b1.floor, zone: b1.bikeZone, vt: bike, plate: '88C1-223.34', shift: 'evening', dayOffset: 1 },
+    { floor: f2, zone: f2Bike, vt: bike, plate: '51KH-567.89', shift: 'afternoon', dayOffset: 2 },
+  ];
+  for (const u of upcoming) {
+    const win = shiftWindowOn(u.dayOffset, u.shift);
+    const r = await Reservation.create({
+      user_id: customers[vIdx++ % customers.length].user_id,
+      vehicle_type_id: u.vt.vehicle_type_id, floor_id: u.floor.floor_id, zone_id: u.zone.zone_id,
+      slot_id: null, plate_number: normalizePlateVN(u.plate),
+      start_time: win.start, end_time: win.end, status: 'confirmed',
+      reservation_type: u.shift, qr_token: generateQrToken(),
+    });
+    await paySuccess(r.reservation_id);
+  }
+
+  // 2 xe đang đỗ ở tầng khác (F2 ô tô, B1 xe máy) — occupancy không chỉ mỗi F1.
+  const parkNow = [
+    { floor: f2, zone: f2Car, vt: car, plate: '30FG-246.80', hoursAgo: 1 },
+    { floor: b1.floor, zone: b1.bikeZone, vt: bike, plate: '82H3-9423', hoursAgo: 2 },
+  ];
+  for (const pk of parkNow) {
+    const slot = await ParkingSlot.findOne({
+      where: { zone_id: pk.zone.zone_id, status: 'available' }, order: [['slot_id', 'ASC']],
+    });
+    if (!slot) continue;
+    await slot.update({ status: 'occupied' });
+    const gate = await inGateOf(pk.floor.floor_id);
+    await ParkingSession.create({
+      user_id: null, gate_id: gate.gate_id, slot_id: slot.slot_id,
+      vehicle_type_id: pk.vt.vehicle_type_id, plate_number: normalizePlateVN(pk.plate),
+      time_in: new Date(now.getTime() - pk.hoursAgo * HOUR), gate_stage: 'on_floor',
+      qr_token: generateQrToken(), check_in_by: users.staff.user_id,
+      session_type: 'walk_in', status: 'active', calculated_fee: null,
+    });
+  }
+  console.log(`• VOLUME: +${moreCustomers.length} khách, ${visits.length} lượt gửi lịch sử (doanh thu), ${upcoming.length} đơn sắp tới, ${parkNow.length} xe đang đỗ tầng khác`);
 
   console.log('\n================ SEED DONE ================');
   console.log('Tài khoản (username / password):');
@@ -675,9 +798,9 @@ const run = async () => {
   console.log(`  NO_SHOW   resId=${noshowResv.reservation_id} | 51F-40006 | QR lịch sử + có incident đã xử lý kèm theo`);
   console.log(`  LỐ GIỜ    resId=${overResv.reservation_id} | 51F-40007 | checked_in, hết khung 2h trước → checkout phải cộng phụ thu (sessionId=${overSession.session_id})`);
   console.log('Vé tháng:');
-  console.log(`  ACTIVE  passId=${passActive.pass_id} | 51M-50001 | quét cổng tòa vào được (khung 06:00–22:00, tầng 3)`);
-  console.log(`  PENDING passId=${passPending.pass_id} | 51M-50002 | user2 — test "Trả tiếp" vé tháng`);
-  console.log(`  EXPIRED passId=${passExpired.pass_id} | 51M-50003 | còn QR nhưng cổng chặn theo status`);
+  console.log(`  ACTIVE  passId=${passActive.pass_id} | 59V1-501.01 | quét cổng tòa vào được (khung 06:00–22:00, tầng 3)`);
+  console.log(`  PENDING passId=${passPending.pass_id} | 59V2-502.02 | user2 — test "Trả tiếp" vé tháng`);
+  console.log(`  EXPIRED passId=${passExpired.pass_id} | 59V3-503.03 | còn QR nhưng cổng chặn theo status`);
   console.log('Sự cố: 1 open (walk-in lố giờ) + 1 resolved (có người xử lý — cột migration 007)');
   console.log('==========================================\n');
   process.exit(0);
