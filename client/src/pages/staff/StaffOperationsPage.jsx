@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { QRCodeSVG } from 'qrcode.react';
 import { Camera } from 'lucide-react';
 import { sessionsApi } from '../../api/sessions';
 import { staffReservationsApi } from '../../api/staffReservations';
 import { floorsApi, vehicleTypesApi, gatesApi } from '../../api/masterData';
 import { friendlyReservationError, reservationCheckinBadge } from '../../lib/reservationStatus';
+import { friendlyCheckinError, plainApiError } from '../../lib/checkinError';
 import { publicApi } from '../../api/public';
 import { validateCheckinForm } from '../../lib/validate';
 import { PLATE_VN_HINT, cleanPlateInput, normalizePlateOrKeep } from '../../lib/plate';
@@ -19,27 +21,24 @@ import { incidentsApi } from '../../api/incidents';
 import { staffPassesApi } from '../../api/staffPasses';
 
 /* ============================================================================
-   BAN DO FILE — 7 tab xep DUNG thu tu hien tren man hinh.
+   BAN DO FILE — 6 muc, xep DUNG thu tu hien tren sidebar ben trai.
+   Muc dang mo doc tu URL (?tab=), sidebar o StaffLayout la noi chuyen muc.
 
-   Moi tab co 3 manh mang CUNG so hieu (hang so / state+logic / giao dien).
+   Moi muc co 3 manh mang CUNG so hieu (hang so / state+logic / giao dien).
    Go Ctrl+F so hieu trong ngoac vuong de ra du ca 3 manh:
 
      [1] CHECK-IN (XE VAO)    bien so -> loai xe -> tang -> cong vao (IN)
-     [2] PHIEN HOAT DONG      + [2M] modal Xe ra (check-out)
+     [2] PHIEN HOAT DONG
      [3] DAT CHO VAO          + [3M] modal Cho xe vao
-     [4] TRA CUU XE (QR)
-     [5] THU TIEN MAT (RA)
+     [5] THU TIEN MAT (RA)    (so [4] cu la tab Tra cuu QR, da bo)
      [6] SU CO
      [7] VE THANG
-     [0] dung chung cho nhieu tab
+     [0] dung chung cho nhieu muc
 
-   Thu tu trong file:  hang so -> state+logic tung tab -> giao dien tung tab.
+   Thu tu trong file:  hang so -> state+logic tung muc -> giao dien tung muc.
    ============================================================================ */
 
 /* ─────────────────────── [0] Helper dung chung ─────────────────────── */
-
-// Lấy floor_id của phiên (từ chỗ đỗ, fallback sang cổng vào) — để lọc cổng RA cùng tầng.
-const sessionFloorId = (s) => s?.slot?.zone?.floor?.floor_id ?? s?.gate?.floor_id ?? null;
 
 // Lấy floor_id của đơn đặt chỗ — để lọc cổng VÀO (IN) cùng tầng đã đặt.
 const reservationFloorId = (r) => r?.floor_id ?? r?.floor?.floor_id ?? r?.slot?.zone?.floor?.floor_id ?? null;
@@ -57,7 +56,7 @@ const fmtElapsed = (timeIn) => {
 // Lố giờ có 2 lý do khác nhau (BE trả overstayReason) — nói đúng để Manager không tưởng
 // liên quan "Giờ gửi tối đa": reservation_window = ở quá khung đã đặt (không liên quan giờ gửi
 // tối đa); walk_in_max_hours = quá giờ gửi tối đa của bãi.
-// Dùng ở [2M] modal Xe ra và [5] Thu tiền mặt.
+// Dùng ở [2] Phiên hoạt động và [4] Thu tiền mặt.
 const overstayLabel = (reason) =>
   reason === 'reservation_window'
     ? 'ở quá KHUNG ĐẶT CHỖ đã đăng ký'
@@ -143,18 +142,22 @@ export default function StaffOperationsPage() {
      [0] DUNG CHUNG — tab dang mo, danh muc, tai du lieu luc mo trang
      ========================================================================== */
 
-  const [tab, setTab] = useState('checkin'); // 'checkin' | 'active' | 'reservation' | 'lookup' | 'booth' | 'incident' | 'passes'
+  // Mục đang mở nằm trên URL (?tab=) chứ không phải state trong component: sidebar bên trái là
+  // nơi chuyển mục, và F5 / mở lại link vẫn về đúng chỗ đang xem.
+  // 'checkin' | 'active' | 'reservation' | 'booth' | 'incident' | 'passes'
+  const [searchParams] = useSearchParams();
+  const tab = searchParams.get('tab') || 'checkin';
 
   // Danh mục cho dropdown: floors dùng ở [1] và [7], vehicleTypes dùng ở [1].
   const [floors, setFloors] = useState([]);
   const [vehicleTypes, setVehicleTypes] = useState([]);
   const [availability, setAvailability] = useState([]); // số chỗ trống theo tầng/khu — [1] đọc
 
-  // Quét QR bằng camera dùng chung 3 tab: [3] đặt chỗ vào | [4] tra cứu xe | [5] thu tiền mặt.
+  // Quét QR bằng camera dùng chung 2 tab: [3] đặt chỗ vào | [5] thu tiền mặt.
   const [scanTarget, setScanTarget] = useState(null);
 
   // Số chỗ trống theo tầng/khu (GET /public/availability) — cập nhật dropdown + panel.
-  // Gọi lại sau mỗi thao tác đổi số chỗ: [1] check-in, [2M] xe ra, [3] cho vào, [5] thu tiền mặt.
+  // Gọi lại sau mỗi thao tác đổi số chỗ: [1] check-in, [3] cho vào, [5] thu tiền mặt.
   const loadAvailability = async () => {
     try {
       const { data } = await publicApi.availability();
@@ -237,7 +240,9 @@ export default function StaffOperationsPage() {
       loadActive();
       loadAvailability();
     } catch (err) {
-      setCheckinError(err.response?.data?.error?.message || 'Check-in thất bại');
+      // Nói rõ sai Ở ĐÂU (tầng / loại xe / hết chỗ) thay vì ném nguyên câu thô của BE;
+      // truyền floors để dịch floor_id trong lỗi sai tầng thành tên tầng staff đọc được.
+      setCheckinError(friendlyCheckinError(err, { floors }));
     } finally {
       setSubmitting(false);
     }
@@ -312,100 +317,6 @@ export default function StaffOperationsPage() {
       loadActive();
     } catch (err) {
       toast.error(err.response?.data?.error?.message || 'Sửa biển số thất bại');
-    }
-  };
-
-  /* ==========================================================================
-     [2M] MODAL XE RA (CHECK-OUT) — chon cong ra (OUT) + xac nhan cho xe ra.
-          Mo bang openCheckout(session). Xu ly xe VE THANG / MIEN PHI
-          (ghi method='free'). Xe phai tra tien mat thi dung tab [5] Thu tien mat
-          — API khac (cash-checkout).
-     ========================================================================== */
-
-  const [coSession, setCoSession] = useState(null); // phiên đang check-out (null = đóng modal)
-  const [coGates, setCoGates] = useState([]); // cổng OUT của tầng phiên đó
-  const [coGateId, setCoGateId] = useState('');
-  const [coLost, setCoLost] = useState(false); // mất vé
-  const [coOverstay, setCoOverstay] = useState(false); // phụ thu lố giờ (staff chủ động tick)
-  const [coPreview, setCoPreview] = useState(null); // phí tạm tính
-  const [coResult, setCoResult] = useState(null); // kết quả sau check-out
-  const [coError, setCoError] = useState('');
-  const [coSubmitting, setCoSubmitting] = useState(false);
-
-  // Mở modal Xe ra: nạp cổng RA (OUT) cùng tầng + xem trước phí.
-  const openCheckout = async (session) => {
-    setCoSession(session);
-    setCoGateId('');
-    setCoLost(false);
-    setCoOverstay(false);
-    setCoResult(null);
-    setCoError('');
-    setCoPreview(null);
-    const floorId = sessionFloorId(session);
-    try {
-      const [gRes, pRes] = await Promise.all([
-        floorId ? gatesApi.list(floorId) : Promise.resolve({ data: { data: [] } }),
-        sessionsApi.previewFee({ sessionId: session.session_id }),
-      ]);
-      const outGates = (gRes.data.data || []).filter((g) => g.direction === 'out' && g.is_active);
-      setCoGates(outGates);
-      if (outGates.length === 1) setCoGateId(String(outGates[0].gate_id)); // 1 cổng OUT -> tự chọn
-      setCoPreview(pRes.data.data);
-    } catch (err) {
-      setCoError(err.response?.data?.error?.message || 'Không tải được cổng ra / phí');
-    }
-  };
-
-  // Tick "mất vé"/"phụ thu lố giờ" ở modal Xe ra: tra LẠI phí ngay để "Phí tạm tính" khớp
-  // đúng số sẽ thu khi xác nhận (đồng bộ hành vi với tab Thu tiền mặt). Lỗi tra lại thì giữ
-  // preview cũ — phí thật vẫn do BE tính lúc check-out.
-  const refreshCoPreview = async (lost, over) => {
-    if (!coSession) return;
-    try {
-      const { data } = await sessionsApi.previewFee({
-        sessionId: coSession.session_id,
-        lostTicket: lost,
-        overstayCharge: over,
-      });
-      setCoPreview(data.data);
-    } catch {
-      // giữ preview cũ
-    }
-  };
-  const toggleCoLost = (checked) => {
-    setCoLost(checked);
-    refreshCoPreview(checked, coOverstay);
-  };
-  const toggleCoOverstay = (checked) => {
-    setCoOverstay(checked);
-    refreshCoPreview(coLost, checked);
-  };
-
-  const handleCheckout = async (e) => {
-    e.preventDefault();
-    setCoError('');
-    setCoSubmitting(true);
-    try {
-      const { data } = await sessionsApi.checkout({
-        sessionId: coSession.session_id,
-        ...(coGateId ? { gateId: Number(coGateId) } : {}), // BE tự suy cổng OUT nếu bỏ trống
-        lostTicket: coLost,
-        overstayCharge: coOverstay,
-      });
-      setCoResult(data.data);
-      if (data.data?.barrierOpened) {
-        toast.success('Xe ra thành công — barie mở');
-      } else {
-        toast.info('Cần thanh toán để mở barie');
-      }
-      // Nếu phiên này vừa tra qua tab "Tra cứu xe (QR)" thì bỏ card cũ đi cho khỏi lệch.
-      if (lkSession?.session_id === coSession.session_id) setLkSession(null);
-      loadActive(); // phiên rời khỏi danh sách đang đỗ
-      loadAvailability();
-    } catch (err) {
-      setCoError(err.response?.data?.error?.message || 'Check-out thất bại');
-    } finally {
-      setCoSubmitting(false);
     }
   };
 
@@ -505,40 +416,6 @@ export default function StaffOperationsPage() {
   };
 
   /* ==========================================================================
-     [4] TAB TRA CUU XE (QR) — state + logic
-         Giao dien o duoi: tim "[4] TAB TRA CUU XE (QR)" phan JSX.
-     ========================================================================== */
-
-  // Tra cứu phiên đang đỗ bằng QR (xem chi tiết xe rồi cho ra / sửa biển số).
-  const [lkQr, setLkQr] = useState('');
-  const [lkLooking, setLkLooking] = useState(false);
-  const [lkError, setLkError] = useState('');
-  const [lkSession, setLkSession] = useState(null); // phiên tra được (null = chưa tra)
-
-  // Tra cứu phiên đang đỗ theo mã QR (từ ô nhập tay HOẶC camera).
-  const runSessionLookup = async (raw) => {
-    const token = String(raw || '').trim();
-    if (!token) return;
-    setLkError('');
-    setLkLooking(true);
-    try {
-      const { data } = await sessionsApi.staffLookup(token);
-      setLkSession(data.data);
-      setLkQr('');
-    } catch (err) {
-      setLkSession(null);
-      setLkError(err.response?.data?.error?.message || 'Không tìm thấy xe đang gửi với mã QR này');
-    } finally {
-      setLkLooking(false);
-    }
-  };
-
-  const handleSessionLookup = (e) => {
-    e.preventDefault();
-    runSessionLookup(lkQr);
-  };
-
-  /* ==========================================================================
      [5] TAB THU TIEN MAT (XE RA) — state + logic
          Giao dien o duoi: tim "[5] TAB THU TIEN MAT" phan JSX.
      ========================================================================== */
@@ -567,11 +444,20 @@ export default function StaffOperationsPage() {
       setBoothPreview(data.data);
     } catch (err) {
       setBoothPreview(null);
-      setBoothError(err.response?.data?.error?.message || 'Không tra cứu được — kiểm tra lại mã QR / biển số');
+      setBoothError(plainApiError(err, 'Không tra cứu được — kiểm tra lại mã QR / biển số'));
     } finally {
       setBoothLooking(false);
     }
   };
+
+  // previewFee (BE) chỉ trả phiên TRẦN, không kèm loại xe / chỗ đỗ / khu — trong khi danh sách
+  // "Phiên hoạt động" đã tải sẵn phiên ĐẦY ĐỦ. Ghép lại theo session_id để khối thu tiền mặt
+  // hiện đủ thông tin xe (thay cho tab Tra cứu QR đã bỏ) mà không phải gọi thêm API.
+  const boothFullSession = (() => {
+    const id = boothPreview?.session?.session_id;
+    if (!id) return null;
+    return active.find((s) => s.session_id === id) || null;
+  })();
 
   const lookupBoothByQr = (e) => {
     if (e?.preventDefault) e.preventDefault();
@@ -615,7 +501,7 @@ export default function StaffOperationsPage() {
       loadActive();
       loadAvailability();
     } catch (err) {
-      setBoothError(err.response?.data?.error?.message || 'Thu tiền mặt thất bại');
+      setBoothError(plainApiError(err, 'Thu tiền mặt thất bại'));
     } finally {
       setBoothSubmitting(false);
     }
@@ -719,41 +605,15 @@ export default function StaffOperationsPage() {
   };
 
   /* ==========================================================================
-     GIAO DIEN — thu tu duoi day khop DUNG thu tu thanh tab tren man hinh:
-     [1] Check-in -> [2] Phien hoat dong -> [3] Dat cho vao -> [4] Tra cuu QR
+     GIAO DIEN — thu tu duoi day khop DUNG thu tu cac muc tren sidebar:
+     [1] Check-in -> [2] Phien hoat dong -> [3] Dat cho vao
      -> [5] Thu tien mat -> [6] Su co -> [7] Ve thang -> cac modal.
      ========================================================================== */
 
+  // Tiêu đề trang + dãy tab ngang đã bỏ: sidebar bên trái (StaffLayout) vừa là tên khu vực
+  // vừa là nơi chuyển mục, để lại ở đây là lặp hai lần cùng một thông tin.
   return (
     <div>
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold tracking-tight text-slate-900">Vận hành bãi đỗ</h1>
-        <p className="mt-1 text-sm text-slate-500">Ghi nhận xe vào, theo dõi xe đang đỗ và xem trước phí.</p>
-      </div>
-
-      {/* Chuyển mục nội bộ — thứ tự nút ở đây = thứ tự các khối JSX bên dưới */}
-      <div className="mb-6 inline-flex rounded-xl border border-slate-200 bg-surface-raised p-1">
-        {[
-          { id: 'checkin', label: 'Check-in (xe vào)' },
-          { id: 'active', label: `Phiên hoạt động${active.length ? ` (${active.length})` : ''}` },
-          { id: 'reservation', label: `Đặt chỗ vào${upcoming.length ? ` (${upcoming.length})` : ''}` },
-          { id: 'lookup', label: 'Tra cứu xe (QR)' },
-          { id: 'booth', label: 'Thu tiền mặt (ra)' },
-          { id: 'incident', label: `Sự cố${incidents.length ? ` (${incidents.length})` : ''}` },
-          { id: 'passes', label: 'Vé tháng' },
-        ].map((t) => (
-          <button
-            key={t.id}
-            onClick={() => setTab(t.id)}
-            className={`rounded-lg px-4 py-1.5 text-sm font-medium transition-colors ${
-              tab === t.id ? 'brand-gradient text-white' : 'text-slate-500 hover:text-brand'
-            }`}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
-
       {/* ═══════════════════ [1] TAB CHECK-IN (XE VAO) ═══════════════════
           Thu tu tren man hinh: [1.1] bien so -> [1.2] loai xe -> [1.3] tang
           -> [1.4] cong vao (IN) -> [1.5] bang so cho trong -> [1.6] nut gui.
@@ -964,21 +824,9 @@ export default function StaffOperationsPage() {
                       </td>
                       <td className="space-x-3 px-4 py-3 text-right whitespace-nowrap">
                         <button type="button" onClick={() => handlePreviewFee(s)} className="font-medium text-brand hover:underline">Xem phí</button>
-                        {s.overstay && (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              // Điền sẵn form ở [6] Sự cố rồi nhảy sang tab đó.
-                              setIncForm({ type: 'overstay', description: `Xe ${s.plate_number} đỗ quá giờ${s.overstayHours ? ` (~${s.overstayHours}h)` : ''}`, sessionId: String(s.session_id) });
-                              setIncFieldErrors({});
-                              setIncError('');
-                              setTab('incident');
-                            }}
-                            className="font-medium text-red-600 hover:underline"
-                          >
-                            Báo lố giờ
-                          </button>
-                        )}
+                        {/* Không còn nút "Báo lố giờ" báo tay: lúc xe ra, nếu có thu phụ thu lố giờ thì BE
+                            tự ghi sự cố (reportOverstayCharge) — báo tay chỉ tạo bản ghi trùng. Cột "Đã đỗ"
+                            vẫn tô đỏ + (+Nh) để staff thấy xe đang quá giờ. */}
                         <button type="button" onClick={() => handleCorrectPlate(s)} className="font-medium text-slate-500 hover:underline">Sửa biển số</button>
                       </td>
                     </tr>
@@ -1068,55 +916,6 @@ export default function StaffOperationsPage() {
         </div>
       )}
 
-      {/* ═══════════════════ [4] TAB TRA CUU XE (QR) ═══════════════════
-          Quet ma QR tren ve de mo dung phien dang do roi cho ra (modal [2M]).
-          State + logic: tim "[4] TAB TRA CUU XE (QR)" phia tren.            */}
-      {tab === 'lookup' && (
-        <div className="max-w-xl space-y-6">
-          <Card>
-            <h2 className="mb-1 text-lg font-semibold text-slate-800">Tra cứu xe đang gửi</h2>
-            <p className="mb-4 text-sm text-slate-500">Quét / nhập mã QR trên vé của khách để xem thông tin xe đang đỗ và phí tạm tính.</p>
-            <ErrorAlert message={lkError} className="mb-4" />
-            <form onSubmit={handleSessionLookup} className="flex flex-col gap-3 sm:flex-row">
-              <input
-                className={inputClass}
-                value={lkQr}
-                onChange={(e) => setLkQr(e.target.value)}
-                placeholder="Dán hoặc quét mã QR..."
-              />
-              <Button type="submit" className="brand-gradient shrink-0 border-0" loading={lkLooking}>Tra cứu</Button>
-              <Button type="button" variant="secondary" className="shrink-0" onClick={() => setScanTarget('lookup')}>
-                <Camera className="h-4 w-4" /> Quét camera
-              </Button>
-            </form>
-          </Card>
-
-          {lkSession && (
-            <Card>
-              <div className="flex items-center justify-between">
-                <h3 className="font-mono text-base font-semibold text-slate-800">{lkSession.plate_number}</h3>
-                {lkSession.overstay && (
-                  <span className="rounded bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700">Quá giờ</span>
-                )}
-              </div>
-              <dl className="mt-3 space-y-2 text-sm">
-                <div className="flex justify-between"><dt className="text-slate-500">Loại xe</dt><dd>{lkSession.vehicleType?.type_name || '—'}</dd></div>
-                <div className="flex justify-between"><dt className="text-slate-500">Chỗ đỗ</dt><dd className="font-medium text-brand">{lkSession.slot?.slot_code || '—'}</dd></div>
-                <div className="flex justify-between"><dt className="text-slate-500">Khu / Tầng</dt><dd>{lkSession.slot?.zone?.label || '—'}{lkSession.slot?.zone?.floor ? ` · ${lkSession.slot.zone.floor.floor_code}` : ''}</dd></div>
-                <div className="flex justify-between"><dt className="text-slate-500">Giờ vào</dt><dd>{lkSession.time_in ? new Date(lkSession.time_in).toLocaleString('vi-VN') : '—'}</dd></div>
-                <div className="flex justify-between"><dt className="text-slate-500">Đã đỗ</dt><dd>{fmtElapsed(lkSession.time_in)}</dd></div>
-                {fees[lkSession.session_id] && (
-                  <div className="flex justify-between border-t border-slate-200 pt-2"><dt className="text-slate-500">Phí tạm tính</dt><dd className="font-semibold text-brand">{fmtMoney(fees[lkSession.session_id].fee)}</dd></div>
-                )}
-              </dl>
-              <div className="mt-4 flex flex-wrap justify-end gap-2">
-                <Button type="button" variant="secondary" onClick={() => handlePreviewFee(lkSession)}>Xem phí</Button>
-              </div>
-            </Card>
-          )}
-        </div>
-      )}
-
       {/* ═══════════════ [5] TAB THU TIEN MAT (XE RA) ═══════════════
           Chot BLD-OUT: tra cuu bang QR hoac bien so; cong do BE tu suy.
           State + logic: tim "[5] TAB THU TIEN MAT" phia tren.          */}
@@ -1168,7 +967,34 @@ export default function StaffOperationsPage() {
                 {boothPreview && (
                   <div className="mt-4 space-y-4">
                     <div className="rounded-lg bg-slate-50 px-4 py-3 text-sm">
-                      <div className="flex justify-between"><span className="text-slate-500">Biển số</span><span className="font-mono font-medium">{boothPreview.session?.plate_number || '—'}</span></div>
+                      <div className="flex justify-between">
+                        <span className="text-slate-500">Biển số</span>
+                        <span className="font-mono font-medium">{boothPreview.session?.plate_number || '—'}</span>
+                      </div>
+                      {/* Thông tin xe gộp từ tab "Tra cứu xe (QR)" cũ — chỉ hiện khi ghép được phiên đầy đủ */}
+                      {boothFullSession && (
+                        <>
+                          <div className="flex justify-between">
+                            <span className="text-slate-500">Loại xe</span>
+                            <span>{boothFullSession.vehicleType?.type_name || '—'}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-slate-500">Chỗ đỗ</span>
+                            <span className="font-medium text-brand">{boothFullSession.slot?.slot_code || '—'}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-slate-500">Khu / Tầng</span>
+                            <span>
+                              {boothFullSession.slot?.zone?.label || '—'}
+                              {boothFullSession.slot?.zone?.floor ? ` · ${boothFullSession.slot.zone.floor.floor_code}` : ''}
+                            </span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-slate-500">Diện</span>
+                            <span>{SESSION_TYPE_NOTE[boothFullSession.session_type] || boothFullSession.session_type || '—'}</span>
+                          </div>
+                        </>
+                      )}
                       <div className="flex justify-between"><span className="text-slate-500">Giờ vào</span><span>{boothPreview.session?.time_in ? new Date(boothPreview.session.time_in).toLocaleString('vi-VN') : '—'}</span></div>
                       <div className="flex justify-between"><span className="text-slate-500">Đã đỗ</span><span>{fmtElapsed(boothPreview.session?.time_in)}</span></div>
                       <div className="mt-1 flex justify-between border-t border-slate-200 pt-1">
@@ -1205,9 +1031,15 @@ export default function StaffOperationsPage() {
                       </label>
                     )}
 
-                    <Button className="brand-gradient w-full border-0" loading={boothSubmitting} onClick={confirmBoothCash}>
-                      Đã thu tiền mặt → mở barie
-                    </Button>
+                    <div className="flex gap-3">
+                      <Button className="brand-gradient flex-1 border-0" loading={boothSubmitting} onClick={confirmBoothCash}>
+                        Đã thu tiền mặt → mở barie
+                      </Button>
+                      {/* Hủy: xóa sạch ô nhập + kết quả tra cứu, khỏi phải F5 khi tra nhầm xe */}
+                      <Button type="button" variant="secondary" onClick={resetBooth} disabled={boothSubmitting}>
+                        Hủy
+                      </Button>
+                    </div>
                   </div>
                 )}
               </>
@@ -1430,88 +1262,7 @@ export default function StaffOperationsPage() {
         </form>
       </Modal>
 
-      {/* ═════════ [2M] MODAL XE RA (CHECK-OUT) — chon cong OUT + xac nhan ═════════
-          State + logic: tim "[2M] MODAL XE RA" phia tren.                       */}
-      <Modal
-        open={!!coSession}
-        title={`Xe ra — ${coSession?.plate_number || ''}`}
-        onClose={() => setCoSession(null)}
-      >
-        <ErrorAlert message={coError} className="mb-4" />
-
-        {coResult ? (
-          // Đã check-out: hiện kết quả
-          <div className="space-y-3 text-sm">
-            <div className={`rounded-lg px-4 py-3 ${coResult.barrierOpened ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>
-              {coResult.barrierOpened
-                ? (coResult.passCovered ? '✓ Vé tháng — barie mở, không tính phí' : coResult.freeCheckout ? '✓ Miễn phí — barie đã mở' : '✓ Đã thu phí — barie đã mở')
-                : '⏳ Cần thanh toán để mở barie'}
-            </div>
-            <div className="flex justify-between"><span className="text-slate-500">Phí</span><span className="font-semibold text-brand">{fmtMoney(coResult.fee)}</span></div>
-            <Button className="brand-gradient mt-2 w-full border-0" onClick={() => setCoSession(null)}>Đóng</Button>
-          </div>
-        ) : (
-          // Form check-out
-          <form onSubmit={handleCheckout} className="space-y-4">
-            <div className="rounded-lg bg-slate-50 px-4 py-3 text-sm">
-              <div className="flex justify-between"><span className="text-slate-500">Chỗ đỗ</span><span>{coSession?.slot?.slot_code || '—'}</span></div>
-              <div className="flex justify-between"><span className="text-slate-500">Giờ vào</span><span>{coSession?.time_in ? new Date(coSession.time_in).toLocaleString('vi-VN') : '—'}</span></div>
-              <div className="flex justify-between"><span className="text-slate-500">Đã đỗ</span><span>{fmtElapsed(coSession?.time_in)}</span></div>
-              <div className="mt-1 flex justify-between border-t border-slate-200 pt-1">
-                <span className="text-slate-500">Phí tạm tính</span>
-                <span className="font-semibold text-brand">{coPreview ? fmtMoney(coPreview.fee) : 'Đang tính...'}</span>
-              </div>
-            </div>
-
-            <Field label="Cổng ra (OUT)" hint="Cổng do hệ thống tự chọn theo tầng">
-              {coGates.length === 0 ? (
-                <p className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-700">Tầng này chưa có cổng ra — Manager cần tạo cổng chiều OUT.</p>
-              ) : coGates.length === 1 ? (
-                <div className={`${inputClass} flex items-center justify-between bg-slate-50`}>
-                  <span className="font-medium text-slate-700">{coGates[0].gate_code}</span>
-                  <span className="text-xs text-slate-400">tự chọn</span>
-                </div>
-              ) : (
-                <select className={inputClass} value={coGateId} onChange={(e) => setCoGateId(e.target.value)} required>
-                  <option value="">— Chọn cổng ra —</option>
-                  {coGates.map((g) => (
-                    <option key={g.gate_id} value={g.gate_id}>{g.gate_code}</option>
-                  ))}
-                </select>
-              )}
-            </Field>
-
-            {coPreview?.overstay && (
-              <p className="rounded bg-red-50 px-2 py-1 text-xs font-medium text-red-700">
-                ⚠ Xe {coPreview.session?.plate_number} {overstayLabel(coPreview.overstayReason)}{coPreview.overstayHours > 0 ? ` (~${coPreview.overstayHours}h)` : ''} — BẮT BUỘC thu phụ thu {fmtMoney(coPreview.overstayFee)} (đã tính vào phí).
-              </p>
-            )}
-            <label className="flex items-center gap-2 text-sm text-slate-700">
-              <input type="checkbox" checked={coLost} onChange={(e) => toggleCoLost(e.target.checked)} />
-              Khách báo mất vé (phụ thu)
-            </label>
-            {coPreview?.overstayEnforced ? (
-              <p className="text-sm font-medium text-red-700">
-                ↳ Đã tự cộng phụ thu lố giờ{coPreview?.overstayFee > 0 ? ` (+${fmtMoney(coPreview.overstayFee)})` : ''} — bắt buộc, không bỏ được.
-              </p>
-            ) : (
-              <label className="flex items-center gap-2 text-sm text-slate-700">
-                <input type="checkbox" checked={coOverstay} onChange={(e) => toggleCoOverstay(e.target.checked)} />
-                Phụ thu lố giờ (giá Manager set){coPreview?.overstayFee > 0 ? ` (+${fmtMoney(coPreview.overstayFee)})` : ''}
-              </label>
-            )}
-
-            <div className="flex justify-end gap-2 pt-2">
-              <Button type="button" variant="secondary" onClick={() => setCoSession(null)}>Hủy</Button>
-              <Button type="submit" className="brand-gradient border-0" loading={coSubmitting} disabled={!coGates.length}>
-                Xác nhận xe ra
-              </Button>
-            </div>
-          </form>
-        )}
-      </Modal>
-
-      {/* Overlay quét QR bằng camera — dùng chung cho tab [3] Đặt chỗ vào, [4] Tra cứu, [5] Thu tiền mặt */}
+      {/* Overlay quét QR bằng camera — dùng chung cho tab [3] Đặt chỗ vào và [5] Thu tiền mặt */}
       {scanTarget && (
         <QrScanner
           onClose={() => setScanTarget(null)}
@@ -1521,9 +1272,6 @@ export default function StaffOperationsPage() {
             if (target === 'reservation') {
               setResQr(token);
               runReservationLookup(token);
-            } else if (target === 'lookup') {
-              setLkQr(token);
-              runSessionLookup(token);
             } else if (target === 'booth') {
               setBoothQr(token);
               lookupBooth({ qrToken: token });
