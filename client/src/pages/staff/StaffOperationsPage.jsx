@@ -839,7 +839,9 @@ export default function StaffOperationsPage() {
       )}
 
       {/* ═══════════════ [3] TAB DAT CHO VAO (RESERVATION CHECK-IN) ═══════════════
-          Quet/nhap QR dat cho + bang don cho vao. Nut "Cho xe vao" mo modal [3M].
+          Quet/nhap QR dat cho -> mo modal [3M]. Bang duoi CHI DE THEO DOI, khong co
+          nut cho vao: muon cho xe vao BAT BUOC quet QR cua khach, khong bam theo ten
+          trong danh sach (tranh cho nham xe / cho vao khi khach chua toi).
           State + logic: tim "[3] TAB DAT CHO VAO" phia tren.                    */}
       {tab === 'reservation' && (
         <div className="space-y-6">
@@ -879,14 +881,13 @@ export default function StaffOperationsPage() {
                     <th className="px-4 py-3 font-medium">Tầng · Chỗ</th>
                     <th className="px-4 py-3 font-medium">Khung giờ</th>
                     <th className="px-4 py-3 font-medium">Trạng thái</th>
-                    <th className="px-4 py-3 text-right font-medium">Thao tác</th>
                   </tr>
                 </thead>
                 <tbody>
                   {loadingUpcoming ? (
-                    <tr><td colSpan={6} className="px-4 py-10 text-center text-slate-400">Đang tải...</td></tr>
+                    <tr><td colSpan={5} className="px-4 py-10 text-center text-slate-400">Đang tải...</td></tr>
                   ) : upcoming.length === 0 ? (
-                    <tr><td colSpan={6} className="px-4 py-10 text-center text-slate-400">Chưa có đặt chỗ nào chờ vào</td></tr>
+                    <tr><td colSpan={5} className="px-4 py-10 text-center text-slate-400">Chưa có đặt chỗ nào chờ vào</td></tr>
                   ) : (
                     upcoming.map((r) => {
                       const badge = reservationCheckinBadge(r);
@@ -901,9 +902,6 @@ export default function StaffOperationsPage() {
                         </td>
                         <td className="px-4 py-3">
                           {badge ? <span className={badge.className}>{badge.label}</span> : <span className="text-slate-400">—</span>}
-                        </td>
-                        <td className="px-4 py-3 text-right whitespace-nowrap">
-                          <button type="button" onClick={() => openReservationCheckin(r)} className="font-medium text-emerald-600 hover:underline">Cho xe vào</button>
                         </td>
                       </tr>
                       );
