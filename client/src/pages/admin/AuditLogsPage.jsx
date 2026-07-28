@@ -18,11 +18,12 @@ const ACTION_LABEL = {
 const actionText = (a) => ACTION_LABEL[a] || a;
 
 // Danh sách hành động cho ô lọc (dropdown thay vì gõ mã).
+// RESERVATION_REFUND_OWED cố ý KHÔNG có ở đây (không cho lọc riêng), nhưng vẫn giữ nhãn trong
+// ACTION_LABEL để bản ghi loại này hiện tên tiếng Việt thay vì mã thô khi lọc "Tất cả hành động".
 const ACTION_OPTIONS = [
   ['', 'Tất cả hành động'],
   ['user.create', 'Tạo tài khoản'],
   ['user.update', 'Cập nhật tài khoản'],
-  ['RESERVATION_REFUND_OWED', 'Ghi nợ hoàn tiền đặt chỗ'],
 ];
 
 // Nhãn tiếng Việt cho tên trường DB (dùng mô tả "cập nhật những gì").
