@@ -14,7 +14,7 @@ import {
 import { normalizeTimeInput, isWithinPassWindow } from '../utils/passWindow.js';
 import { suggestSlot, lockSlotOccupied } from '../utils/slotSuggest.js';
 import { logSuggestion } from './aiLog.service.js';
-import { validateAndNormalizePlateVN } from '../utils/plateVN.js';
+import { validateAndNormalizePlateVN, plateMatchesVehicleType } from '../utils/plateVN.js';
 import { getPassCapacity } from '../utils/passCapacity.js';
 import {
   getMonthlyPassPrice as getPassPriceFromSettings,
@@ -174,6 +174,16 @@ export const purchaseMonthlyPass = async (userId, data) => {
 
   const vehicleType = await VehicleType.findByPk(data.vehicleTypeId);
   if (!vehicleType) throw new AppError('Vehicle type not found', 404, 'NOT_FOUND');
+
+  // DV-01b — vé tháng: biển phải ĐÚNG LOẠI XE đã chọn (biển xe máy không mua vé ô tô & ngược lại).
+  const { category: plateCategory } = validateAndNormalizePlateVN(plateNumber);
+  if (!plateMatchesVehicleType(plateCategory, vehicleType.type_code)) {
+    throw new AppError(
+      `Biển ${plateNumber} là biển ${plateCategory === 'motorbike' ? 'xe máy' : 'ô tô'} nhưng bạn chọn loại xe "${vehicleType.type_name}" — chọn đúng loại xe.`,
+      400,
+      'PLATE_VEHICLE_MISMATCH',
+    );
+  }
 
   const price = getMonthlyPassPrice();
 
