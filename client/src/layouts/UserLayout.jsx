@@ -1,10 +1,7 @@
-import { Outlet, Link, NavLink } from 'react-router-dom';
-import { useAuth } from '../context/AuthContext';
-import { useLogout } from '../hooks/useLogout';
-import { getRoleName, roleLabels } from '../lib/auth';
+import SidebarShell from './SidebarShell';
 
-// Các tab khu vực Khách hàng (User) — đặt chỗ + vé tháng, theo dõi đơn/vé của mình.
-// "Hồ sơ" không nằm ở đây mà ở cụm tài khoản trên header (cạnh tên + Đăng xuất).
+// Menu khu vực Khách hàng (User) — đặt chỗ + vé tháng, theo dõi đơn/vé của mình.
+// "Hồ sơ" không nằm trong menu chính mà ở khối tài khoản cuối sidebar (cạnh Đăng xuất).
 const tabs = [
   { to: '/reservations', label: 'Đơn của tôi', end: true },
   { to: '/reservations/new', label: 'Đặt chỗ mới' },
@@ -13,74 +10,8 @@ const tabs = [
   { to: '/parking', label: 'Xe trong bãi' },
 ];
 
+const accountLinks = [{ to: '/profile', label: 'Hồ sơ' }];
+
 export default function UserLayout() {
-  const { user } = useAuth();
-  const logout = useLogout();
-  const roleName = getRoleName(user);
-
-  return (
-    <div className="flex min-h-screen flex-col bg-surface text-slate-800">
-      <header className="sticky top-0 z-40 border-b border-slate-200/70 bg-surface-raised/80 backdrop-blur">
-        <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3">
-          <Link to="/" className="flex items-center gap-2">
-            <span className="brand-gradient flex h-9 w-9 items-center justify-center rounded-xl text-base font-bold text-white shadow-(--shadow-soft)">
-              P
-            </span>
-            <span className="text-lg font-extrabold tracking-tight text-slate-800">
-              PBMS<span className="text-accent">.</span>
-            </span>
-            <span className="ml-1 hidden rounded-full bg-brand-light px-2.5 py-0.5 text-xs font-medium text-brand sm:inline">
-              {roleLabels[roleName] || roleName}
-            </span>
-          </Link>
-
-          <div className="flex items-center gap-3">
-            <span className="hidden text-sm text-slate-500 sm:inline">{user?.fullName || user?.username}</span>
-            <NavLink
-              to="/profile"
-              className={({ isActive }) =>
-                `rounded-lg px-3 py-2 text-sm font-medium ${
-                  isActive ? 'text-brand' : 'text-slate-500 hover:text-slate-800'
-                }`
-              }
-            >
-              Hồ sơ
-            </NavLink>
-            <button
-              onClick={logout}
-              className="rounded-lg px-3 py-2 text-sm font-medium text-slate-500 hover:text-slate-800"
-            >
-              Đăng xuất
-            </button>
-          </div>
-        </div>
-
-        {/* overflow-y-hidden là BẮT BUỘC, không thừa: overflow-x-auto khiến trình duyệt tự nâng
-            overflow-y (visible) thành auto, mà -mb-px của tab lại làm nội dung cao hơn khung 1px
-            → hiện thanh cuộn dọc cụt ngủn ở góc phải thanh menu. */}
-        <nav className="mx-auto flex max-w-6xl gap-1 overflow-x-auto overflow-y-hidden px-4">
-          {tabs.map((tab) => (
-            <NavLink
-              key={tab.to}
-              to={tab.to}
-              end={tab.end}
-              className={({ isActive }) =>
-                `-mb-px border-b-2 px-3 py-2.5 text-sm font-medium transition-colors ${
-                  isActive
-                    ? 'border-brand text-brand'
-                    : 'border-transparent text-slate-500 hover:text-brand'
-                }`
-              }
-            >
-              {tab.label}
-            </NavLink>
-          ))}
-        </nav>
-      </header>
-
-      <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-8">
-        <Outlet />
-      </main>
-    </div>
-  );
+  return <SidebarShell tabs={tabs} accountLinks={accountLinks} />;
 }

@@ -14,7 +14,6 @@ import RegisterPage from './pages/RegisterPage';
 import ForgotPasswordPage from './pages/ForgotPasswordPage';
 import ResetPasswordPage from './pages/ResetPasswordPage';
 import DashboardPage from './pages/DashboardPage';
-import AdminHomePage from './pages/admin/AdminHomePage';
 import UserManagementPage from './pages/admin/UserManagementPage';
 import AuditLogsPage from './pages/admin/AuditLogsPage';
 import IncidentsPage from './pages/admin/IncidentsPage';
@@ -74,17 +73,18 @@ export default function App() {
             <Route path="/dashboard" element={<DashboardPage />} />
           </Route>
 
-          {/* Khu vực Quản trị — AdminLayout (header + tab nav) bọc các trang con */}
+          {/* Khu vực Quản trị — AdminLayout (sidebar) bọc các trang con.
+              Không còn trang tổng quan riêng: /admin vào thẳng Người dùng. */}
           <Route element={<ProtectedRoute allowedRoles={['Admin']} />}>
             <Route path="/admin" element={<AdminLayout />}>
-              <Route index element={<AdminHomePage />} />
+              <Route index element={<Navigate to="users" replace />} />
               <Route path="users" element={<UserManagementPage />} />
               <Route path="audit-logs" element={<AuditLogsPage />} />
               <Route path="incidents" element={<IncidentsPage />} />
               <Route path="refunds" element={<RefundsPage />} />
             </Route>
           </Route>
-          {/* Khu vực Quản lý — ManagerLayout (header + tab nav) bọc các trang con */}
+          {/* Khu vực Quản lý — ManagerLayout (sidebar) bọc các trang con */}
           <Route element={<ProtectedRoute allowedRoles={['Manager']} />}>
             <Route path="/manager" element={<ManagerLayout />}>
               <Route index element={<Navigate to="floors" replace />} />
