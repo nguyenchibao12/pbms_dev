@@ -34,7 +34,7 @@ import { logSuggestion } from './aiLog.service.js';
 import { getParkingInsights, getUserParkingPreferences } from './prediction.service.js';
 import { getSession } from './session.service.js';
 import { recordWrongFloorIncident, recordIncident } from './incident.service.js';
-import { validateAndNormalizePlateVN } from '../utils/plateVN.js';
+import { validateAndNormalizePlateVN, plateMatchesVehicleType } from '../utils/plateVN.js';
 import { resolveFloorGate } from '../utils/gateResolve.js';
 import { assertReservationTransition, assertReservationQrUsable } from '../utils/stateGuards.js';
 import { resolveShiftWindow } from '../utils/shifts.js';
@@ -292,6 +292,16 @@ export const createReservation = async (userId, data) => {
 
   const vehicleType = await VehicleType.findByPk(data.vehicleTypeId);
   if (!vehicleType) throw new AppError('Vehicle type not found', 404, 'NOT_FOUND');
+
+  // DV-01b — biển phải ĐÚNG LOẠI XE đã chọn (biển xe máy không đặt được suất ô tô & ngược lại).
+  const { category: plateCategory } = validateAndNormalizePlateVN(plateNumber);
+  if (!plateMatchesVehicleType(plateCategory, vehicleType.type_code)) {
+    throw new AppError(
+      `Biển ${plateNumber} là biển ${plateCategory === 'motorbike' ? 'xe máy' : 'ô tô'} nhưng bạn chọn loại xe "${vehicleType.type_name}" — chọn đúng loại xe.`,
+      400,
+      'PLATE_VEHICLE_MISMATCH',
+    );
+  }
 
   const activeSession = await findActiveSessionByPlate(plateNumber);
   if (activeSession) {

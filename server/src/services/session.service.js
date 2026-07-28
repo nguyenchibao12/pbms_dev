@@ -12,7 +12,7 @@ import { suggestSlot, lockSlotOccupied, releaseSlot } from '../utils/slotSuggest
 import { calculateParkingFee, getEffectivePricingRule } from '../utils/feeCalc.js';
 import { isSessionFreeUnderPass, isWithinPassWindow } from '../utils/passWindow.js';
 import { logSuggestion } from './aiLog.service.js';
-import { validateAndNormalizePlateVN } from '../utils/plateVN.js';
+import { validateAndNormalizePlateVN, plateMatchesVehicleType } from '../utils/plateVN.js';
 import { assertBuildingOpenForCheckIn } from '../utils/buildingHours.js';
 import { resolveFloorGate } from '../utils/gateResolve.js';
 import { getMaxParkingHours, getLostTicketFee, getOverstayFee } from '../utils/settings.js';
@@ -299,6 +299,18 @@ export const checkin = async (staffUserId, data) => {
 
   const vehicleType = await VehicleType.findByPk(data.vehicleTypeId);
   if (!vehicleType) throw new AppError('Vehicle type not found', 404, 'NOT_FOUND');
+
+  // DV-01b — walk-in: biển phải ĐÚNG LOẠI XE đã chọn (biển xe máy không check-in ô tô & ngược lại).
+  // Nhánh đặt-chỗ/vé-tháng đã return sớm ở trên và khớp loại xe từ lúc đặt/mua, nên chỉ walk-in
+  // (và pass ngoài khung giờ rơi xuống đây) mới cần chặn.
+  const { category: plateCategory } = validateAndNormalizePlateVN(plateNumber);
+  if (!plateMatchesVehicleType(plateCategory, vehicleType.type_code)) {
+    throw new AppError(
+      `Biển ${plateNumber} là biển ${plateCategory === 'motorbike' ? 'xe máy' : 'ô tô'} nhưng bạn chọn loại xe "${vehicleType.type_name}" — chọn đúng loại xe.`,
+      400,
+      'PLATE_VEHICLE_MISMATCH',
+    );
+  }
 
   assertBuildingOpenForCheckIn(now);
   const timeIn = now;
