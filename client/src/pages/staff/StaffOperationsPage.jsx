@@ -28,8 +28,7 @@ import { staffPassesApi } from '../../api/staffPasses';
    Go Ctrl+F so hieu trong ngoac vuong de ra du ca 3 manh:
 
      [1] CHECK-IN (XE VAO)    bien so -> loai xe -> tang -> cong vao (IN)
-                              + o tim bien so trong bai de VE LAI QR cho khach mat ma
-     [2] PHIEN HOAT DONG
+     [2] PHIEN HOAT DONG      + loc bien so, ve lai QR cho khach mat ma
      [3] DAT CHO VAO          + [3M] modal Cho xe vao
      [5] THU TIEN MAT (RA)    (so [4] cu la tab Tra cuu QR, da bo)
      [6] SU CO
@@ -208,7 +207,6 @@ export default function StaffOperationsPage() {
   const [checkinError, setCheckinError] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [lastCheckin, setLastCheckin] = useState(null);
-  const [qrSearch, setQrSearch] = useState(''); // [1.8] ô tìm biển số để vẽ lại QR
 
   // Khi đổi tầng: nạp cổng IN của tầng đó, reset cổng đã chọn.
   const onFloorChange = async (floorId) => {
@@ -286,16 +284,6 @@ export default function StaffOperationsPage() {
   const selectedFloorFree = freeFor(selectedFloorMeta, form.vehicleTypeId);
   const selectedVtName = vehicleTypes.find((v) => String(v.vehicle_type_id) === String(form.vehicleTypeId))?.type_name;
 
-  // ── [1.8] Tìm xe trong bãi để VẼ LẠI mã QR (khách xóa/mất ảnh QR sẽ kẹt ở cổng ra).
-  // Không cần API mới: mã QR chỉ là chuỗi token, và BE đã trả sẵn qr_token trong danh sách
-  // phiên đang đỗ ở [2] — FE lọc ngay trên danh sách đó rồi vẽ lại bằng qrcode.react.
-  // Bắt gõ tối thiểu 2 ký tự để không đổ nguyên cả bãi ra khi ô còn trống.
-  const qrSearchKey = plateKey(qrSearch);
-  const qrMatches =
-    qrSearchKey.length < 2
-      ? []
-      : active.filter((s) => plateKey(s.plate_number).includes(qrSearchKey)).slice(0, 6);
-
   /* ==========================================================================
      [2] TAB PHIEN HOAT DONG — state + logic
          Giao dien o duoi: tim "[2] TAB PHIEN HOAT DONG" phan JSX.
@@ -305,6 +293,7 @@ export default function StaffOperationsPage() {
   const [loadingActive, setLoadingActive] = useState(true);
   const [fees, setFees] = useState({}); // { [sessionId]: feeResult } — cột "Phí tạm tính" của [2]
   const [loadingFees, setLoadingFees] = useState(false);
+  const [activeSearch, setActiveSearch] = useState(''); // ô lọc biển số của bảng [2]
 
   // Phí tạm tính hiện SẴN ở mọi dòng (bỏ nút "Xem phí" phải bấm từng xe — staff luôn phải bấm
   // hết bảng nên nút chỉ là thao tác thừa). BE không có API tính phí hàng loạt, phải gọi
@@ -348,6 +337,13 @@ export default function StaffOperationsPage() {
       setLoadingActive(false);
     }
   };
+
+  // Lọc bảng ngay tại FE (danh sách phiên đã tải sẵn, không gọi lại API). Dùng nhiều nhất khi
+  // khách mất ảnh QR: staff gõ biển số, tìm đúng dòng xe rồi bấm "Hiện QR" vẽ lại mã cho khách.
+  const activeSearchKey = plateKey(activeSearch);
+  const visibleActive = activeSearchKey
+    ? active.filter((s) => plateKey(s.plate_number).includes(activeSearchKey))
+    : active;
 
   const handleCorrectPlate = async (session) => {
     const next = window.prompt('Sửa biển số xe:', session.plate_number);
@@ -770,9 +766,8 @@ export default function StaffOperationsPage() {
             </form>
           </Card>
 
-          {/* [1.7] Kết quả check-in gần nhất (cột phải) — QR làm vé cho khách
-              [1.8] ngay dưới: tìm lại QR cho xe đã vào bãi từ trước */}
-          <div className="space-y-6">
+          {/* [1.7] Kết quả check-in gần nhất (cột phải) — QR làm vé cho khách */}
+          <div>
             {lastCheckin ? (
               <Card className="border-brand/30 bg-brand-light/40">
                 <h2 className="text-lg font-semibold text-slate-800">Check-in thành công ✓</h2>
@@ -797,52 +792,10 @@ export default function StaffOperationsPage() {
                 )}
               </Card>
             ) : (
-              <Card className="flex items-center justify-center py-10 text-center text-sm text-slate-400">
+              <Card className="flex h-full items-center justify-center text-center text-sm text-slate-400">
                 Kết quả check-in sẽ hiển thị ở đây (chỗ đỗ được gán tự động).
               </Card>
             )}
-
-            {/* [1.8] Tìm lại mã QR cho xe ĐÃ vào bãi — khách xóa/mất ảnh QR sẽ kẹt ở cổng ra.
-                Lọc ngay trên danh sách phiên đang đỗ đã tải sẵn, không gọi thêm API. */}
-            <Card>
-              <div className="mb-1 flex items-center justify-between gap-3">
-                <h2 className="text-lg font-semibold text-slate-800">Khách mất mã QR?</h2>
-                <Button variant="secondary" size="sm" onClick={loadActive} loading={loadingActive}>Làm mới</Button>
-              </div>
-              <p className="mb-3 text-sm text-slate-500">
-                Nhập biển số xe đang trong bãi để vẽ lại mã QR ra cổng cho khách chụp lại.
-              </p>
-              <input
-                className={inputClass}
-                value={qrSearch}
-                onChange={(e) => setQrSearch(cleanPlateInput(e.target.value))}
-                placeholder="51F-123.45 hoặc 12345"
-                aria-label="Tìm biển số xe trong bãi"
-              />
-              <div className="mt-3 space-y-2">
-                {qrSearchKey.length < 2 ? (
-                  <p className="text-xs text-slate-400">Gõ ít nhất 2 ký tự của biển số. Không cần gõ dấu chấm/gạch.</p>
-                ) : qrMatches.length === 0 ? (
-                  <p className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-700">
-                    Không có xe nào đang trong bãi khớp biển số này — kiểm tra lại biển hoặc bấm "Làm mới".
-                  </p>
-                ) : (
-                  qrMatches.map((s) => (
-                    <div key={s.session_id} className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 px-3 py-2">
-                      <div className="min-w-0">
-                        <p className="font-mono font-medium text-slate-800">{s.plate_number}</p>
-                        <p className="truncate text-xs text-slate-400">
-                          {s.slot?.slot_code || '—'} · vào {s.time_in ? new Date(s.time_in).toLocaleString('vi-VN') : '—'}
-                        </p>
-                      </div>
-                      <Button variant="secondary" size="sm" className="shrink-0" onClick={() => setQrSession(s)}>
-                        Hiện QR
-                      </Button>
-                    </div>
-                  ))
-                )}
-              </div>
-            </Card>
           </div>
         </div>
       )}
@@ -853,9 +806,28 @@ export default function StaffOperationsPage() {
           State + logic: tim "[2] TAB PHIEN HOAT DONG" phia tren.        */}
       {tab === 'active' && (
         <Card padding={false}>
-          <div className="flex items-center justify-between px-5 py-4">
-            <h2 className="text-lg font-semibold text-slate-800">Xe đang trong bãi</h2>
-            <Button variant="secondary" size="sm" onClick={loadActive} loading={loadingActive}>Làm mới</Button>
+          <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-4">
+            <h2 className="text-lg font-semibold text-slate-800">
+              Xe đang trong bãi
+              {activeSearchKey && (
+                <span className="ml-2 text-sm font-normal text-slate-400">
+                  {visibleActive.length}/{active.length} xe khớp
+                </span>
+              )}
+            </h2>
+            <div className="flex items-center gap-2">
+              <input
+                className={`${inputClass} w-52`}
+                value={activeSearch}
+                onChange={(e) => setActiveSearch(cleanPlateInput(e.target.value))}
+                placeholder="Lọc biển số: 51F-123.45"
+                aria-label="Lọc theo biển số"
+              />
+              {activeSearch && (
+                <Button variant="secondary" size="sm" onClick={() => setActiveSearch('')}>Xóa lọc</Button>
+              )}
+              <Button variant="secondary" size="sm" onClick={loadActive} loading={loadingActive}>Làm mới</Button>
+            </div>
           </div>
           <div className="overflow-x-auto border-t border-slate-200">
             <table className="min-w-full text-sm">
@@ -873,10 +845,14 @@ export default function StaffOperationsPage() {
               <tbody>
                 {loadingActive ? (
                   <tr><td colSpan={7} className="px-4 py-10 text-center text-slate-400">Đang tải...</td></tr>
-                ) : active.length === 0 ? (
-                  <tr><td colSpan={7} className="px-4 py-10 text-center text-slate-400">Không có xe nào trong bãi</td></tr>
+                ) : visibleActive.length === 0 ? (
+                  <tr><td colSpan={7} className="px-4 py-10 text-center text-slate-400">
+                    {activeSearchKey
+                      ? 'Không có xe nào trong bãi khớp biển số này — kiểm tra lại biển hoặc bấm "Làm mới".'
+                      : 'Không có xe nào trong bãi'}
+                  </td></tr>
                 ) : (
-                  active.map((s) => (
+                  visibleActive.map((s) => (
                     <tr key={s.session_id} className={`border-t border-slate-100 hover:bg-slate-50/60 ${s.overstay ? 'bg-red-50/50' : ''}`}>
                       <td className="px-4 py-3 font-mono font-medium text-slate-800">
                         {s.plate_number}
