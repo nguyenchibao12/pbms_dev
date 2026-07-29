@@ -178,7 +178,14 @@ export default function GateKioskPage() {
     runScan(qr);
   };
 
-  const spot = result?.ui === 'open' ? parkingSpot(result) : null;
+  // Chỉ hiện hộp "chỗ đã giữ" ở CỔNG VÀO TÒA. session.slot vẫn còn nguyên sau checkout
+  // (nhả chỗ chỉ đổi status của slot, không xóa liên kết) nên nếu không chặn theo stage,
+  // hộp này sẽ hiện NHẦM ở cổng ra cho mọi phiên (vé tháng, đặt chỗ, walk-in) — sai ý nghĩa
+  // vì lúc đó khách đang RỜI chỗ đó chứ không phải được dẫn tới.
+  const spot = result?.ui === 'open' && result.stage === 'building-in' ? parkingSpot(result) : null;
+  // Ra cổng tòa mà vé tháng miễn phí lượt này (BE trả passCovered) -> báo rõ 0đ, tránh im lặng
+  // hoặc hiện nhầm hộp "chỗ đã giữ" ở trên.
+  const passFreeExit = result?.ui === 'open' && result.stage === 'building-out' && result.info?.passCovered;
 
   return (
     <div className="flex min-h-screen flex-col items-center justify-center gap-8 bg-slate-900 p-6 text-white">
@@ -231,6 +238,12 @@ export default function GateKioskPage() {
                 <p className="mt-1 text-3xl font-extrabold tracking-wide">
                   {spot.floor ? `${formatFloorLabel(spot.floor)} · ` : ''}Chỗ {spot.slotCode}
                 </p>
+              </div>
+            )}
+            {passFreeExit && (
+              <div className="mx-auto mt-5 max-w-sm rounded-2xl bg-white/15 px-6 py-4">
+                <p className="text-base text-emerald-50">Xe có vé tháng — miễn phí lượt gửi này</p>
+                <p className="mt-1 text-3xl font-extrabold tracking-wide">VÉ THÁNG · {fmtMoney(0)}</p>
               </div>
             )}
           </div>
