@@ -19,6 +19,20 @@ const STAGE_LABEL = {
 
 const fmtMoney = (v) => `${Number(v || 0).toLocaleString('vi-VN')} ₫`;
 
+// Kiosk là màn CỐ ĐỊNH gắn ở MỘT cổng, nhưng đi PayOS là rời trang thật: BE trả
+// returnUrl/cancelUrl = /kiosk/gate (không kèm gateId), nên lúc khách trả xong HOẶC bấm huỷ,
+// trình duyệt quay về và component mount LẠI TỪ ĐẦU -> state gateId mất -> dropdown tụt về
+// cổng đầu danh sách (thường là cổng VÀO tòa) và lượt quét kế tiếp chạy sai chiều.
+// Nhớ cổng đã chọn vào localStorage để sống sót qua vòng PayOS lẫn F5 / mất điện khởi động lại.
+const GATE_KEY = 'kiosk.gateId';
+const readSavedGate = () => {
+  const v = Number(localStorage.getItem(GATE_KEY));
+  return Number.isInteger(v) && v > 0 ? v : null;
+};
+const saveGate = (id) => {
+  if (id) localStorage.setItem(GATE_KEY, String(id));
+};
+
 // Vị trí đỗ chỉ có khi khách ĐẶT CHỖ vừa được check-in ngay tại CỔNG VÀO TÒA
 // (BE trả info.session.slot). Walk-in / các chặng khác không có -> trả null.
 const parkingSpot = (r) => {
@@ -35,7 +49,7 @@ export default function GateKioskPage() {
   const orderCode = params.get('orderCode'); // PayOS redirect về kèm ?orderCode=...
   const [gates, setGates] = useState([]); // cổng tải động từ BE (kiosk-list) — thay hardcode
   const [gatesError, setGatesError] = useState('');
-  const [gateId, setGateId] = useState(fromUrl ? Number(fromUrl) : null);
+  const [gateId, setGateId] = useState(fromUrl ? Number(fromUrl) : readSavedGate());
   const [verifying, setVerifying] = useState(Boolean(orderCode)); // đang chốt phiên PayOS?
   const [qr, setQr] = useState('');
   // ui = discriminator của FE (đặt tên riêng, KHÔNG trùng field `kind` BE trả về trong data).
@@ -59,7 +73,10 @@ export default function GateKioskPage() {
   };
 
   // Tải danh sách cổng động (BE /gates/kiosk-list, xác thực bằng kiosk key) — bỏ hardcode.
-  // Mặc định chọn cổng theo ?gateId trên URL nếu hợp lệ, không thì cổng đầu danh sách.
+  // Thứ tự ưu tiên chọn cổng: ?gateId trên URL > cổng đã lưu > cổng đầu danh sách.
+  // Luôn lưu lại cổng chốt được: kiosk pin sẵn URL ?gateId=... đi PayOS về cũng mất query,
+  // có bản lưu thì lần mount sau vẫn đúng cổng. Cổng lưu mà không còn trong list (manager đã
+  // xoá) thì rơi về list[0] và bản lưu được ghi đè luôn cho sạch.
   useEffect(() => {
     let alive = true;
     (async () => {
@@ -68,12 +85,16 @@ export default function GateKioskPage() {
         const list = data.data || [];
         if (!alive) return;
         setGates(list);
-        setGateId((cur) => (list.some((g) => g.gate_id === cur) ? cur : list[0]?.gate_id ?? null));
+        const wanted = fromUrl ? Number(fromUrl) : readSavedGate();
+        const next = list.some((g) => g.gate_id === wanted) ? wanted : (list[0]?.gate_id ?? null);
+        setGateId(next);
+        saveGate(next);
       } catch {
         if (alive) setGatesError('Không tải được danh sách cổng. Kiểm tra kết nối rồi tải lại trang.');
       }
     })();
     return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // PayOS redirect về /kiosk/gate?orderCode=... → CHỐT phiên đã trả online (BE verify thật,
@@ -197,7 +218,9 @@ export default function GateKioskPage() {
           value={gateId ?? ''}
           disabled={gates.length === 0}
           onChange={(e) => {
-            setGateId(Number(e.target.value));
+            const id = Number(e.target.value);
+            setGateId(id);
+            saveGate(id); // nhớ luôn, để đi PayOS về không tụt lại cổng đầu danh sách
             setResult(null);
           }}
         >
