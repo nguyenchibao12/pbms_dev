@@ -2,6 +2,7 @@ import dotenv from 'dotenv';
 import app from './app.js';
 import sequelize, { syncSchema } from './config/db.js';
 import { ensureRoles } from './utils/ensureRoles.js';
+import { warmSettingsCache } from './utils/settings.js';
 import { startReservationMaintenanceJob } from './jobs/reservationMaintenance.job.js';
 import { startPassMaintenanceJob } from './jobs/passMaintenance.job.js';
 import './models/index.js';
@@ -35,6 +36,12 @@ const start = async () => {
     console.log('Database synced');
 
     await ensureRoles();
+
+    // Cache cấu hình chỉ được nạp lúc PATCH /settings/system. Không warm ở đây thì sau mỗi lần
+    // restart cache rỗng, getter rơi về env/hằng mặc định và BỎ QUA cấu hình Manager đã lưu trong DB
+    // (getSystemSettingsSync = systemCache || envSystemDefaults) cho tới lần lưu cấu hình kế tiếp.
+    await warmSettingsCache();
+    console.log('Settings cache warmed');
 
     startReservationMaintenanceJob();
     console.log('Reservation maintenance job started (pending TTL + no-show)');
