@@ -230,7 +230,11 @@ export default function GatesPage() {
             <select className={inputClass} value={form.floorId} onChange={(e) => onFloorChange(e.target.value)} required>
               <option value="">Chọn phạm vi</option>
               <option value="building">— Cổng tòa nhà (không thuộc tầng) —</option>
-              {floors.map((f) => <option key={f.floor_id} value={f.floor_id}>{f.floor_code} — {f.label}</option>)}
+              {/* Hiện đúng Tên hiển thị của tầng (formatFloorLabel tự thêm "Tầng " khi tên chưa
+                  tự mô tả cấp tầng), khớp với dropdown bộ lọc ở trên — bỏ mã tầng thô "F1 — 1". */}
+              {floors.map((f) => (
+                <option key={f.floor_id} value={f.floor_id}>{formatFloorLabel(f.label || f.floor_code)}</option>
+              ))}
             </select>
           </Field>
           <Field label="Hướng" error={fieldErrors.direction}>
