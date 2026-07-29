@@ -1,25 +1,27 @@
 /**
- * Seed dữ liệu DEMO cho buổi chấm (Assessment 02): tập trung 2 luồng chính
- * walk-in (khách vãng lai) và reservation (khách đặt chỗ).
+ * Seed dữ liệu DEMO cho buổi chấm (Assessment 02) — BẢN CHỈ CÓ Ô TÔ.
+ *
+ * MỤC ĐÍCH: demo "từ đầu". Seed chỉ dựng sẵn hạ tầng + dữ liệu cho MỘT loại xe = Ô TÔ (CAR).
+ * Xe máy (loại xe, tầng/khu, bảng giá, vé tháng, lượt gửi) sẽ do người demo TỰ TẠO trực tiếp
+ * trên UI quản trị để trình bày luồng set master data. Vì vậy seed CỐ Ý không có xe máy.
  *
  * ⚠️ PHÁ HỦY DỮ LIỆU: script DROP toàn bộ bảng (sync force) rồi tạo lại + seed.
  * Chỉ chạy trên DB local demo.
  *
  * Dùng:  npm run seed --prefix server      (hoặc: node scripts/seedDemo.js)
  *
- * Tạo: 6 user (admin/manager/staff/user/user2/chuaverify, mật khẩu đều 123456), 3 loại xe (CAR/BIKE/CAR7),
- * 4 tầng — B1 (hầm), F1, F2 phân khu (zoned: 1 khu ô tô + 1 khu xe máy, 8 chỗ/khu) và F3 riêng
- * xe máy (single). Diện tích sàn theo luật hình khối (assertFloorAreaMonotonic — hầm & tháp là 2
- * chuỗi riêng): tháp F1 1000 = F2 1000 ≥ F3 800; hầm B1 400 (hầm một phần, nhỏ hơn tháp — có thật).
- * Mã khu tự sinh <TẦNG>-<LOẠI XE>-<NN> (F1-CAR-01), mã chỗ tự sinh <MÃ KHU>-<NN>
- * (F1-CAR-01-01). Kèm cổng tòa nhà (IN/OUT) + cổng mỗi tầng (IN/OUT), bảng giá theo loại xe,
- * 1 đặt chỗ đã xác nhận sẵn (fallback demo reservation không cần đặt + thanh toán trực tiếp),
+ * Tạo: 6 user (admin/manager/staff/user/user2/chuaverify, mật khẩu đều 123456), 1 loại xe (CAR),
+ * 3 tầng — B1 (hầm), F1, F2 đều layout 'zoned' nhưng seed chỉ mở 1 khu Ô TÔ 8 chỗ mỗi tầng
+ * (còn dư diện tích để demo THÊM khu xe máy sau). Diện tích sàn theo luật hình khối
+ * (assertFloorAreaMonotonic — hầm & tháp là 2 chuỗi riêng): tháp F1 1000 = F2 1000; hầm B1 400.
+ * Mã khu tự sinh <TẦNG>-<LOẠI XE>-<NN> (F1-CAR-01), mã chỗ <MÃ KHU>-<NN> (F1-CAR-01-01).
+ * Kèm cổng tòa nhà (IN/OUT) + cổng mỗi tầng (IN/OUT), bảng giá ô tô, 1 đặt chỗ đã xác nhận sẵn,
  * và 1 khách đặt chỗ ĐANG ĐỖ (checked_in + phiên active) để test luồng check-out.
  *
- * PHỦ ĐỦ LUỒNG (phần mở rộng cuối file): đơn pending (test "Trả tiếp"), 3 kiểu hoàn tiền
- * (chờ hoàn / quá hạn STK / đã hoàn), đơn completed + no_show (QR lịch sử), đơn checked_in
- * LỐ GIỜ khung đặt (phụ thu), vé tháng active/pending/expired, user chưa verify email,
- * user có STK ngân hàng, 2 sự cố (open + resolved).
+ * PHỦ ĐỦ LUỒNG (phần mở rộng cuối file) — TẤT CẢ đều là ô tô: đơn pending (test "Trả tiếp"),
+ * 3 kiểu hoàn tiền (chờ hoàn / quá hạn STK / đã hoàn), đơn completed + no_show (QR lịch sử),
+ * đơn checked_in LỐ GIỜ khung đặt (phụ thu), vé tháng ô tô active/pending/expired, user chưa
+ * verify email, user có STK ngân hàng, 2 sự cố (open + resolved).
  */
 import dotenv from 'dotenv';
 import bcrypt from 'bcryptjs';
@@ -51,8 +53,8 @@ dotenv.config();
 const SLOTS_PER_ZONE = 8;
 // Diện tích sàn (m²) — xem assertFloorAreaMonotonic: hầm và tháp là 2 chuỗi riêng, mỗi chuỗi càng
 // xa mặt đất càng không rộng ra. B1 (hầm gửi xe một phần) nhỏ hơn tháp là chuyện thật; tháp thu
-// nhỏ dần F1=F2 ≥ F3. B1 = 400 vẫn ≥ 214.4 m² mà 2 khu seed cần.
-const FLOOR_AREA = { B1: 400, F1: 1000, F2: 1000, F3: 800 };
+// nhỏ dần F1=F2. B1 = 400 vẫn dư cho 1 khu ô tô (8×25=200 m²) và còn chỗ demo thêm khu xe máy.
+const FLOOR_AREA = { B1: 400, F1: 1000, F2: 1000 };
 const BOOKING_FEE = 20000; // khớp default booking_fee trong utils/settings.js
 const hash = (pw) => bcrypt.hash(pw, 10);
 
@@ -126,31 +128,16 @@ const run = async () => {
   }
   console.log(`• Users: ${accounts.map((a) => a[0]).join(', ')}`);
 
-  // --- Vehicle types (slot_area_m2 = diện tích hiệu dụng 1 slot, đã gộp lối đi) ---
+  // --- Vehicle type: CHỈ Ô TÔ (slot_area_m2 = diện tích hiệu dụng 1 slot, đã gộp lối đi) ---
+  // CỐ Ý chỉ 1 loại xe. Xe máy do người demo tự thêm trực tiếp trên UI để trình bày master data.
   const car = await VehicleType.create({ type_name: 'Ô tô (≤5 chỗ)', type_code: 'CAR', slot_area_m2: 25 });
-  const bike = await VehicleType.create({ type_name: 'Xe máy', type_code: 'BIKE', slot_area_m2: 1.8 });
-  const car7 = await VehicleType.create({ type_name: 'Ô tô 6-7 chỗ/SUV', type_code: 'CAR7', slot_area_m2: 30 });
 
-  // --- Pricing rules (đang hiệu lực) --------------------------------------
+  // --- Pricing rule ô tô (đang hiệu lực) ----------------------------------
   const effectiveFrom = new Date('2026-01-01T00:00:00Z');
   await PricingRule.create({
     vehicle_type_id: car.vehicle_type_id,
     unit: 60,
     base_rate: 15000,
-    effective_from: effectiveFrom,
-    effective_to: null,
-  });
-  await PricingRule.create({
-    vehicle_type_id: bike.vehicle_type_id,
-    unit: 60,
-    base_rate: 5000,
-    effective_from: effectiveFrom,
-    effective_to: null,
-  });
-  await PricingRule.create({
-    vehicle_type_id: car7.vehicle_type_id,
-    unit: 60,
-    base_rate: 20000,
     effective_from: effectiveFrom,
     effective_to: null,
   });
@@ -166,7 +153,8 @@ const run = async () => {
   });
 
   // --- Tầng + khu + chỗ + cổng tầng ---------------------------------------
-  // Lv2 — tầng phân khu (zoned): khu ô tô + khu xe máy. area_m2 đủ chứa cả 2 khu.
+  // Tầng layout 'zoned' nhưng seed CHỈ mở 1 khu Ô TÔ. Vẫn 'zoned' (không phải 'single') để
+  // người demo THÊM được khu xe máy vào chính tầng này khi trình bày master data.
   const createZonedFloor = async ({ code, level, label, areaM2 }) => {
     const floor = await Floor.create({
       floor_code: code,
@@ -192,24 +180,15 @@ const run = async () => {
       zone_code: `${code}-${car.type_code}-01`, label: `${label} - Khu ô tô`,
       total_slots: SLOTS_PER_ZONE, monthly_pass_capacity: Math.max(1, Math.floor(SLOTS_PER_ZONE / 4)),
     });
-    const bikeZone = await Zone.create({
-      floor_id: floor.floor_id, vehicle_type_id: bike.vehicle_type_id,
-      zone_code: `${code}-${bike.type_code}-01`, label: `${label} - Khu xe máy`,
-      total_slots: SLOTS_PER_ZONE, monthly_pass_capacity: Math.max(1, Math.floor(SLOTS_PER_ZONE / 4)),
-    });
 
     for (let i = 1; i <= SLOTS_PER_ZONE; i++) {
       await ParkingSlot.create({
         zone_id: carZone.zone_id, slot_code: `${carZone.zone_code}-${pad2(i)}`, status: 'available',
         distance_to_gate: i * 2,
       });
-      await ParkingSlot.create({
-        zone_id: bikeZone.zone_id, slot_code: `${bikeZone.zone_code}-${pad2(i)}`, status: 'available',
-        distance_to_gate: i * 2,
-      });
     }
 
-    return { floor, carZone, bikeZone };
+    return { floor, carZone };
   };
 
   // Hầm B1 — hầm gửi xe một phần, nhỏ hơn tháp (hầm & tháp là 2 chuỗi riêng, không ràng buộc chéo).
@@ -222,41 +201,7 @@ const run = async () => {
       code: `F${level}`, level, label: `Tầng ${level}`, areaM2: FLOOR_AREA[`F${level}`],
     }));
   }
-  console.log(`• Hầm B1 + ${floors.length} tầng (zoned), mỗi tầng 2 khu × ${SLOTS_PER_ZONE} chỗ, cổng tòa + cổng tầng`);
-
-  // --- Tầng SINGLE (Lv1: cả tầng 1 loại xe — xe máy) ----------------------
-  // Tầng trên cùng, hẹp hơn F2 (tháp thu nhỏ dần) nhưng vẫn là sàn thật ~800 m².
-  // Khu mặc định total_slots = floor(area / slot_area) = floor(800 / 1.8) = 444.
-  const F3_AREA = FLOOR_AREA.F3;
-  const f3 = await Floor.create({
-    floor_code: 'F3',
-    floor_level: 3,
-    label: 'Tầng 3 (riêng xe máy)',
-    layout_mode: 'single',
-    vehicle_type_id: bike.vehicle_type_id,
-    area_m2: F3_AREA,
-  });
-  await Gate.create({
-    floor_id: f3.floor_id, gate_code: 'F3-IN', direction: 'in',
-    label: 'Tầng 3 - Cổng vào', is_active: true,
-  });
-  await Gate.create({
-    floor_id: f3.floor_id, gate_code: 'F3-OUT', direction: 'out',
-    label: 'Tầng 3 - Cổng ra', is_active: true,
-  });
-  const f3TotalSlots = Math.floor(F3_AREA / 1.8);
-  const f3Zone = await Zone.create({
-    floor_id: f3.floor_id, vehicle_type_id: bike.vehicle_type_id,
-    zone_code: `F3-${bike.type_code}-01`, label: 'Tầng 3 - Xe máy',
-    total_slots: f3TotalSlots, monthly_pass_capacity: Math.max(1, Math.floor(f3TotalSlots / 4)),
-  });
-  for (let i = 1; i <= 10; i++) {
-    await ParkingSlot.create({
-      zone_id: f3Zone.zone_id, slot_code: `${f3Zone.zone_code}-${pad2(i)}`, status: 'available',
-      distance_to_gate: i * 2, distance_to_elevator: i * 1.5,
-    });
-  }
-  console.log(`• Tầng 3 (single/xe máy) — sức chứa ${f3Zone.total_slots} slot (area ${F3_AREA} m²), tạo sẵn 10 chỗ`);
+  console.log(`• Hầm B1 + ${floors.length} tầng (zoned, chỉ khu ô tô ${SLOTS_PER_ZONE} chỗ/tầng), cổng tòa + cổng tầng`);
 
   // --- 1 đặt chỗ đã CONFIRMED sẵn (fallback demo, không cần đặt + trả tiền) -
   // Mô hình SUẤT (migration 008): đặt chỗ không ghim slot — slot_id để null, chỉ giữ
@@ -401,7 +346,7 @@ const run = async () => {
   });
   await paySuccess(lockedReservation.reservation_id);
 
-  // ================= SEED MỞ RỘNG — PHỦ ĐỦ CÁC LUỒNG CÒN LẠI =================
+  // ================= SEED MỞ RỘNG — PHỦ ĐỦ CÁC LUỒNG CÒN LẠI (ĐỀU Ô TÔ) =================
   // Mỗi luồng 1 biển số riêng (51F-4xxxx) để không giẫm chân các đơn demo phía trên
   // (tránh dính chặn "đã có đơn confirmed tương lai" khi test walk-in bằng biển khác).
 
@@ -597,18 +542,20 @@ const run = async () => {
     calculated_fee: null,
   });
 
-  // --- Vé tháng: ACTIVE (quét cổng được) + PENDING (test repay) + EXPIRED (cổng chặn theo status) ---
+  // --- Vé tháng Ô TÔ: ACTIVE (quét cổng được) + PENDING (test repay) + EXPIRED (cổng chặn theo status) ---
+  // Đặt trên tầng F2 — khu ô tô F2 có monthly_pass_capacity > 0 nên bán vé tháng ô tô hợp lệ.
+  const passFloorId = floors[1].floor.floor_id; // F2
   const passWindow = { valid_from_time: '06:00:00', valid_to_time: '22:00:00' };
   const passActive = await MonthlyPass.create({
-    user_id: users.user.user_id, vehicle_type_id: bike.vehicle_type_id, floor_id: f3.floor_id,
-    plate_number: normalizePlateVN('59V1-501.01'), ...passWindow,
+    user_id: users.user.user_id, vehicle_type_id: car.vehicle_type_id, floor_id: passFloorId,
+    plate_number: normalizePlateVN('51C-501.01'), ...passWindow,
     start_date: new Date(now.getTime() - 7 * DAY), end_date: new Date(now.getTime() + 23 * DAY),
     status: 'active', qr_token: generateQrToken(),
   });
   await makePayment({ pass_id: passActive.pass_id, amount: 500000, status: 'success', paid_at: new Date(now.getTime() - 7 * DAY) });
   const passPending = await MonthlyPass.create({
-    user_id: users.user2.user_id, vehicle_type_id: bike.vehicle_type_id, floor_id: f3.floor_id,
-    plate_number: normalizePlateVN('59V2-502.02'), ...passWindow,
+    user_id: users.user2.user_id, vehicle_type_id: car.vehicle_type_id, floor_id: passFloorId,
+    plate_number: normalizePlateVN('51C-502.02'), ...passWindow,
     start_date: new Date(now.getTime() + 1 * DAY), end_date: new Date(now.getTime() + 31 * DAY),
     status: 'pending', qr_token: null, // chưa thanh toán thì chưa có QR
   });
@@ -617,8 +564,8 @@ const run = async () => {
     gateway_response: JSON.stringify({ checkoutUrl: 'https://pay.payos.vn/web/seed-dead-pass-link' }),
   });
   const passExpired = await MonthlyPass.create({
-    user_id: users.user.user_id, vehicle_type_id: bike.vehicle_type_id, floor_id: f3.floor_id,
-    plate_number: normalizePlateVN('59V3-503.03'), ...passWindow,
+    user_id: users.user.user_id, vehicle_type_id: car.vehicle_type_id, floor_id: passFloorId,
+    plate_number: normalizePlateVN('51C-503.03'), ...passWindow,
     start_date: new Date(now.getTime() - 40 * DAY), end_date: new Date(now.getTime() - 1 * DAY),
     status: 'expired', qr_token: generateQrToken(), // hết hạn GIỮ token — cổng chặn theo status
   });
@@ -642,14 +589,12 @@ const run = async () => {
     description: `Đơn ${noshowResv.plate_number} quá giờ không check-in — đã đánh no-show và nhả chỗ`,
   });
 
-  // ================= VOLUME DEMO — dữ liệu "thật hơn" cho dashboard =================
+  // ================= VOLUME DEMO — dữ liệu "thật hơn" cho dashboard (ĐỀU Ô TÔ) =================
   // Khách hàng có tên thật + lịch sử lượt gửi ĐÃ HOÀN TẤT (doanh thu), đơn đặt sắp tới rải
-  // nhiều tầng, và 2 xe đang đỗ ở tầng khác — để biểu đồ/thống kê nhìn có sức sống.
-  // MỌI biển số dưới đây đã qua validateAndNormalizePlateVN — hợp lệ theo Thông tư 79/2024.
-  const f1Bike = floors[0].bikeZone;
+  // nhiều tầng, và xe đang đỗ ở tầng khác — để biểu đồ/thống kê nhìn có sức sống.
+  // MỌI biển số dưới đây đã qua validateAndNormalizePlateVN — biển Ô TÔ hợp lệ (Thông tư 79/2024).
   const f2 = floors[1].floor;
   const f2Car = floors[1].carZone;
-  const f2Bike = floors[1].bikeZone;
 
   const moreCustomers = [
     ['tuanbui', 'Bùi Anh Tuấn', 'tuanbui@pbms.vn'],
@@ -668,7 +613,7 @@ const run = async () => {
     );
   }
 
-  const RATE = { CAR: 15000, BIKE: 5000, CAR7: 20000 };
+  const RATE = { CAR: 15000 };
   const inGateOf = (floorId) => Gate.findOne({ where: { floor_id: floorId, direction: 'in' } });
   const firstSlotOf = (zoneId) =>
     ParkingSlot.findOne({ where: { zone_id: zoneId }, order: [['slot_id', 'ASC']] });
@@ -707,13 +652,10 @@ const run = async () => {
     { floor: f2, zone: f2Car, vt: car, plate: '47B-778.99', daysAgo: 3, shift: 'afternoon', hours: 2 },
     { floor: b1.floor, zone: b1.carZone, vt: car, plate: '61A-123.45', daysAgo: 4, shift: 'morning', hours: 6 },
     { floor: f1, zone: f1Car, vt: car, plate: '65B-456.78', daysAgo: 5, shift: 'evening', hours: 3 },
-    { floor: f3, zone: f3Zone, vt: bike, plate: '59F1-234.56', daysAgo: 1, shift: 'morning', hours: 4 },
-    { floor: f1, zone: f1Bike, vt: bike, plate: '59H1-345.67', daysAgo: 2, shift: 'afternoon', hours: 3 },
-    { floor: f2, zone: f2Bike, vt: bike, plate: '60B2-456.78', daysAgo: 2, shift: 'evening', hours: 5 },
-    { floor: f3, zone: f3Zone, vt: bike, plate: '43P1-678.90', daysAgo: 3, shift: 'morning', hours: 2 },
-    { floor: b1.floor, zone: b1.bikeZone, vt: bike, plate: '92T1-112.23', daysAgo: 4, shift: 'afternoon', hours: 4 },
-    { floor: f3, zone: f3Zone, vt: bike, plate: '51N1-334.45', daysAgo: 5, shift: 'morning', hours: 6 },
-    { floor: f1, zone: f1Bike, vt: bike, plate: '47L1-556.67', daysAgo: 6, shift: 'evening', hours: 3 },
+    { floor: f2, zone: f2Car, vt: car, plate: '30E-224.68', daysAgo: 3, shift: 'morning', hours: 4 },
+    { floor: b1.floor, zone: b1.carZone, vt: car, plate: '51K-778.12', daysAgo: 4, shift: 'evening', hours: 2 },
+    { floor: f1, zone: f1Car, vt: car, plate: '90A-334.56', daysAgo: 5, shift: 'afternoon', hours: 5 },
+    { floor: f2, zone: f2Car, vt: car, plate: '77A-556.78', daysAgo: 6, shift: 'morning', hours: 3 },
   ];
   let vIdx = 0;
   for (const v of visits) {
@@ -728,8 +670,8 @@ const run = async () => {
   // Đơn đặt SẮP TỚI rải tầng khác (F2, B1) — "đơn sắp tới" không dồn hết vào F1.
   const upcoming = [
     { floor: f2, zone: f2Car, vt: car, plate: '30AB-123.45', shift: 'morning', dayOffset: 1 },
-    { floor: b1.floor, zone: b1.bikeZone, vt: bike, plate: '88C1-223.34', shift: 'evening', dayOffset: 1 },
-    { floor: f2, zone: f2Bike, vt: bike, plate: '51KH-567.89', shift: 'afternoon', dayOffset: 2 },
+    { floor: b1.floor, zone: b1.carZone, vt: car, plate: '51K-889.01', shift: 'evening', dayOffset: 1 },
+    { floor: f2, zone: f2Car, vt: car, plate: '90A-778.90', shift: 'afternoon', dayOffset: 2 },
   ];
   for (const u of upcoming) {
     const win = shiftWindowOn(u.dayOffset, u.shift);
@@ -743,10 +685,10 @@ const run = async () => {
     await paySuccess(r.reservation_id);
   }
 
-  // 2 xe đang đỗ ở tầng khác (F2 ô tô, B1 xe máy) — occupancy không chỉ mỗi F1.
+  // 2 xe đang đỗ ở tầng khác (F2, B1) — occupancy không chỉ mỗi F1.
   const parkNow = [
     { floor: f2, zone: f2Car, vt: car, plate: '30FG-246.80', hoursAgo: 1 },
-    { floor: b1.floor, zone: b1.bikeZone, vt: bike, plate: '82H3-9423', hoursAgo: 2 },
+    { floor: b1.floor, zone: b1.carZone, vt: car, plate: '77A-112.23', hoursAgo: 2 },
   ];
   for (const pk of parkNow) {
     const slot = await ParkingSlot.findOne({
@@ -765,7 +707,7 @@ const run = async () => {
   }
   console.log(`• VOLUME: +${moreCustomers.length} khách, ${visits.length} lượt gửi lịch sử (doanh thu), ${upcoming.length} đơn sắp tới, ${parkNow.length} xe đang đỗ tầng khác`);
 
-  console.log('\n================ SEED DONE ================');
+  console.log('\n================ SEED DONE (CHỈ Ô TÔ) ================');
   console.log('Tài khoản (username / password):');
   console.log('  admin   / 123456');
   console.log('  manager / 123456');
@@ -797,11 +739,12 @@ const run = async () => {
   console.log(`  COMPLETED resId=${doneResv.reservation_id} | 51F-40005 | QR đơn còn hiển thị dạng lịch sử, quét cổng bị chặn`);
   console.log(`  NO_SHOW   resId=${noshowResv.reservation_id} | 51F-40006 | QR lịch sử + có incident đã xử lý kèm theo`);
   console.log(`  LỐ GIỜ    resId=${overResv.reservation_id} | 51F-40007 | checked_in, hết khung 2h trước → checkout phải cộng phụ thu (sessionId=${overSession.session_id})`);
-  console.log('Vé tháng:');
-  console.log(`  ACTIVE  passId=${passActive.pass_id} | 59V1-501.01 | quét cổng tòa vào được (khung 06:00–22:00, tầng 3)`);
-  console.log(`  PENDING passId=${passPending.pass_id} | 59V2-502.02 | user2 — test "Trả tiếp" vé tháng`);
-  console.log(`  EXPIRED passId=${passExpired.pass_id} | 59V3-503.03 | còn QR nhưng cổng chặn theo status`);
+  console.log('Vé tháng Ô TÔ (tầng F2):');
+  console.log(`  ACTIVE  passId=${passActive.pass_id} | 51C-501.01 | quét cổng tòa vào được (khung 06:00–22:00)`);
+  console.log(`  PENDING passId=${passPending.pass_id} | 51C-502.02 | user2 — test "Trả tiếp" vé tháng`);
+  console.log(`  EXPIRED passId=${passExpired.pass_id} | 51C-503.03 | còn QR nhưng cổng chặn theo status`);
   console.log('Sự cố: 1 open (walk-in lố giờ) + 1 resolved (có người xử lý — cột migration 007)');
+  console.log('\n>>> Xe máy CỐ Ý chưa có — demo tự thêm loại xe/tầng/giá/vé tháng xe máy trực tiếp trên UI.');
   console.log('==========================================\n');
   process.exit(0);
 };
