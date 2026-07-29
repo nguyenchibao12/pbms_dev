@@ -28,12 +28,13 @@ import { staffPassesApi } from '../../api/staffPasses';
    Go Ctrl+F so hieu trong ngoac vuong de ra du ca 3 manh:
 
      [1] CHECK-IN (XE VAO)    bien so -> loai xe -> tang -> cong vao (IN)
+                              + o tim bien so trong bai de VE LAI QR cho khach mat ma
      [2] PHIEN HOAT DONG
      [3] DAT CHO VAO          + [3M] modal Cho xe vao
      [5] THU TIEN MAT (RA)    (so [4] cu la tab Tra cuu QR, da bo)
      [6] SU CO
      [7] VE THANG
-     [0] dung chung cho nhieu muc
+     [0] dung chung cho nhieu muc + [0M] modal ve lai ma QR
 
    Thu tu trong file:  hang so -> state+logic tung muc -> giao dien tung muc.
    ============================================================================ */
@@ -44,6 +45,10 @@ import { staffPassesApi } from '../../api/staffPasses';
 const reservationFloorId = (r) => r?.floor_id ?? r?.floor?.floor_id ?? r?.slot?.zone?.floor?.floor_id ?? null;
 
 const fmtMoney = (v) => `${Number(v || 0).toLocaleString('vi-VN')} ₫`;
+
+// Khóa so sánh biển số: bỏ hết chấm/gạch/khoảng trắng. Khách mất mã QR thường chỉ đọc dãy số
+// ("năm trăm lẻ một") chứ không nhớ đúng cách chấm, nên gõ "50001" phải ra được "51M-500.01".
+const plateKey = (p) => String(p || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
 
 // Thời gian đã đỗ tính từ time_in -> hiện tại (dạng "2h 15p").
 const fmtElapsed = (timeIn) => {
@@ -156,6 +161,9 @@ export default function StaffOperationsPage() {
   // Quét QR bằng camera dùng chung 2 tab: [3] đặt chỗ vào | [5] thu tiền mặt.
   const [scanTarget, setScanTarget] = useState(null);
 
+  // Phiên đang xem mã QR (modal [0M] vẽ lại mã) — mở được từ [1] ô tìm biển số và [2] bảng xe trong bãi.
+  const [qrSession, setQrSession] = useState(null);
+
   // Số chỗ trống theo tầng/khu (GET /public/availability) — cập nhật dropdown + panel.
   // Gọi lại sau mỗi thao tác đổi số chỗ: [1] check-in, [3] cho vào, [5] thu tiền mặt.
   const loadAvailability = async () => {
@@ -200,6 +208,7 @@ export default function StaffOperationsPage() {
   const [checkinError, setCheckinError] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [lastCheckin, setLastCheckin] = useState(null);
+  const [qrSearch, setQrSearch] = useState(''); // [1.8] ô tìm biển số để vẽ lại QR
 
   // Khi đổi tầng: nạp cổng IN của tầng đó, reset cổng đã chọn.
   const onFloorChange = async (floorId) => {
@@ -277,6 +286,16 @@ export default function StaffOperationsPage() {
   const selectedFloorFree = freeFor(selectedFloorMeta, form.vehicleTypeId);
   const selectedVtName = vehicleTypes.find((v) => String(v.vehicle_type_id) === String(form.vehicleTypeId))?.type_name;
 
+  // ── [1.8] Tìm xe trong bãi để VẼ LẠI mã QR (khách xóa/mất ảnh QR sẽ kẹt ở cổng ra).
+  // Không cần API mới: mã QR chỉ là chuỗi token, và BE đã trả sẵn qr_token trong danh sách
+  // phiên đang đỗ ở [2] — FE lọc ngay trên danh sách đó rồi vẽ lại bằng qrcode.react.
+  // Bắt gõ tối thiểu 2 ký tự để không đổ nguyên cả bãi ra khi ô còn trống.
+  const qrSearchKey = plateKey(qrSearch);
+  const qrMatches =
+    qrSearchKey.length < 2
+      ? []
+      : active.filter((s) => plateKey(s.plate_number).includes(qrSearchKey)).slice(0, 6);
+
   /* ==========================================================================
      [2] TAB PHIEN HOAT DONG — state + logic
          Giao dien o duoi: tim "[2] TAB PHIEN HOAT DONG" phan JSX.
@@ -284,27 +303,49 @@ export default function StaffOperationsPage() {
 
   const [active, setActive] = useState([]);
   const [loadingActive, setLoadingActive] = useState(true);
-  const [fees, setFees] = useState({}); // { [sessionId]: feeResult } — [2] và [4] cùng đọc
+  const [fees, setFees] = useState({}); // { [sessionId]: feeResult } — cột "Phí tạm tính" của [2]
+  const [loadingFees, setLoadingFees] = useState(false);
+
+  // Phí tạm tính hiện SẴN ở mọi dòng (bỏ nút "Xem phí" phải bấm từng xe — staff luôn phải bấm
+  // hết bảng nên nút chỉ là thao tác thừa). BE không có API tính phí hàng loạt, phải gọi
+  // preview-fee cho từng phiên → chạy theo lô 5 request để bãi đông không bắn cả trăm request
+  // cùng lúc. Điền dần từng lô, bảng không phải chờ tính xong hết mới hiện.
+  const loadFees = async (sessions) => {
+    setLoadingFees(true);
+    const next = {};
+    const BATCH = 5;
+    try {
+      for (let i = 0; i < sessions.length; i += BATCH) {
+        const part = await Promise.all(
+          sessions.slice(i, i + BATCH).map(async (s) => {
+            try {
+              const { data } = await sessionsApi.previewFee({ sessionId: s.session_id });
+              return [s.session_id, data.data];
+            } catch {
+              return [s.session_id, null]; // 1 xe tính lỗi không được chặn cả bảng
+            }
+          }),
+        );
+        part.forEach(([id, fee]) => { next[id] = fee; });
+        setFees({ ...next });
+      }
+    } finally {
+      setLoadingFees(false);
+    }
+  };
 
   const loadActive = async () => {
     setLoadingActive(true);
     try {
       const { data } = await sessionsApi.listActive();
       // listActive trả phân trang { items, total, ... }
-      setActive(data.data?.items || []);
+      const items = data.data?.items || [];
+      setActive(items);
+      loadFees(items); // không await: bảng hiện ngay, cột phí điền dần
     } catch (err) {
       toast.error(err.response?.data?.error?.message || 'Không tải được danh sách xe đang đỗ');
     } finally {
       setLoadingActive(false);
-    }
-  };
-
-  const handlePreviewFee = async (session) => {
-    try {
-      const { data } = await sessionsApi.previewFee({ sessionId: session.session_id });
-      setFees((m) => ({ ...m, [session.session_id]: data.data }));
-    } catch (err) {
-      toast.error(err.response?.data?.error?.message || 'Không xem được phí');
     }
   };
 
@@ -729,8 +770,9 @@ export default function StaffOperationsPage() {
             </form>
           </Card>
 
-          {/* [1.7] Kết quả check-in gần nhất (cột phải) — QR làm vé cho khách */}
-          <div>
+          {/* [1.7] Kết quả check-in gần nhất (cột phải) — QR làm vé cho khách
+              [1.8] ngay dưới: tìm lại QR cho xe đã vào bãi từ trước */}
+          <div className="space-y-6">
             {lastCheckin ? (
               <Card className="border-brand/30 bg-brand-light/40">
                 <h2 className="text-lg font-semibold text-slate-800">Check-in thành công ✓</h2>
@@ -755,10 +797,52 @@ export default function StaffOperationsPage() {
                 )}
               </Card>
             ) : (
-              <Card className="flex h-full items-center justify-center text-center text-sm text-slate-400">
+              <Card className="flex items-center justify-center py-10 text-center text-sm text-slate-400">
                 Kết quả check-in sẽ hiển thị ở đây (chỗ đỗ được gán tự động).
               </Card>
             )}
+
+            {/* [1.8] Tìm lại mã QR cho xe ĐÃ vào bãi — khách xóa/mất ảnh QR sẽ kẹt ở cổng ra.
+                Lọc ngay trên danh sách phiên đang đỗ đã tải sẵn, không gọi thêm API. */}
+            <Card>
+              <div className="mb-1 flex items-center justify-between gap-3">
+                <h2 className="text-lg font-semibold text-slate-800">Khách mất mã QR?</h2>
+                <Button variant="secondary" size="sm" onClick={loadActive} loading={loadingActive}>Làm mới</Button>
+              </div>
+              <p className="mb-3 text-sm text-slate-500">
+                Nhập biển số xe đang trong bãi để vẽ lại mã QR ra cổng cho khách chụp lại.
+              </p>
+              <input
+                className={inputClass}
+                value={qrSearch}
+                onChange={(e) => setQrSearch(cleanPlateInput(e.target.value))}
+                placeholder="51F-123.45 hoặc 12345"
+                aria-label="Tìm biển số xe trong bãi"
+              />
+              <div className="mt-3 space-y-2">
+                {qrSearchKey.length < 2 ? (
+                  <p className="text-xs text-slate-400">Gõ ít nhất 2 ký tự của biển số. Không cần gõ dấu chấm/gạch.</p>
+                ) : qrMatches.length === 0 ? (
+                  <p className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-700">
+                    Không có xe nào đang trong bãi khớp biển số này — kiểm tra lại biển hoặc bấm "Làm mới".
+                  </p>
+                ) : (
+                  qrMatches.map((s) => (
+                    <div key={s.session_id} className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 px-3 py-2">
+                      <div className="min-w-0">
+                        <p className="font-mono font-medium text-slate-800">{s.plate_number}</p>
+                        <p className="truncate text-xs text-slate-400">
+                          {s.slot?.slot_code || '—'} · vào {s.time_in ? new Date(s.time_in).toLocaleString('vi-VN') : '—'}
+                        </p>
+                      </div>
+                      <Button variant="secondary" size="sm" className="shrink-0" onClick={() => setQrSession(s)}>
+                        Hiện QR
+                      </Button>
+                    </div>
+                  ))
+                )}
+              </div>
+            </Card>
           </div>
         </div>
       )}
@@ -820,10 +904,15 @@ export default function StaffOperationsPage() {
                         )}
                       </td>
                       <td className="px-4 py-3 font-medium text-brand">
-                        {fees[s.session_id] ? fmtMoney(fees[s.session_id].fee) : <span className="text-slate-400">—</span>}
+                        {fees[s.session_id] ? (
+                          fmtMoney(fees[s.session_id].fee)
+                        ) : (
+                          <span className="text-slate-400">{loadingFees ? 'Đang tính…' : '—'}</span>
+                        )}
                       </td>
                       <td className="space-x-3 px-4 py-3 text-right whitespace-nowrap">
-                        <button type="button" onClick={() => handlePreviewFee(s)} className="font-medium text-brand hover:underline">Xem phí</button>
+                        {/* Vẽ lại QR ngay tại bảng: khách mất ảnh QR thì staff mở đúng dòng xe đó cho khách chụp lại. */}
+                        <button type="button" onClick={() => setQrSession(s)} className="font-medium text-brand hover:underline">Hiện QR</button>
                         {/* Không còn nút "Báo lố giờ" báo tay: lúc xe ra, nếu có thu phụ thu lố giờ thì BE
                             tự ghi sự cố (reportOverstayCharge) — báo tay chỉ tạo bản ghi trùng. Cột "Đã đỗ"
                             vẫn tô đỏ + (+Nh) để staff thấy xe đang quá giờ. */}
@@ -1258,6 +1347,40 @@ export default function StaffOperationsPage() {
             </Button>
           </div>
         </form>
+      </Modal>
+
+      {/* ═════════ [0M] MODAL VE LAI MA QR — mo tu [1.8] va tu bang [2] ═════════
+          Ma QR chi la chuoi token BE da tra san trong danh sach phien dang do, nen ve lai
+          duoc hoan toan o FE (qrcode.react) — khong can BE cap lai ma, khong doi token cu.
+          Quet lai ma nay o cong ra van dung phien do (BE tra phien theo qr_token).        */}
+      <Modal
+        open={!!qrSession}
+        title={`Mã QR ra cổng — ${qrSession?.plate_number || ''}`}
+        onClose={() => setQrSession(null)}
+        size="sm"
+      >
+        {qrSession?.qr_token ? (
+          <div className="flex flex-col items-center gap-3">
+            <QRCodeSVG value={qrSession.qr_token} size={200} aria-label="Mã QR ra cổng" />
+            <span
+              className="max-w-[240px] cursor-default select-all break-all text-center font-mono text-[11px] text-slate-400"
+              title={qrSession.qr_token}
+            >
+              {qrSession.qr_token}
+            </span>
+            <dl className="w-full space-y-1 border-t border-slate-200 pt-3 text-sm">
+              <div className="flex justify-between"><dt className="text-slate-500">Loại xe</dt><dd>{qrSession.vehicleType?.type_name || '—'}</dd></div>
+              <div className="flex justify-between"><dt className="text-slate-500">Chỗ đỗ</dt><dd className="font-medium text-brand">{qrSession.slot?.slot_code || '—'}</dd></div>
+              <div className="flex justify-between"><dt className="text-slate-500">Giờ vào</dt><dd>{qrSession.time_in ? new Date(qrSession.time_in).toLocaleString('vi-VN') : '—'}</dd></div>
+              <div className="flex justify-between"><dt className="text-slate-500">Diện</dt><dd>{SESSION_TYPE_NOTE[qrSession.session_type] || '—'}</dd></div>
+            </dl>
+            <p className="text-xs text-slate-500">Khách chụp lại mã này để quét khi ra cổng.</p>
+          </div>
+        ) : (
+          <p className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-700">
+            Phiên này không có mã QR — cho xe ra bằng tab "Thu tiền mặt (ra)".
+          </p>
+        )}
       </Modal>
 
       {/* Overlay quét QR bằng camera — dùng chung cho tab [3] Đặt chỗ vào và [5] Thu tiền mặt */}
