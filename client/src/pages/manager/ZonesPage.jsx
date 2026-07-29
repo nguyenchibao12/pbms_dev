@@ -289,7 +289,7 @@ export default function ZonesPage() {
               <Field label="Tầng" hint="Tầng 1 loại xe — chỉ sửa được số slot & vé tháng. Đổi loại xe: vào trang Tầng.">
                 <input
                   className={`${inputClass} cursor-not-allowed bg-slate-50 text-slate-500`}
-                  value={editingFloor ? `${editingFloor.floor_code} — ${editingFloor.label}` : ''}
+                  value={editingFloor ? formatFloorLabel(editingFloor.label || editingFloor.floor_code) : ''}
                   disabled
                   readOnly
                 />
@@ -308,7 +308,11 @@ export default function ZonesPage() {
               <Field label="Tầng" error={fieldErrors.floorId}>
                 <select className={inputClass} value={form.floorId} onChange={(e) => setForm({ ...form, floorId: e.target.value })} required>
                   <option value="">— Chọn tầng —</option>
-                  {zonedFloors.map((f) => <option key={f.floor_id} value={f.floor_id}>{f.floor_code} — {f.label}</option>)}
+                  {/* Hiện đúng Tên hiển thị của tầng (formatFloorLabel tự thêm "Tầng " khi tên chưa
+                      tự mô tả cấp tầng), khớp với dropdown bộ lọc ở trên — bỏ mã tầng thô "F1 — 1". */}
+                  {zonedFloors.map((f) => (
+                    <option key={f.floor_id} value={f.floor_id}>{formatFloorLabel(f.label || f.floor_code)}</option>
+                  ))}
                 </select>
               </Field>
               <Field label="Loại xe" error={fieldErrors.vehicleTypeId}>
